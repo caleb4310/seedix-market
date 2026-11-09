@@ -72,7 +72,9 @@ contract SeedixDeployer {
         );
 
         d.locker = new LiquidityLocker(p.poolManager, address(this));
-        d.launcher = new Launcher(d.roles, p.poolManager, d.hook, d.locker, d.implementation, d.executor, p.pairs);
+        d.launcher = new Launcher(
+            d.roles, p.poolManager, d.hook, d.locker, d.implementation, d.executor, d.distributor, p.pairs
+        );
 
         d.hook.setLauncher(address(d.launcher));
         d.hook.setLocker(address(d.locker));
@@ -80,5 +82,6 @@ contract SeedixDeployer {
         d.executor.wire(d.hook, address(d.launcher), address(d.locker));
         d.locker.wire(d.hook, address(d.launcher), address(d.executor));
         d.distributor.wire(d.hook, address(p.poolManager), address(d.locker), address(d.vault), address(d.executor));
+        d.distributor.setLauncher(address(d.launcher));
     }
 }

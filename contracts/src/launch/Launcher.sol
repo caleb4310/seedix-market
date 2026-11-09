@@ -16,6 +16,7 @@ import {LaunchHook} from "../hook/LaunchHook.sol";
 import {LaunchToken} from "../token/LaunchToken.sol";
 import {LiquidityLocker} from "./LiquidityLocker.sol";
 import {BuybackExecutor} from "../buyback/BuybackExecutor.sol";
+import {KickbackDistributor} from "../kickback/KickbackDistributor.sol";
 
 /// @notice Ownerless launcher. One transaction deploys the coin, initialises the pool, and seeds it.
 ///         Swaps in that same transaction revert. Pause is instant for the guardian role.
@@ -66,6 +67,7 @@ contract Launcher {
     LiquidityLocker public immutable locker;
     LaunchToken public immutable implementation;
     BuybackExecutor public immutable executor;
+    KickbackDistributor public immutable distributor;
 
     bool public launchesPaused;
     bool public platformLaunched;
@@ -82,14 +84,17 @@ contract Launcher {
         LiquidityLocker locker_,
         LaunchToken implementation_,
         BuybackExecutor executor_,
+        KickbackDistributor distributor_,
         address[] memory pairs
     ) {
+        if (address(distributor_) == address(0)) revert BadArgs();
         roles = roles_;
         poolManager = poolManager_;
         hook = hook_;
         locker = locker_;
         implementation = implementation_;
         executor = executor_;
+        distributor = distributor_;
         uint256 n = pairs.length;
         for (uint256 i; i < n; ++i) {
             if (pairs[i] == address(0)) revert BadArgs();
@@ -188,6 +193,7 @@ contract Launcher {
         poolManager.initialize(key, curve.sqrtPriceX96);
         IERC20(built.coin).safeTransfer(address(locker), built.liqAmt);
         locker.seed(key, curve.near, curve.far);
+        distributor.noteTeam(id, params.teamWallet);
         emit CoinLaunched(
             id,
             built.coin,

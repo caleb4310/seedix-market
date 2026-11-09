@@ -95,6 +95,13 @@ contract BuybackExecutor is IUnlockCallback {
     /// @notice Admin can grant or revoke the keeper. The zero address revokes it.
     ///         Mainnet must timelock the grant. This testnet build applies it immediately so the
     ///         admin can turn buybacks on after the deploy. Revocation stays immediate there too.
+    /// @notice Deployer sets the first keeper once. Later changes go through `setKeeper`.
+    function setInitialKeeper(address next) external {
+        if (msg.sender != initializer || keeper != address(0) || next == address(0)) revert NotInitializer();
+        emit KeeperSet(address(0), next);
+        keeper = next;
+    }
+
     function setKeeper(address next) external {
         if (msg.sender != roles.admin()) revert NotAdmin();
         emit KeeperSet(keeper, next);

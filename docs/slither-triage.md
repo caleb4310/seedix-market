@@ -27,6 +27,9 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - unused-return BuybackExecutor.sweepCollected | The flush targets the platform coin and its pair. The other `config` fields would let a caller aim the sweep at a different pool, which this function does not.
 - unused-return FeeVault.claimCreator | Three separate reads: the recipient from `config`, then `creatorPair` and `creatorCoin` from `pots`. Each call uses the one field that claim needs.
 - unused-return KickbackDistributor.cancel | The refund is paid in the pair token. The coin address and the mode are not the asset being returned.
+- unused-return KickbackDistributor.claimFallback | `config` is read for the pair token that the fallback pays. The coin, mode, and recipient are not that amount.
+- unused-return KickbackDistributor.push | `config` is read for the coin and the pair token, which are the leaf fields. The other fields are not a payment.
+- reentrancy-no-eth KickbackDistributor.push | The claimed bit and `epoch.claimed` are written before the token call. A callback cannot pay that account again. Liabilities move only after the transfer returns success.
 - unused-return KickbackDistributor.claim | The claim pays the coin or the pair, whichever the leaf names. The other `config` fields are not a payment amount.
 - unused-return KickbackDistributor.fund | One read checks `launchTime` so the epoch has started. The other reads the pair currency that `debitKickback` pulls. They are different tuples.
 - unused-return LaunchHook._payout | `unlock` returns the callback bytes. The payout amount was fixed before the call, and the callback settles that amount.

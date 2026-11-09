@@ -5,6 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {DeploySeedix} from "../script/Deploy.s.sol";
 import {SeedixRoles} from "../src/access/SeedixRoles.sol";
+import {BuybackExecutor} from "../src/buyback/BuybackExecutor.sol";
+import {KickbackDistributor} from "../src/kickback/KickbackDistributor.sol";
 
 contract DeploySimTest is Test {
     function test_anvilDeployerHoldsNoRoles() public {
@@ -40,5 +42,20 @@ contract DeploySimTest is Test {
         assertTrue(tl.hasRole(tl.PROPOSER_ROLE(), rolesAddr));
         assertTrue(tl.hasRole(tl.PROPOSER_ROLE(), vault));
         assertEq(tl.getMinDelay(), 48 hours);
+    }
+
+    function test_keeperComesFromEnv() public {
+        uint256 pk = 0xA11CE;
+        address deployer = vm.addr(pk);
+        address keeper = address(0xBEEF);
+        vm.chainId(31337);
+        vm.deal(deployer, 100 ether);
+        vm.setEnv("KEEPER", vm.toString(keeper));
+
+        DeploySeedix script = new DeploySeedix();
+        script.deploy(pk, address(0xAD11), address(0xAD11));
+        (,,,,, address exec, address dist,,,) = script.last();
+        assertEq(BuybackExecutor(exec).keeper(), keeper);
+        assertEq(KickbackDistributor(dist).keeper(), keeper);
     }
 }

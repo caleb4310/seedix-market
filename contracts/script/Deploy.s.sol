@@ -29,6 +29,7 @@ import {SeedixRouter} from "../src/router/SeedixRouter.sol";
 ///         Do not pass --broadcast against a public RPC.
 contract DeploySeedix is Script {
     error ForbiddenChain(uint256 chainId);
+    error MissingKeeper();
     error Permit2Missing();
     error MissingCode(address target);
 
@@ -57,6 +58,7 @@ contract DeploySeedix is Script {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address admin = vm.envOr("ADMIN", vm.addr(pk));
         address publisher = vm.envOr("KICKBACK_PUBLISHER", admin);
+        if (vm.envOr("KEEPER", address(0)) == address(0)) revert MissingKeeper();
         deploy(pk, admin, publisher);
     }
 
@@ -133,13 +135,20 @@ contract DeploySeedix is Script {
         pairs[6] = skhy;
 
         LiquidityLocker locker = new LiquidityLocker(manager, deployer);
-        Launcher launcher = new Launcher(roles, manager, hook, locker, impl, executor, pairs);
+        Launcher launcher = new Launcher(roles, manager, hook, locker, impl, executor, distributor, pairs);
         hook.setLauncher(address(launcher));
         hook.setLocker(address(locker));
         vault.setHook(hook);
         executor.wire(hook, address(launcher), address(locker));
         locker.wire(hook, address(launcher), address(executor));
         distributor.wire(hook, address(manager), address(locker), address(vault), address(executor));
+        distributor.setLauncher(address(launcher));
+        address keeper = vm.envOr("KEEPER", address(0));
+        if (block.chainid == 99801 && keeper == address(0)) revert MissingKeeper();
+        if (keeper != address(0)) {
+            executor.setInitialKeeper(keeper);
+            distributor.setInitialKeeper(keeper);
+        }
 
         vm.stopBroadcast();
 

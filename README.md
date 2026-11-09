@@ -66,7 +66,8 @@ anvil --port 8545
 
 # terminal 2, from contracts/. Simulation only: no --broadcast.
 # Set PRIVATE_KEY to the Anvil account printed at startup. Do not point this at a public RPC.
-PRIVATE_KEY=$ANVIL_ACCOUNT_0 forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545
+PRIVATE_KEY=$ANVIL_ACCOUNT_0 KEEPER=0xYourKeeperAddress \
+  forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545
 ```
 
 The script reverts if `block.chainid` is anything other than 99801 or 31337. Add `--broadcast` only when the RPC is local Anvil and you want the deployment kept.
@@ -75,7 +76,7 @@ Dry-run against Elysium testnet. This does not broadcast. `ADMIN` is the wallet 
 
 ```bash
 cd contracts
-ADMIN=0xYourAdminAddress PRIVATE_KEY=0xDeployerSimulationKey \
+ADMIN=0xYourAdminAddress KEEPER=0xYourKeeperAddress PRIVATE_KEY=0xDeployerSimulationKey \
   forge script script/Deploy.s.sol --rpc-url https://testnet-rpc.elysium.kinetiq.xyz
 ```
 

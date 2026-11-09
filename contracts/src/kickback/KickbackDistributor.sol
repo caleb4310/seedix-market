@@ -27,6 +27,10 @@ contract KickbackDistributor {
     error BadProof();
     error AlreadyClaimed();
     error SweepNotEnabled();
+    error NotKeeper();
+    error NotLauncher();
+    error NotAdmin();
+    error MissingKeeper();
 
     struct Epoch {
         uint128 funded;
@@ -43,6 +47,11 @@ contract KickbackDistributor {
     event RootPosted(PoolId indexed poolId, uint64 indexed epoch, bytes32 root, bytes32 manifestHash);
     event KickbackCancelled(PoolId indexed poolId, uint64 indexed epoch, uint256 refunded);
     event KickbackClaimed(PoolId indexed poolId, uint64 indexed epoch, address account, uint256 amount);
+    event KickbackPushed(PoolId indexed poolId, uint64 indexed epoch, address indexed account, uint256 amount);
+    event KickbackRolled(PoolId indexed poolId, uint64 indexed epoch, address indexed account, uint256 amount);
+    event KickbackFallback(PoolId indexed poolId, uint64 indexed epoch, address indexed account, uint256 amount);
+    event KeeperReimbursed(PoolId indexed poolId, uint64 indexed epoch, address indexed keeper, uint256 amount);
+    event TeamNoted(PoolId indexed poolId, address indexed team);
 
     SeedixRoles public immutable roles;
     address public immutable initializer;
@@ -52,6 +61,13 @@ contract KickbackDistributor {
     address public locker;
     address public vault;
     address public buybackExecutor;
+    address public launcher;
+    address public keeper;
+
+    /// @dev Amounts below this stay in the contract and are added to the next epoch.
+    uint256 public constant DUST = 1_000;
+    /// @dev Mainnet gas reimbursement cap, in bps of the tokens actually transferred.
+    uint256 public constant GAS_CAP_BPS = 200;
 
     uint256 public roundCap;
     uint256 public hourlyCap;
@@ -62,6 +78,10 @@ contract KickbackDistributor {
     mapping(PoolId => uint64) public nextEpoch;
     mapping(PoolId => uint64) public lastEnd;
     mapping(PoolId => mapping(uint64 => mapping(address => bool))) public claimed;
+    mapping(PoolId => mapping(uint64 => mapping(address => uint256))) public fallbackOf;
+    mapping(PoolId => address) public teamOf;
+    mapping(PoolId => bool) public teamSet;
+    mapping(PoolId => uint256) public rollover;
     mapping(address => uint256) public liabilities;
 
     constructor(SeedixRoles roles_, address publisher_, uint256 roundCap_, uint256 hourlyCap_, address initializer_) {
@@ -84,6 +104,33 @@ contract KickbackDistributor {
         locker = locker_;
         vault = vault_;
         buybackExecutor = buybackExecutor_;
+    }
+
+    /// @notice One-shot. The launcher records each pool's team wallet at launch.
+    function setLauncher(address next) external {
+        if (msg.sender != initializer || launcher != address(0) || next == address(0)) revert NotInitializer();
+        launcher = next;
+    }
+
+    function noteTeam(PoolId id, address team) external {
+        if (msg.sender != launcher) revert NotLauncher();
+        if (teamSet[id]) revert BadEpoch();
+        teamSet[id] = true;
+        teamOf[id] = team;
+        emit TeamNoted(id, team);
+    }
+
+    /// @notice Deployer sets the first keeper once. Later changes go through `setKeeper`.
+    function setInitialKeeper(address next) external {
+        if (msg.sender != initializer || keeper != address(0) || next == address(0)) revert NotInitializer();
+        keeper = next;
+    }
+
+    /// @notice Admin can grant or revoke the keeper. The zero address revokes it.
+    ///         Mainnet must timelock the grant. This testnet build applies it immediately.
+    function setKeeper(address next) external {
+        if (msg.sender != roles.admin()) revert NotAdmin();
+        keeper = next;
     }
 
     function setPublisher(address next) external {
@@ -116,9 +163,14 @@ contract KickbackDistributor {
         uint64 end = uint64(closedEnd);
         uint64 start = end - uint64(window);
 
+        uint256 extra = rollover[id];
+        rollover[id] = 0;
+        uint256 total = uint256(amount) + extra;
+        if (total > type(uint128).max) revert Cap();
+
         epochId = ++nextEpoch[id];
         epochs[id][epochId] = Epoch({
-            funded: amount,
+            funded: uint128(total),
             claimed: 0,
             start: start,
             end: end,
@@ -168,7 +220,7 @@ contract KickbackDistributor {
         if (e.funded == 0 || e.cancelled || e.postedAt == 0) revert BadEpoch();
         if (block.timestamp < uint256(e.postedAt) + C.REVIEW_WINDOW) revert ReviewOpen();
         if (claimed[id][epochId][account]) revert AlreadyClaimed();
-        if (isExcluded(account)) revert Excluded();
+        if (isExcluded(account) || account == teamOf[id]) revert Excluded();
         (address coin, Currency pair,,,,,) = hook.config(id);
         bytes32 leaf = keccak256(
             bytes.concat(
@@ -191,9 +243,96 @@ contract KickbackDistributor {
         revert SweepNotEnabled();
     }
 
+    /// @notice Keeper pays a posted epoch. Dust, the team wallet, contracts, and protocol
+    ///         addresses roll into the next round. A transfer that fails stays claimable.
+    function push(
+        PoolId id,
+        uint64 epochId,
+        address[] calldata accounts,
+        uint256[] calldata amounts,
+        bytes32[][] calldata proofs
+    ) external returns (uint256 paid, uint256 rolled, uint256 failed) {
+        if (msg.sender != keeper || keeper == address(0)) revert NotKeeper();
+        uint256 n = accounts.length;
+        if (n == 0 || n != amounts.length || n != proofs.length) revert BadEpoch();
+        Epoch storage e = epochs[id][epochId];
+        if (e.funded == 0 || e.cancelled || e.postedAt == 0) revert BadEpoch();
+        if (block.timestamp < uint256(e.postedAt) + C.REVIEW_WINDOW) revert ReviewOpen();
+
+        uint256 gasStart = gasleft();
+        (address coin, Currency pair,,,,,) = hook.config(id);
+        address token = Currency.unwrap(pair);
+        address team = teamOf[id];
+        for (uint256 i; i < n; ++i) {
+            address account = accounts[i];
+            uint256 amount = amounts[i];
+            if (amount == 0 || claimed[id][epochId][account]) revert AlreadyClaimed();
+            if (uint256(e.claimed) + amount > e.funded) revert Cap();
+            bytes32 leaf = keccak256(
+                bytes.concat(keccak256(abi.encode(block.chainid, address(this), coin, token, epochId, account, amount)))
+            );
+            if (!MerkleProof.verifyCalldata(proofs[i], e.root, leaf)) revert BadProof();
+
+            claimed[id][epochId][account] = true;
+            e.claimed += uint128(amount);
+            if (amount < DUST || account == team || isExcluded(account) || account.code.length > 0) {
+                rollover[id] += amount;
+                rolled += amount;
+                emit KickbackRolled(id, epochId, account, amount);
+                continue;
+            }
+            if (!_tryPay(token, account, amount)) {
+                fallbackOf[id][epochId][account] = amount;
+                failed += amount;
+                emit KickbackFallback(id, epochId, account, amount);
+                continue;
+            }
+            liabilities[token] -= amount;
+            paid += amount;
+            emit KickbackPushed(id, epochId, account, amount);
+        }
+        _reimburse(id, epochId, token, e, paid, gasStart);
+    }
+
+    /// @notice Collect a push that the token refused. Pays at most once.
+    function claimFallback(PoolId id, uint64 epochId, address account) external {
+        uint256 amount = fallbackOf[id][epochId][account];
+        if (amount == 0) revert BadEpoch();
+        if (isExcluded(account) || account == teamOf[id] || account.code.length > 0) revert Excluded();
+        (, Currency pair,,,,,) = hook.config(id);
+        address token = Currency.unwrap(pair);
+        fallbackOf[id][epochId][account] = 0;
+        liabilities[token] -= amount;
+        if (!_tryPay(token, account, amount)) revert BadEpoch();
+        emit KickbackClaimed(id, epochId, account, amount);
+    }
+
     function isExcluded(address account) public view returns (bool) {
         return account == address(0) || account == C.DEAD || account == address(hook) || account == address(this)
             || account == poolManager || account == locker || account == vault || account == buybackExecutor;
+    }
+
+    function _reimburse(PoolId id, uint64 epochId, address token, Epoch storage e, uint256 paid, uint256 gasStart)
+        internal
+    {
+        if (block.chainid != 99901 || paid == 0) return;
+        uint256 used = gasStart - gasleft() + 45_000;
+        uint256 cost = used * tx.gasprice;
+        uint256 cap = paid * GAS_CAP_BPS / 10_000;
+        uint256 reimburse = cost < cap ? cost : cap;
+        uint256 remaining = uint256(e.funded) - uint256(e.claimed);
+        if (reimburse > remaining) reimburse = remaining;
+        if (reimburse == 0) return;
+        e.claimed += uint128(reimburse);
+        liabilities[token] -= reimburse;
+        IERC20(token).safeTransfer(keeper, reimburse);
+        emit KeeperReimbursed(id, epochId, keeper, reimburse);
+    }
+
+    function _tryPay(address token, address to, uint256 amount) internal returns (bool) {
+        (bool ok, bytes memory data) = token.call(abi.encodeCall(IERC20.transfer, (to, amount)));
+        if (!ok || data.length < 32) return false;
+        return abi.decode(data, (bool));
     }
 
     function _accountHour(uint256 amount) internal {
