@@ -31,13 +31,19 @@ contract BuybackExecutor {
     error Nothing();
     error AboveCap();
     error NotLocker();
-    error BuybackSwapDeferred(uint256 minOutFloor);
+    error NotKeeper();
+    error NotAdmin();
+    error TooSoon();
+    error ExceedsPot(uint256 pot);
 
     event BuybacksPausedSet(address indexed by);
     event BuybacksUnpaused();
     event PlatformTokenSet(PoolId indexed poolId, address indexed token);
     event RouteRegistered(address indexed pair, PoolId indexed poolId);
     event CoinSideBurned(PoolId indexed poolId, uint256 amount);
+    event KeeperSet(address indexed previous, address indexed next);
+    /// @dev The floor is reserved. The swap itself is not executed in this milestone.
+    event BuybackReserved(PoolId indexed poolId, uint256 amountIn, uint256 floor);
 
     struct Route {
         PoolId poolId;
@@ -48,6 +54,7 @@ contract BuybackExecutor {
     LaunchHook public hook;
     address public launcher;
     address public locker;
+    address public keeper;
     address public immutable initializer;
     Currency public immutable whype;
 
@@ -75,6 +82,13 @@ contract BuybackExecutor {
         hook = hook_;
         launcher = launcher_;
         locker = locker_;
+    }
+
+    /// @notice Admin can grant or revoke the keeper. The zero address revokes it.
+    function setKeeper(address next) external {
+        if (msg.sender != roles.admin()) revert NotAdmin();
+        emit KeeperSet(keeper, next);
+        keeper = next;
     }
 
     function setPlatform(PoolId id, address token) external {
@@ -149,9 +163,11 @@ contract BuybackExecutor {
     /// @notice Reserves the period cap, then returns the floor. The swap itself is still unwired.
     ///         The reservation persists, so a later revert cannot reset the cap.
     function buybackCoin(PoolId id, uint256 amountIn, uint256 minOut) external returns (uint256 effective) {
+        if (msg.sender != keeper || keeper == address(0)) revert NotKeeper();
         uint256 floor = _guard(id, amountIn, _inputIsCurrency0(id, _pairOf(id)));
-        _consume(id, amountIn);
+        _consume(id, amountIn, _burnPair(id));
         effective = TwapGuard.effectiveMin(floor, minOut);
+        emit BuybackReserved(id, amountIn, effective);
     }
 
     /// @notice WHYPE pairs guard the platform pool. Stock pairs sell the stock for WHYPE first.
@@ -182,13 +198,14 @@ contract BuybackExecutor {
         external
         returns (uint256 whypeFloor, uint256 platformFloor)
     {
+        if (msg.sender != keeper || keeper == address(0)) revert NotKeeper();
         (whypeFloor, platformFloor) = quotePlatform(pair, amountIn, minWhypeOut, minPlatformOut);
         if (Currency.unwrap(pair) != Currency.unwrap(whype)) {
-            _consume(whypeRoute[pair].poolId, amountIn);
-            _consume(platformPoolId, whypeFloor);
+            _consume(whypeRoute[pair].poolId, amountIn, _burnPair(whypeRoute[pair].poolId));
         } else {
-            _consume(platformPoolId, amountIn);
+            _consume(platformPoolId, amountIn, _burnPair(platformPoolId));
         }
+        emit BuybackReserved(platformPoolId, amountIn, platformFloor);
     }
 
     function _guard(PoolId id, uint256 amountIn, bool zeroForOne) internal view returns (uint256 floor) {
@@ -217,17 +234,20 @@ contract BuybackExecutor {
         return Currency.unwrap(input) == Currency.unwrap(c0);
     }
 
-    /// @dev Rolling window. A new period starts after `BUYBACK_INTERVAL`. The spent sum survives the call.
-    function _consume(PoolId id, uint256 amountIn) internal {
+    function _burnPair(PoolId id) internal view returns (uint256) {
+        (,,, uint128 burnPair,) = hook.pots(id);
+        return burnPair;
+    }
+
+    /// @dev One buyback per `BUYBACK_INTERVAL`, sized to the burn-pair pot and the per-call cap.
+    ///      The next window opens only after the interval, so a boundary cannot reserve two caps.
+    function _consume(PoolId id, uint256 amountIn, uint256 pot) internal {
         if (amountIn == 0) revert Nothing();
+        if (lastBuybackAt[id] != 0 && block.timestamp < lastBuybackAt[id] + C.BUYBACK_INTERVAL) revert TooSoon();
+        if (amountIn > pot) revert ExceedsPot(pot);
         if (amountIn > maxInPerPeriod) revert AboveCap();
-        uint256 start = periodStart[id];
-        if (start == 0 || block.timestamp >= start + C.BUYBACK_INTERVAL) {
-            periodStart[id] = block.timestamp;
-            spentInPeriod[id] = 0;
-        }
-        if (spentInPeriod[id] + amountIn > maxInPerPeriod) revert AboveCap();
-        spentInPeriod[id] += amountIn;
+        periodStart[id] = block.timestamp;
+        spentInPeriod[id] = amountIn;
         lastBuybackAt[id] = block.timestamp;
     }
 

@@ -41,8 +41,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="nav-spacer" />
         <div className="chain-pill">ELYSIUM TESTNET · 99801</div>
-        <Button variant="ghost" type="button" onClick={toggle} aria-pressed={theme === "dark"} aria-label="Color theme">
-          {theme === "light" ? "Dark" : "Light"}
+        <Button variant="ghost" type="button" className="theme-toggle" onClick={toggle} aria-pressed={theme === "dark"} aria-label={theme === "light" ? "Switch to dark" : "Switch to light"}>
+          Aa
         </Button>
         <WalletButton />
       </header>

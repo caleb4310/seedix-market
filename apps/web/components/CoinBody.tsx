@@ -7,8 +7,13 @@ import { modeLabel } from "@/lib/mock";
 import { Price } from "@/components/Price";
 import { Claims } from "@/components/TradePanel";
 
+function shortAddress(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value;
+}
+
 export function CoinBody({ coin }: { coin: Coin }) {
   const [now, setNow] = useState(coin.ageSec);
+  const [copied, setCopied] = useState(false);
   useEffect(() => {
     const id = window.setInterval(() => setNow((n) => n + 1), 1000);
     return () => window.clearInterval(id);
@@ -66,7 +71,20 @@ export function CoinBody({ coin }: { coin: Coin }) {
         </svg>
         <p className="address-chip">
           <span>Contract</span>
-          <span>{coin.recipient}</span>
+          <span className="addr-short">{shortAddress(coin.recipient)}</span>
+          <span className="addr-full">{coin.recipient}</span>
+          <button
+            className="text-link copy-btn"
+            type="button"
+            onClick={() => {
+              void navigator.clipboard.writeText(coin.recipient).then(() => {
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1500);
+              });
+            }}
+          >
+            {copied ? "Copied" : "Copy"}
+          </button>
         </p>
         <p className="copy">
           Creator {coin.creator}. {coin.holders} holders. The hook fee above 1% burns the coin for the first 10 seconds.

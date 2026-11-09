@@ -34,7 +34,7 @@ After 10 seconds `hookPips` is `10_000`, so the base is the whole fee and the ex
 | Base, coin side | Creator coin pot | Creator coin pot | Burn-coin pot | Burn-coin pot |
 | Excess, either side, during the 10s | Burn pot of that side, in every mode | same | same | same |
 
-The excess is what buys the coin back (pair token, via `burnPair`) or is burned directly (coin, via `burnCoin`). `burnCoinSide` calls `LaunchToken.burn`, which reduces `totalSupply`. Pair-side buyback swaps are guarded and currently revert with `BuybackSwapDeferred` after the guard; the pots still account the tokens.
+The excess is what buys the coin back (pair token, via `burnPair`) or is burned directly (coin, via `burnCoin`). `burnCoinSide` calls `LaunchToken.burn`, which reduces `totalSupply`. Pair-side buybacks are keeper-only. Each one is sized to the burn-pair pot, waits `BUYBACK_INTERVAL`, and emits `BuybackReserved`. The swap itself is still unwired.
 
 The platform fee is always in the pair token. On a normal pool it splits `burn = plat/2`, `wallet = plat - burn`. On the platform token the wallet share is zero and the whole platform fee is burned.
 

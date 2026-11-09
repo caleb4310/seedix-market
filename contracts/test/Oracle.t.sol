@@ -31,6 +31,7 @@ contract OracleTest is Fixture {
     }
 
     function test_buybackNeedsTheWindow() public {
+        _buy(id, 20 ether);
         vm.expectRevert(BuybackExecutor.YoungPool.selector);
         d.executor.buybackCoin(id, 1 ether, 1);
         vm.warp(block.timestamp + C.TWAP_WINDOW);
@@ -86,6 +87,7 @@ contract OracleTest is Fixture {
     ///      for every idle second after it. The cumulative now keeps the honest seconds, and the
     ///      tail after the last accrual uses the live tick, so the 30-minute TWAP is not pinned.
     function test_R_oracleStaleExtrapolationPinsTwap() public {
+        _buy(id, 5 ether);
         vm.warp(vm.getBlockTimestamp() + 31 minutes);
         _buy(id, 2_000 ether);
         int24 honest = _spot(id);
@@ -118,18 +120,22 @@ contract OracleTest is Fixture {
 
         uint256 floor = d.executor.buybackCoin(id, 1 ether, 1);
         assertGt(floor, 0);
-        vm.expectRevert(BuybackExecutor.AboveCap.selector);
-        d.executor.buybackCoin(id, 50_000 ether, 1);
+        vm.expectRevert(BuybackExecutor.TooSoon.selector);
+        d.executor.buybackCoin(id, 1 ether, 1);
     }
 
     function test_periodCapSurvivesASecondCall() public {
-        vm.warp(vm.getBlockTimestamp() + C.TWAP_WINDOW);
-        d.executor.buybackCoin(id, 30_000 ether, 1);
-        vm.expectRevert(BuybackExecutor.AboveCap.selector);
-        d.executor.buybackCoin(id, 30_000 ether, 1);
-        assertEq(d.executor.spentInPeriod(id), 30_000 ether);
+        _buy(id, 20 ether);
+        vm.warp(vm.getBlockTimestamp() + C.TWAP_WINDOW + 1);
+        vm.prank(admin);
+        d.executor.setMaxInPerPeriod(2 ether);
+        d.executor.buybackCoin(id, 2 ether, 1);
+        vm.expectRevert(BuybackExecutor.TooSoon.selector);
+        d.executor.buybackCoin(id, 1 ether, 1);
+        assertEq(d.executor.spentInPeriod(id), 2 ether);
         vm.warp(vm.getBlockTimestamp() + C.BUYBACK_INTERVAL);
-        d.executor.buybackCoin(id, 30_000 ether, 1);
-        assertEq(d.executor.spentInPeriod(id), 30_000 ether);
+        vm.expectRevert(BuybackExecutor.AboveCap.selector);
+        d.executor.buybackCoin(id, 2 ether + 1, 1);
+        assertEq(d.executor.spentInPeriod(id), 2 ether);
     }
 }

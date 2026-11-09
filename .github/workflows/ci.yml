@@ -38,7 +38,6 @@ jobs:
   slither:
     name: slither
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,7 +47,9 @@ jobs:
         run: pipx install slither-analyzer
       - name: Slither
         working-directory: contracts
-        run: slither . --exclude-dependencies --fail-none || true
+        run: |
+          slither . --exclude-dependencies --fail-none --json slither.json
+          python3 script/check-slither.py slither.json ../docs/slither-triage.md
 
   web:
     name: web
@@ -64,6 +65,12 @@ jobs:
       - run: node apps/web/scripts/check-css.mjs
       - run: npm run typecheck -w @seedix/web
       - run: npm run build -w @seedix/web
+      - name: Install Playwright
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+      - name: No horizontal overflow
+        working-directory: apps/web
+        run: npx playwright test
 
   services:
     name: services

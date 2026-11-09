@@ -17,7 +17,10 @@ export default async function CoinPage({
   const coin = getCoin(id);
   if (!coin) notFound();
   const side = query.side === "sell" ? "sell" : "buy";
-  const preview = previews.has(query.state ?? "") ? (query.state as TradePreview) : undefined;
+  const preview =
+    process.env.NODE_ENV !== "production" && previews.has(query.state ?? "")
+      ? (query.state as TradePreview)
+      : undefined;
   return (
     <div className="coin-layout">
       <CoinBody coin={coin} />

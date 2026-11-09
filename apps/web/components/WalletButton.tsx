@@ -10,7 +10,7 @@ export function NoWalletHelp() {
     <div className="status" data-tone="error" role="alert">
       <strong>No wallet in this browser</strong>
       <p className="note">Install a browser wallet, then reload this page. Seedix connects on Elysium testnet (99801).</p>
-      <a href="https://metamask.io/download/">Install MetaMask</a>
+      <a className="text-link" href="https://metamask.io/download/">Install MetaMask</a>
     </div>
   );
 }
@@ -19,7 +19,7 @@ function walletInstalled(): boolean {
   return typeof window !== "undefined" && typeof window.ethereum !== "undefined";
 }
 
-export function WalletButton({ forceHelp = false }: { forceHelp?: boolean }) {
+export function WalletButton({ forceHelp = false, prominent = false }: { forceHelp?: boolean; prominent?: boolean }) {
   const [help, setHelp] = useState(forceHelp);
 
   return (
@@ -27,7 +27,7 @@ export function WalletButton({ forceHelp = false }: { forceHelp?: boolean }) {
       {({ account, chain, openAccountModal, openChainModal, openConnectModal, mounted }) => {
         if (!mounted) {
           return (
-            <Button variant="secondary" type="button" disabled>
+            <Button variant={prominent ? "accent" : "secondary"} block={prominent} type="button" disabled>
               <span className="wide">Connect wallet</span>
               <span className="narrow">Connect</span>
             </Button>
@@ -38,7 +38,8 @@ export function WalletButton({ forceHelp = false }: { forceHelp?: boolean }) {
           return (
             <div className="wallet-help">
               <Button
-                variant="secondary"
+                variant={prominent ? "accent" : "secondary"}
+                block={prominent}
                 type="button"
                 onClick={() => {
                   if (!walletInstalled()) {

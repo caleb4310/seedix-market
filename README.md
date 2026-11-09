@@ -70,6 +70,16 @@ PRIVATE_KEY=$ANVIL_ACCOUNT_0 forge script script/Deploy.s.sol --rpc-url http://1
 
 The script reverts if `block.chainid` is anything other than 99801 or 31337. Add `--broadcast` only when the RPC is local Anvil and you want the deployment kept.
 
+Dry-run against Elysium testnet. This does not broadcast. `ADMIN` is the wallet that receives the roles. `PRIVATE_KEY` is only the deployer key used for the simulation.
+
+```bash
+cd contracts
+ADMIN=0xYourAdminAddress PRIVATE_KEY=0xDeployerSimulationKey \
+  forge script script/Deploy.s.sol --rpc-url https://testnet-rpc.elysium.kinetiq.xyz
+```
+
+Do not pass `--broadcast`. Mainnet (99901) is not this script.
+
 On Anvil, Permit2 is not at the canonical address, so the script deploys a stand-in and points PositionManager at it. On 99801 the real Permit2 is reused.
 
 ## Web
@@ -110,4 +120,4 @@ Backups: `infra/backup/nightly-pg-dump.sh` dumps only the `launchpad` database t
 
 Real: fee math, pot accounting, 6909 debits, oracle cadence, launch and seed, creator and wallet claims, Kickback fund / root / claim / cancel, coin `burn()`, timelocked fee wallet, guardian pause.
 
-Skeleton: buyback swaps (guards run, then `BuybackSwapDeferred`), Kickback sweep, indexer, API, keeper, and the web transaction path.
+Skeleton: buyback swaps (a keeper reserves the pot, then `BuybackReserved`; the swap is still unwired), Kickback sweep, indexer, API, and the keeper service. The web trade card quotes with V4Quoter when `NEXT_PUBLIC_ROUTER`, `NEXT_PUBLIC_QUOTER`, and `NEXT_PUBLIC_STATE_VIEW` are set, and refuses to sign without that quote.

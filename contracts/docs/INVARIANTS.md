@@ -8,7 +8,7 @@ Handlers live in `test/invariant/handlers/FeeHandler.sol`. `FeeHandler._afterAct
 | F-2 | Done | `invariant_platformFeeNotInCoin`, sell test |
 | F-6 | Done, within 0.3% | `ExactOutTest.test_exactOutBuyIsCloseToExactIn` on two fresh pools |
 | F-7 | Partial | Exact-in sell is tested to the wei. Exact-out sell checks pot conservation, not 1-wei parity |
-| F-4 exempt | Stubbed | The check is `sender == buybackExecutor`. The executor does not swap yet (`BuybackSwapDeferred`) |
+| F-4 exempt | Stubbed | The check is `sender == buybackExecutor`. The executor reserves a buyback and does not swap yet |
 | F-8 quoter parity | Stubbed | V4Quoter is deployed by the script. No differential test yet |
 | F-10 partial fill | Documented | `docs/fees.md`. Not changed |
 | F-11, F-12 | Partial | Safe casts. Dust is allowed to round to zero |

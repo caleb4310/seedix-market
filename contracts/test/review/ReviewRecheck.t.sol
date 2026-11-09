@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-// Sentinel recheck tests for PR #1 fix commit 8f52cdc9 (local only, not for the PR).
+// Sentinel recheck tests. The oracle fuzz bound is the 30s ring granularity, not the old max-jump tolerance.
 import {Test} from "forge-std/Test.sol";
 import {Fixture} from "../utils/Fixture.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -130,6 +130,15 @@ contract ReviewRecheckOracleTest is Fixture {
 
     /// Variant 4: random schedule, sub-30s gaps allowed. Error bounded by the 30s ring granularity.
     function testFuzz_RC_oracleMatchesGroundTruth(uint256 seed) public {
+        _runGroundTruth(seed);
+    }
+
+    /// Counterexample found at 5000 runs in recheck 2 with the old (maxJump-based) bound.
+    function test_RC_oracleGroundTruthCounterexample() public {
+        _runGroundTruth(46585834548701241845917376749500778416904044229896149993519178833012716);
+    }
+
+    function _runGroundTruth(uint256 seed) internal {
         uint256 maxJump;
         int24 prev = _spot(id);
         for (uint256 i = 0; i < 40; i++) {
@@ -151,8 +160,22 @@ contract ReviewRecheckOracleTest is Fixture {
         vm.warp(vm.getBlockTimestamp() + (seed % 90));
         (int24 twap,) = _twap();
         int24 truth = _truth(C.TWAP_WINDOW);
-        // ring interpolation can misplace at most <30s of one sub-30s tick move: 30/1800 * jump
-        uint256 tol = (maxJump * 30) / C.TWAP_WINDOW + 1;
+        // Ring interpolation spreads the tick moves made within <30s after a ring write over the
+        // whole gap to the next write. Bound: 30s x (tick range inside any 30s span) / window + 1.
+        uint256 range;
+        for (uint256 a = 0; a < ts.length; a++) {
+            int24 lo = a == 0 ? ticks[0] : ticks[a - 1];
+            int24 hi = lo;
+            for (uint256 b = a; b < ts.length && ts[b] < ts[a] + 30; b++) {
+                if (ticks[b] < lo) lo = ticks[b];
+                if (ticks[b] > hi) hi = ticks[b];
+            }
+            if (_absd(hi, lo) > range) range = _absd(hi, lo);
+        }
+        uint256 tol = (range * 30) / C.TWAP_WINDOW + 1;
+        emit log_named_uint("err", _absd(twap, truth));
+        emit log_named_uint("old tol (maxJump)", (maxJump * 30) / C.TWAP_WINDOW + 1);
+        emit log_named_uint("tol (30s range)", tol);
         assertLe(_absd(twap, truth), tol, "twap within ring-granularity bound of ground truth");
     }
 

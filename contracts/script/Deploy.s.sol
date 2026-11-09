@@ -52,9 +52,6 @@ contract DeploySeedix is Script {
     address internal constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
     address internal constant WHYPE_99801 = 0xCD57F65c2B0e5881CFC2E609F7CD53b746E1F234;
     address internal constant USDC_99801 = 0x7D29d8047B905000459c0E80c34a26CeedcB47b2;
-    address internal constant WHYPE_99901 = 0xbA876237B0F021A6c6D852d6c26E107997cC5E81;
-    /// @dev No canonical USDC is recorded for 99901. The zero address has no code, so that deploy reverts.
-    address internal constant USDC_99901 = address(0);
 
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
@@ -65,9 +62,7 @@ contract DeploySeedix is Script {
 
     /// @dev `admin` receives the admin, guardian, proposer, and executor roles. The broadcasting key keeps none.
     function deploy(uint256 pk, address admin, address publisher) public {
-        if (block.chainid != 99801 && block.chainid != 99901 && block.chainid != 31337) {
-            revert ForbiddenChain(block.chainid);
-        }
+        if (block.chainid != 99801 && block.chainid != 31337) revert ForbiddenChain(block.chainid);
         address deployer = vm.addr(pk);
         if (admin == address(0)) admin = deployer;
         if (publisher == address(0)) publisher = admin;
@@ -183,7 +178,7 @@ contract DeploySeedix is Script {
         console2.logBytes32(address(hook).codehash);
     }
 
-    /// @dev Canonical code is required on 99801 and 99901. Mocks exist only on local Anvil.
+    /// @dev Canonical code is required on 99801. Mocks exist only on local Anvil. Mainnet is a separate script.
     function _canonicalOrMock(address admin) internal returns (address whype, address usdc, address permit2) {
         if (block.chainid == 31337) {
             permit2 = PERMIT2.code.length == 0 ? _deployPermit2(admin) : PERMIT2;
@@ -193,20 +188,12 @@ contract DeploySeedix is Script {
             usdc = USDC_99801.code.length == 0 ? address(new MockXStock("USD Coin", "USDC", 6, admin)) : USDC_99801;
             return (whype, usdc, permit2);
         }
+        if (block.chainid != 99801) revert ForbiddenChain(block.chainid);
         _requireCode(CREATE2_DEPLOYER);
-        if (block.chainid == 99801) {
-            whype = WHYPE_99801;
-            usdc = USDC_99801;
-        } else if (block.chainid == 99901) {
-            whype = WHYPE_99901;
-            usdc = USDC_99901;
-        } else {
-            revert ForbiddenChain(block.chainid);
-        }
-        _requireCode(whype);
-        _requireCode(usdc);
+        _requireCode(WHYPE_99801);
+        _requireCode(USDC_99801);
         _requireCode(PERMIT2);
-        return (whype, usdc, PERMIT2);
+        return (WHYPE_99801, USDC_99801, PERMIT2);
     }
 
     function _requireCode(address target) internal view {

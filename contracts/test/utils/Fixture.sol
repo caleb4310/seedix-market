@@ -49,6 +49,8 @@ contract Fixture is Test {
                 })
             );
         whype.approve(address(router), type(uint256).max);
+        vm.prank(admin);
+        d.executor.setKeeper(address(this));
     }
 
     function _params(address pair, uint8 mode, uint16 teamBps, address team)

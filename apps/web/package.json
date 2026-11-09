@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit && node scripts/check-css.mjs",
+    "lint": "tsc --noEmit && node scripts/check-css.mjs && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test lib/amounts.test.ts",
+    "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "@types/node": "^22.19.0",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "@playwright/test": "^1.55.0"
   }
 }

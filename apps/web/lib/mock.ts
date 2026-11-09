@@ -17,6 +17,7 @@ export type Coin = {
   tokenAddress?: `0x${string}`;
   pairAddress?: `0x${string}`;
   hooks?: `0x${string}`;
+  poolId?: `0x${string}`;
 };
 
 

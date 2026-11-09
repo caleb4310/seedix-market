@@ -1,0 +1,16 @@
+import { defineConfig } from "@playwright/test";
+
+const port = 3010;
+
+export default defineConfig({
+  testDir: "./e2e",
+  fullyParallel: true,
+  retries: process.env.CI ? 1 : 0,
+  use: { baseURL: `http://127.0.0.1:${port}` },
+  webServer: {
+    command: `npm run start -- --port ${port}`,
+    url: `http://127.0.0.1:${port}`,
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+  },
+});

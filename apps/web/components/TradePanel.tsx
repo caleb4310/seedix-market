@@ -1,20 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount, useChainId, useReadContract, useSwitchChain, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
-import { parseUnits } from "viem";
+import { useAccount, useChainId, useReadContract, useReadContracts, useSimulateContract, useSwitchChain, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { hookPips, fees } from "@/lib/tokens";
 import { modeLabel, type Coin } from "@/lib/mock";
 import { elysiumTestnet } from "@/lib/chain";
+import { formatTokenAmount, minimumFromQuote, parseTokenAmount, sqrtPriceLimit } from "@/lib/amounts";
+import { DEFAULT_SLIPPAGE_PCT, formatAmount, parseSlippage, type Side } from "@/lib/quote";
 import {
-  DEFAULT_SLIPPAGE_PCT,
-  formatAmount,
-  formatImpact,
-  parseSlippage,
-  tradeQuote,
-  type Side,
-} from "@/lib/quote";
-import { erc20Abi, explorerTx, explainTxError, priceLimit, routerAbi, routerAddress } from "@/lib/trade";
+  decimalsAbi,
+  erc20Abi,
+  explorerTx,
+  explainTxError,
+  quoterAbi,
+  quoterAddress,
+  routerAbi,
+  routerAddress,
+  stateViewAbi,
+  stateViewAddress,
+} from "@/lib/trade";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Field";
@@ -71,17 +75,63 @@ export function TradePanel({
   const left = Math.max(0, fees.decaySeconds - elapsed);
   const gross = Number(amount) || 0;
   const slip = parseSlippage(slippage);
-  const quote = tradeQuote({
-    side,
-    amount: gross,
-    price: coin.price,
-    mcap: coin.mcap,
-    hookPips: hook,
-    slippagePct: slip.ok ? slip.pct : 0,
-  });
-  const receiveUnit = quote.receiveUnit === "coin" ? coin.ticker : coin.pair;
-  const hookUnit = quote.hookUnit === "coin" ? coin.ticker : coin.pair;
+  const receiveUnit = side === "buy" ? coin.ticker : coin.pair;
+  const hookUnit = side === "buy" ? coin.pair : coin.ticker;
   const spendToken = side === "buy" ? coin.pairAddress : coin.tokenAddress;
+  const receiveToken = side === "buy" ? coin.tokenAddress : coin.pairAddress;
+  const decimals = useReadContracts({
+    contracts: [
+      { address: spendToken, abi: decimalsAbi, functionName: "decimals" },
+      { address: receiveToken, abi: decimalsAbi, functionName: "decimals" },
+    ],
+    query: { enabled: Boolean(spendToken && receiveToken) },
+  });
+  const spendDecimals = decimals.data?.[0]?.status === "success" ? Number(decimals.data[0].result) : undefined;
+  const receiveDecimals = decimals.data?.[1]?.status === "success" ? Number(decimals.data[1].result) : undefined;
+  const coinIsToken0 = Boolean(coin.coinIsToken0);
+  const zeroForOne = side === "buy" ? !coinIsToken0 : coinIsToken0;
+  const poolReady = Boolean(coin.tokenAddress && coin.pairAddress && coin.hooks && coin.poolId);
+  let spendAmount: bigint | undefined;
+  try {
+    spendAmount = spendDecimals !== undefined && gross > 0 ? parseTokenAmount(amount, spendDecimals) : undefined;
+  } catch {
+    spendAmount = undefined;
+  }
+  const quoted = useSimulateContract({
+    address: quoterAddress || undefined,
+    abi: quoterAbi,
+    functionName: "quoteExactInputSingle",
+    args:
+      poolReady && quoterAddress && spendAmount && spendAmount <= 2n ** 128n - 1n
+        ? [
+            {
+              poolKey: {
+                currency0: coinIsToken0 ? coin.tokenAddress! : coin.pairAddress!,
+                currency1: coinIsToken0 ? coin.pairAddress! : coin.tokenAddress!,
+                fee: 1000,
+                tickSpacing: 60,
+                hooks: coin.hooks!,
+              },
+              zeroForOne,
+              exactAmount: spendAmount,
+              hookData: "0x",
+            },
+          ]
+        : undefined,
+    query: { enabled: Boolean(poolReady && quoterAddress && spendAmount) },
+  });
+  const slot0 = useReadContract({
+    address: stateViewAddress || undefined,
+    abi: stateViewAbi,
+    functionName: "getSlot0",
+    args: coin.poolId ? [coin.poolId] : undefined,
+    query: { enabled: Boolean(stateViewAddress && coin.poolId) },
+  });
+  const amountOut = quoted.data?.result?.[0];
+  const minOut =
+    amountOut !== undefined && slip.ok ? minimumFromQuote(amountOut, slip.pct) : undefined;
+  const sqrtLimit =
+    slot0.data && slip.ok ? sqrtPriceLimit(slot0.data[0], zeroForOne, slip.pct) : undefined;
   const onNetwork = isConnected && chainId === elysiumTestnet.id;
   const allowance = useReadContract({
     address: spendToken,
@@ -92,7 +142,8 @@ export function TradePanel({
   });
 
   const needsConfirm = decaying;
-  const ready = gross > 0 && slip.ok && (!needsConfirm || confirmed);
+  const quoteReady = Boolean(minOut && sqrtLimit && spendAmount && spendDecimals !== undefined);
+  const ready = gross > 0 && slip.ok && quoteReady && (!needsConfirm || confirmed);
 
   async function submit(kind: "approve" | "swap") {
     if (!address || !routerAddress || !coin.tokenAddress || !coin.pairAddress || !coin.hooks) {
@@ -100,9 +151,12 @@ export function TradePanel({
       setErrorText("This coin is mock data. The router is not deployed on Elysium testnet, so no transaction was sent.");
       return;
     }
+    if (!spendAmount || spendDecimals === undefined || !minOut || !sqrtLimit || !coin.tokenAddress || !coin.pairAddress || !coin.hooks) {
+      setPhase("error");
+      setErrorText("Quote unavailable. Nothing was sent.");
+      return;
+    }
     const tokenIn = side === "buy" ? coin.pairAddress : coin.tokenAddress;
-    const coinIsToken0 = Boolean(coin.coinIsToken0);
-    const zeroForOne = side === "buy" ? !coinIsToken0 : coinIsToken0;
     try {
       setPhase(kind);
       const tx =
@@ -111,7 +165,7 @@ export function TradePanel({
               address: tokenIn,
               abi: erc20Abi,
               functionName: "approve",
-              args: [routerAddress, parseUnits(amount || "0", 18)],
+              args: [routerAddress, spendAmount],
               chainId: elysiumTestnet.id,
             })
           : await writeContractAsync({
@@ -127,10 +181,10 @@ export function TradePanel({
                   hooks: coin.hooks,
                 },
                 zeroForOne,
-                -parseUnits(amount || "0", 18),
-                parseUnits(Math.max(quote.minReceived, 0).toFixed(18), 18),
+                -spendAmount,
+                minOut,
                 BigInt(Math.floor(Date.now() / 1000) + 20 * 60),
-                priceLimit(zeroForOne),
+                sqrtLimit,
               ],
               chainId: elysiumTestnet.id,
             });
@@ -143,10 +197,12 @@ export function TradePanel({
   }
 
   const allowanceLow =
-    allowance.data !== undefined && spendToken !== undefined && allowance.data < parseUnits(amount || "0", 18);
+    allowance.data !== undefined && spendAmount !== undefined && allowance.data < spendAmount;
+  const reverted = Boolean(hash) && (receipt.data?.status === "reverted" || receipt.isError);
   const showApproval = preview === "approval" || (phase === "approve" && !receipt.isSuccess) || (ready && onNetwork && allowanceLow && phase === "idle");
   const showPending = preview === "pending" || (Boolean(hash) && receipt.isLoading);
-  const showSuccess = preview === "success" || (Boolean(hash) && receipt.isSuccess && phase === "swap");
+  const showSuccess = preview === "success" || (Boolean(hash) && receipt.isSuccess && receipt.data?.status === "success" && phase === "swap");
+  const showReverted = Boolean(hash) && reverted && preview !== "success" && preview !== "pending";
   const showError = preview === "error" || phase === "error";
   const shownHash = preview === "pending" || preview === "success" ? EXAMPLE_HASH : hash;
 
@@ -185,43 +241,56 @@ export function TradePanel({
         <div className="fee-warn" role="alert">
           <strong>Hook fee is {pct(hook)}</strong>
           <p>
-            Fee drops to 1% in {left}s. This {side} pays {formatAmount(quote.hookAmt)} {hookUnit} to the hook, on top of the 1% platform fee.
+            Fee drops to 1% in {left}s. This {side} pays {formatAmount(gross * (hook / 1_000_000))} {hookUnit} to the hook, on top of the 1% platform fee.
           </p>
         </div>
+      ) : null}
+      {!quoteReady && preview !== "approval" ? (
+        <p className={poolReady && quoterAddress ? "field-error" : "note"}>
+          {poolReady && quoterAddress
+            ? "Quote unavailable. Signing stays off until the on-chain quote succeeds."
+            : "This coin is not on the testnet router yet. Signing stays off."}
+        </p>
       ) : null}
       <dl className="receipt">
         <div>
           <dt>{side === "sell" ? "You receive" : "You receive ≈"}</dt>
           <dd>
-            {formatAmount(quote.received)} {receiveUnit}
+            {amountOut !== undefined && receiveDecimals !== undefined
+              ? `${formatTokenAmount(amountOut, receiveDecimals)} ${receiveUnit}`
+              : "—"}
           </dd>
         </div>
         <div>
-          <dt>Min received · {slip.ok ? slip.pct : slippage}% slippage</dt>
+          <dt>Minimum received · {slip.ok ? slip.pct : slippage}% slippage</dt>
           <dd>
-            {slip.ok ? formatAmount(quote.minReceived) : "—"} {receiveUnit}
+            {minOut !== undefined && receiveDecimals !== undefined
+              ? `${formatTokenAmount(minOut, receiveDecimals)} ${receiveUnit}`
+              : "—"}
           </dd>
         </div>
         <div>
-          <dt>Price impact</dt>
-          <dd>{formatImpact(quote.impact)}</dd>
+          <dt>Price limit</dt>
+          <dd>{sqrtLimit ? "From the quote and your slippage" : "—"}</dd>
         </div>
         <div>
           <dt>Platform 1%</dt>
           <dd>
-            {formatAmount(quote.platAmt)} {coin.pair}
+            {side === "sell" ? "Taken from the received pair token" : `${formatAmount(gross * 0.01)} ${coin.pair}`}
           </dd>
         </div>
         <div>
           <dt>Hook {pct(hook)}</dt>
           <dd>
-            {formatAmount(quote.hookAmt)} {hookUnit}
+            {formatAmount(gross * (hook / 1_000_000))} {hookUnit}
           </dd>
         </div>
         <div>
           <dt>LP 0.10%</dt>
           <dd>
-            {formatAmount(quote.lpAmt)} {side === "buy" ? coin.pair : coin.ticker}
+            {side === "sell"
+              ? `${formatAmount(gross * 0.001)} ${coin.ticker}`
+              : `${formatAmount(Math.max(0, gross - gross * (hook / 1_000_000) - gross * 0.01) * 0.001)} ${coin.pair}`}
           </dd>
         </div>
         <div>
@@ -256,7 +325,15 @@ export function TradePanel({
         <div className="status" role="status">
           <strong>{phase === "approve" || preview === "pending" ? "Waiting for confirmation" : "Swap pending"}</strong>
           <p className="note">The transaction is in flight. This page updates when it is mined.</p>
-          <a href={explorerTx(shownHash)}>{shownHash.slice(0, 10)}…{shownHash.slice(-6)}</a>
+          <a className="text-link" href={explorerTx(shownHash)}>{shownHash.slice(0, 10)}…{shownHash.slice(-6)}</a>
+        </div>
+      ) : null}
+
+      {showReverted && hash ? (
+        <div className="status" data-tone="error" role="alert">
+          <strong>Reverted</strong>
+          <p className="note">The transaction was mined and then reverted. Nothing was exchanged.</p>
+          <a className="text-link" href={explorerTx(hash)}>{hash.slice(0, 10)}…{hash.slice(-6)}</a>
         </div>
       ) : null}
 
@@ -264,7 +341,7 @@ export function TradePanel({
         <div className="status" data-tone="ok" role="status">
           <strong>Confirmed</strong>
           <p className="note">The swap was mined. Minimum received was sent with the transaction.</p>
-          <a href={explorerTx(shownHash)}>{shownHash.slice(0, 10)}…{shownHash.slice(-6)}</a>
+          <a className="text-link" href={explorerTx(shownHash)}>{shownHash.slice(0, 10)}…{shownHash.slice(-6)}</a>
         </div>
       ) : null}
 
@@ -272,12 +349,14 @@ export function TradePanel({
         <div className="status" data-tone="error" role="alert">
           <strong>Not sent</strong>
           <p className="note">{preview === "error" ? "The wallet rejected the swap. Nothing moved." : errorText}</p>
-          {hash ? <a href={explorerTx(hash)}>{hash.slice(0, 10)}…{hash.slice(-6)}</a> : null}
+          {hash ? <a className="text-link" href={explorerTx(hash)}>{hash.slice(0, 10)}…{hash.slice(-6)}</a> : null}
         </div>
       ) : null}
 
       {!isConnected && preview !== "nowallet" ? (
-        <WalletButton />
+        <div className="stack-top">
+          <WalletButton prominent />
+        </div>
       ) : isConnected && chainId !== elysiumTestnet.id ? (
         <Button variant="accent" block type="button" onClick={() => switchChain({ chainId: elysiumTestnet.id })}>
           Switch to Elysium testnet
@@ -293,9 +372,7 @@ export function TradePanel({
           {needsConfirm && !confirmed ? `Confirm ${pct(hook)} fee` : isPending ? "Waiting for wallet" : `Sign ${side}`}
         </Button>
       )}
-      <p className="note">
-        A real swap sends amountOutMin or amountInMax, a 20 minute deadline, and a price limit. Nothing is marked confirmed until the chain returns a hash.
-      </p>
+      <p className="note">Includes slippage protection and a 20-minute expiry. Nothing is marked confirmed until the chain returns a hash.</p>
     </Card>
   );
 }
