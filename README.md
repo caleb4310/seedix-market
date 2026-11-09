@@ -140,7 +140,7 @@ Wallet connection uses RainbowKit on wagmi and viem. Elysium testnet (99801) is 
 
 ## Services and infra
 
-The indexer follows chain 99801 from the deploy block and writes launches, swaps, fees, buybacks, holder balances, and Kickback payouts into the host `launchpad` database. Migrations are `services/indexer/migrations/0001_init.sql` and `0002_activity.sql`. The API listens on port 3001 and serves `/coins`, charts, holders, swaps, kickbacks, buybacks, and `/portfolio/:address`. The Kickback publisher and the keeper are still skeletons. Set `DATABASE_URL` to the host database. No private key belongs in the indexer or the API.
+The indexer follows chain 99801 from the deploy block and writes launches, swaps, fees, buybacks, holder balances, and Kickback payouts into the host `launchpad` database. Migrations are `services/indexer/migrations/0001_init.sql`, `0002_activity.sql`, and `0003_reorg.sql`. The API listens on port 3001 and serves `/coins`, charts, holders, swaps, kickbacks, buybacks, and `/portfolio/:address`. The keeper signs buybacks and Kickback pushes. `KEEPER_PRIVATE_KEY` is a file path, not the key. Set `DATABASE_URL` to the host database. No private key belongs in the indexer or the API.
 
 `infra/docker-compose.yml` is project `launchpad` on network `launchpad_net`. Ports are `127.0.0.1` in the 18400 range. Kubo API 5001 is not published. There is no Postgres container. API and indexer mount the host socket and use role `launchpad`.
 
@@ -150,6 +150,8 @@ Backups: `infra/backup/nightly-pg-dump.sh` dumps only the `launchpad` database t
 
 ## What is real this week, and what is a skeleton
 
-Real: fee math, pot accounting, 6909 debits, oracle cadence, launch and seed, creator and wallet claims, Kickback fund / root / claim / cancel, Kickback auto-push, buyback swap and burn, the indexer, the read API, coin `burn()`, timelocked fee wallet, guardian pause.
+Real: fee math, pot accounting, 6909 debits, oracle cadence, launch and seed, creator and wallet claims, Kickback fund / root / claim / cancel, Kickback auto-push, buyback swap and burn, the indexer, the read API, the keeper, coin `burn()`, timelocked fee wallet, guardian pause.
 
-Skeleton: the Kickback publisher and the keeper service. The web trade card quotes with V4Quoter when `NEXT_PUBLIC_ROUTER`, `NEXT_PUBLIC_QUOTER`, and `NEXT_PUBLIC_STATE_VIEW` are set, and refuses to sign without that quote.
+The keeper signs buybacks on the 5 minute interval and Kickback pushes in batches of 32, then seals the round. Set `KEEPER_PRIVATE_KEY` to a path. That file is mode 600 and owned by root, or a Docker secret under `/run/secrets`. The key is not an environment value and it is never logged. A transaction whose fee or gas estimate is above `KEEPER_MAX_FEE_GWEI` or `KEEPER_MAX_GAS` is skipped. Manifests for `push` are JSON files in `KICKBACK_MANIFEST_DIR`. The keeper rebuilds the tree and skips a file whose root does not match the posted root.
+
+Skeleton: the Kickback publisher. The web trade card quotes with V4Quoter when `NEXT_PUBLIC_ROUTER`, `NEXT_PUBLIC_QUOTER`, and `NEXT_PUBLIC_STATE_VIEW` are set, and refuses to sign without that quote.
