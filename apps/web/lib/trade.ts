@@ -1,10 +1,15 @@
+import { deployment99801 } from "@seedix/shared";
 import { elysiumTestnet } from "./chain";
 
 export const MIN_SQRT_PRICE = 4295128739n;
 export const MAX_SQRT_PRICE = 1461446703485210103287273052203988822378723970342n;
 export const DEADLINE_SECONDS = 20 * 60;
 
-export const routerAddress = (process.env.NEXT_PUBLIC_ROUTER ?? "") as `0x${string}` | "";
+function envAddress(value: string | undefined, fallback: string): `0x${string}` {
+  return (value && value.length > 0 ? value : fallback) as `0x${string}`;
+}
+
+export const routerAddress = envAddress(process.env.NEXT_PUBLIC_ROUTER, deployment99801.router);
 
 export const erc20Abi = [
   {
@@ -56,8 +61,8 @@ export const routerAbi = [
   },
 ] as const;
 
-export const quoterAddress = (process.env.NEXT_PUBLIC_QUOTER ?? "") as `0x${string}` | "";
-export const stateViewAddress = (process.env.NEXT_PUBLIC_STATE_VIEW ?? "") as `0x${string}` | "";
+export const quoterAddress = envAddress(process.env.NEXT_PUBLIC_QUOTER, deployment99801.quoter);
+export const stateViewAddress = envAddress(process.env.NEXT_PUBLIC_STATE_VIEW, deployment99801.stateView);
 
 export const quoterAbi = [
   {
@@ -178,10 +183,11 @@ export const decimalsAbi = [
   },
 ] as const;
 
-export const launcherAddress = (process.env.NEXT_PUBLIC_LAUNCHER ?? "") as `0x${string}` | "";
-export const hookAddress = (process.env.NEXT_PUBLIC_HOOK ?? "") as `0x${string}` | "";
+export const launcherAddress = envAddress(process.env.NEXT_PUBLIC_LAUNCHER, deployment99801.launcher);
+export const hookAddress = envAddress(process.env.NEXT_PUBLIC_HOOK, deployment99801.hook);
+export const indexerStartBlock = BigInt(deployment99801.startBlock);
 
-const defaultExplorerTemplate = `${elysiumTestnet.blockExplorers.default.url}/tx/{hash}`;
+const defaultExplorerTemplate = deployment99801.explorerTxTemplate;
 
 /** `{hash}` is replaced with the transaction hash. Verify the path on the first testnet transaction. */
 export function explorerTx(hash: string): string {

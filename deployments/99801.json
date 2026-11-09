@@ -1,0 +1,39 @@
+{
+  "chainId": 99801,
+  "name": "Elysium Testnet",
+  "rpcUrl": "https://testnet-rpc.elysium.kinetiq.xyz",
+  "explorerTxTemplate": "https://explorer-elysium-testnet.t.conduit.xyz/tx/{hash}",
+  "deployTx": "0xe8f763ae3146d0c59b3acf7b184411bd50a9f3d102e0bd79b990211647c6cb73",
+  "startBlock": 26803633,
+  "contracts": {
+    "poolManager": "0x41776AAa3441ED4C80F02BF97E48160fB0277746",
+    "positionManager": "0x989005D685115B80cdE348829914Ae7431264f8E",
+    "stateView": "0x0F99A9df2A94695934fdF753f2309A633651FcaE",
+    "v4Quoter": "0x73FAC4Fa0b0300eA98F464DFC175CA882Ec00ea6",
+    "seedixRouter": "0x2051f1087D1E5B427071dce49f64c413902C900E",
+    "timelock": "0x4A2C5fcdbba47D190c7433b341c0Fca4522a0B24",
+    "seedixRoles": "0xB33bb6b7064b1A49500c3CD303829A8Aab453bec",
+    "launchTokenImplementation": "0x1cB5CF6d7EBa7a917819113178aff4cD25142857",
+    "feeVault": "0xb118257EEa9Cf1545DB92fBB3D6b64098a8253F0",
+    "buybackExecutor": "0x3999C34854d12E0E12bc3179559202Cb48D7c78D",
+    "kickbackDistributor": "0xDc5312c71313C01569865FFC30Bd3ba15a4B22Db",
+    "launchHook": "0x11250C2cD56d4E37a3f8390570A99703848768cC",
+    "liquidityLocker": "0xe3948C5B91Fa259BBb1c625b567Da8517b865dc3",
+    "launcher": "0xCe7F2E8d1B5e8B62f5a9FE81107f60992d97FdfB"
+  },
+  "tokens": {
+    "whype": "0xCD57F65c2B0e5881CFC2E609F7CD53b746E1F234",
+    "usdc": "0x7D29d8047B905000459c0E80c34a26CeedcB47b2",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "wNVDAx": "0x05ff981925a1F0651fc0bD2d77529bD4cD3c0Afc",
+    "wSPYx": "0xbDdcaf61d4b59e1237abECc1F580C3700513A198",
+    "wQQQx": "0x1b744f02AdF7bF36EBF7faC21db4183560cfac34",
+    "wMUx": "0xfb3d33CaB9028a8595B52049A4950C191a7501B8",
+    "wSKHYx": "0x59Be51e5Ab4529902daDA53B3A3067f28B5d6F5B"
+  },
+  "accounts": {
+    "feeWallet": "0xf4383D1Ecfb525294A266929c7D4796314a764F9",
+    "keeper": "0x6071b00861a449dfA741055F1E54343DDf7C1a42"
+  },
+  "notes": "Deployed from e836bd3 plus the admin-renounce fix. KickbackDistributor.publisher is the admin. Changing the publisher is a 48 hour timelock. LaunchHook.kickbackDistributor is immutable, so an auto-push distributor cannot be swapped in without a new protocol deploy."
+}

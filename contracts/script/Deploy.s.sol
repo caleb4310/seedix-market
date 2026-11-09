@@ -114,9 +114,12 @@ contract DeploySeedix is Script {
         tl.grantRole(tl.CANCELLER_ROLE(), admin);
         tl.grantRole(tl.PROPOSER_ROLE(), address(roles));
         tl.grantRole(tl.PROPOSER_ROLE(), address(vault));
-        tl.renounceRole(tl.PROPOSER_ROLE(), deployer);
-        tl.renounceRole(tl.EXECUTOR_ROLE(), deployer);
-        tl.renounceRole(tl.CANCELLER_ROLE(), deployer);
+        // When admin is the deployer, those grants are no-ops. Renouncing would strip the admin.
+        if (admin != deployer) {
+            tl.renounceRole(tl.PROPOSER_ROLE(), deployer);
+            tl.renounceRole(tl.EXECUTOR_ROLE(), deployer);
+            tl.renounceRole(tl.CANCELLER_ROLE(), deployer);
+        }
         tl.renounceRole(tl.DEFAULT_ADMIN_ROLE(), deployer);
 
         LaunchHook hook =

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import type { Coin, Mode } from "./coin";
-import { hookAddress, hookConfigAbi, launcherAbi, launcherAddress, tokenMetaAbi } from "./trade";
+import { hookAddress, hookConfigAbi, indexerStartBlock, launcherAbi, launcherAddress, tokenMetaAbi } from "./trade";
 
 export type Board = {
   status: "loading" | "ready" | "error";
@@ -36,7 +36,7 @@ export function useBoard(): Board {
         const logs = await client.getLogs({
           address: launcherAddress,
           event: launcherAbi[0],
-          fromBlock: 0n,
+          fromBlock: indexerStartBlock,
           toBlock: "latest",
         });
         const coins: Coin[] = [];
