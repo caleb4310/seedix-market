@@ -15,6 +15,7 @@ contract SeedixRoles {
     TimelockController public immutable timelock;
     address public admin;
     address public guardian;
+    uint256 public guardianNonce;
 
     event AdminChanged(address indexed previous, address indexed next);
     event GuardianChanged(address indexed previous, address indexed next);
@@ -52,11 +53,13 @@ contract SeedixRoles {
     }
 
     /// @dev Admin queues a split of the guardian role. The new key cannot act until the timelock delay.
-    function queueSetGuardian(address next) external onlyAdmin {
+    function queueSetGuardian(address next) external onlyAdmin returns (bytes32 salt) {
         if (next == address(0)) revert ZeroAddress();
         bytes memory data = abi.encodeCall(this.setGuardian, (next));
         uint256 delay = timelock.getMinDelay();
-        timelock.schedule(address(this), 0, data, bytes32(0), bytes32(uint256(1)), delay);
+        salt = keccak256(abi.encode("seedix.guardian", next, guardianNonce));
+        guardianNonce += 1;
+        timelock.schedule(address(this), 0, data, bytes32(0), salt, delay);
         emit GuardianQueued(next, block.timestamp + delay);
     }
 }

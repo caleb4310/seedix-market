@@ -29,6 +29,22 @@ import {SeedixRouter} from "../src/router/SeedixRouter.sol";
 ///         Do not pass --broadcast against a public RPC.
 contract DeploySeedix is Script {
     error ForbiddenChain(uint256 chainId);
+    error Permit2Missing();
+
+    struct Result {
+        address deployer;
+        address admin;
+        address timelock;
+        address roles;
+        address vault;
+        address executor;
+        address distributor;
+        address hook;
+        address launcher;
+        address locker;
+    }
+
+    Result public last;
 
     address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     /// @dev `new {salt}` in a Forge script is CREATE2 from the Arachnid deployer, not the EOA.
@@ -40,7 +56,15 @@ contract DeploySeedix is Script {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address admin = vm.envOr("ADMIN", vm.addr(pk));
         address publisher = vm.envOr("KICKBACK_PUBLISHER", admin);
+        deploy(pk, admin, publisher);
+    }
+
+    /// @dev `admin` receives the admin, guardian, proposer, and executor roles. The broadcasting key keeps none.
+    function deploy(uint256 pk, address admin, address publisher) public {
         if (block.chainid != 99801 && block.chainid != 31337) revert ForbiddenChain(block.chainid);
+        address deployer = vm.addr(pk);
+        if (admin == address(0)) admin = deployer;
+        if (publisher == address(0)) publisher = admin;
 
         vm.startBroadcast(pk);
 
@@ -63,36 +87,40 @@ contract DeploySeedix is Script {
         V4Quoter quoter = new V4Quoter(manager);
         SeedixRouter router = new SeedixRouter(manager);
 
-        uint256 n = vm.getNonce(admin);
-        address vaultA = vm.computeCreateAddress(admin, n + 3);
-        address execA = vm.computeCreateAddress(admin, n + 4);
-        address distA = vm.computeCreateAddress(admin, n + 5);
+        uint256 n = vm.getNonce(deployer);
+        address vaultA = vm.computeCreateAddress(deployer, n + 3);
+        address execA = vm.computeCreateAddress(deployer, n + 4);
+        address distA = vm.computeCreateAddress(deployer, n + 5);
         (, bytes32 salt) = HookMiner.find(
             CREATE2_DEPLOYER,
             C.HOOK_FLAGS,
             type(LaunchHook).creationCode,
-            abi.encode(manager, vaultA, execA, distA, admin)
+            abi.encode(manager, vaultA, execA, distA, deployer)
         );
 
         address[] memory proposers = new address[](1);
-        proposers[0] = admin;
+        proposers[0] = deployer;
         address[] memory executors = new address[](1);
-        executors[0] = admin;
-        TimelockController tl = new TimelockController(48 hours, proposers, executors, admin);
+        executors[0] = deployer;
+        TimelockController tl = new TimelockController(48 hours, proposers, executors, deployer);
         SeedixRoles roles = new SeedixRoles(tl, admin);
         LaunchToken impl = new LaunchToken();
-        FeeVault vault = new FeeVault(roles, C.FEE_WALLET, admin);
-        BuybackExecutor executor = new BuybackExecutor(roles, Currency.wrap(whype), admin);
+        FeeVault vault = new FeeVault(roles, C.FEE_WALLET, deployer);
+        BuybackExecutor executor = new BuybackExecutor(roles, Currency.wrap(whype), deployer);
         KickbackDistributor distributor =
-            new KickbackDistributor(roles, publisher, 1_000_000 ether, 10_000_000 ether, admin);
+            new KickbackDistributor(roles, publisher, 1_000_000 ether, 10_000_000 ether, deployer);
         require(address(vault) == vaultA && address(executor) == execA && address(distributor) == distA, "nonce");
 
+        tl.grantRole(tl.PROPOSER_ROLE(), admin);
+        tl.grantRole(tl.EXECUTOR_ROLE(), admin);
         tl.grantRole(tl.PROPOSER_ROLE(), address(roles));
         tl.grantRole(tl.PROPOSER_ROLE(), address(vault));
-        tl.renounceRole(tl.DEFAULT_ADMIN_ROLE(), admin);
+        tl.renounceRole(tl.PROPOSER_ROLE(), deployer);
+        tl.renounceRole(tl.EXECUTOR_ROLE(), deployer);
+        tl.renounceRole(tl.DEFAULT_ADMIN_ROLE(), deployer);
 
         LaunchHook hook =
-            new LaunchHook{salt: salt}(manager, address(vault), address(executor), address(distributor), admin);
+            new LaunchHook{salt: salt}(manager, address(vault), address(executor), address(distributor), deployer);
         require(uint160(address(hook)) & ((1 << 14) - 1) == C.HOOK_FLAGS, "flags");
 
         address[] memory pairs = new address[](7);
@@ -104,15 +132,29 @@ contract DeploySeedix is Script {
         pairs[5] = mu;
         pairs[6] = skhy;
 
-        LiquidityLocker locker = new LiquidityLocker(manager, admin);
+        LiquidityLocker locker = new LiquidityLocker(manager, deployer);
         Launcher launcher = new Launcher(roles, manager, hook, locker, impl, executor, pairs);
         hook.setLauncher(address(launcher));
+        hook.setLocker(address(locker));
         vault.setHook(hook);
         executor.wire(hook, address(launcher));
         locker.wire(hook, address(launcher), address(executor));
         distributor.wire(hook, address(manager), address(locker), address(vault), address(executor));
 
         vm.stopBroadcast();
+
+        last = Result({
+            deployer: deployer,
+            admin: admin,
+            timelock: address(tl),
+            roles: address(roles),
+            vault: address(vault),
+            executor: address(executor),
+            distributor: address(distributor),
+            hook: address(hook),
+            launcher: address(launcher),
+            locker: address(locker)
+        });
 
         console2.log("chain", block.chainid);
         console2.log("admin", admin);
@@ -136,9 +178,10 @@ contract DeploySeedix is Script {
         console2.logBytes32(address(hook).codehash);
     }
 
-    /// @dev Permit2's bytecode is solc 0.8.17. On Anvil the canonical address is empty, so we
-    ///      deploy a stand-in only when the real Permit2 is absent. PositionManager stores the address.
+    /// @dev Permit2's bytecode is solc 0.8.17. The stand-in exists only on local Anvil.
+    ///      On 99801 a missing canonical Permit2 must stop the deploy.
     function _deployPermit2(address issuer) internal returns (address) {
+        if (block.chainid != 31337) revert Permit2Missing();
         return address(new MockXStock("Permit2 stand-in", "P2", 18, issuer));
     }
 }

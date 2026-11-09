@@ -4,16 +4,16 @@ pragma solidity ^0.8.26;
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {SeedixRoles} from "../access/SeedixRoles.sol";
-import {SeedixConstants as C} from "../libraries/SeedixConstants.sol";
-import {HookMiner} from "../libraries/HookMiner.sol";
-import {LaunchToken} from "../token/LaunchToken.sol";
-import {LaunchHook} from "../hook/LaunchHook.sol";
-import {LiquidityLocker} from "../launch/LiquidityLocker.sol";
-import {Launcher} from "../launch/Launcher.sol";
-import {FeeVault} from "../vault/FeeVault.sol";
-import {BuybackExecutor} from "../buyback/BuybackExecutor.sol";
-import {KickbackDistributor} from "../kickback/KickbackDistributor.sol";
+import {SeedixRoles} from "../../src/access/SeedixRoles.sol";
+import {SeedixConstants as C} from "../../src/libraries/SeedixConstants.sol";
+import {HookMiner} from "../../src/libraries/HookMiner.sol";
+import {LaunchToken} from "../../src/token/LaunchToken.sol";
+import {LaunchHook} from "../../src/hook/LaunchHook.sol";
+import {LiquidityLocker} from "../../src/launch/LiquidityLocker.sol";
+import {Launcher} from "../../src/launch/Launcher.sol";
+import {FeeVault} from "../../src/vault/FeeVault.sol";
+import {BuybackExecutor} from "../../src/buyback/BuybackExecutor.sol";
+import {KickbackDistributor} from "../../src/kickback/KickbackDistributor.sol";
 
 /// @notice One transaction deploys the Seedix protocol and mines the hook to flags 0x28CC.
 ///         The guardian role is assigned to `admin`. It can be moved later through the timelock.
@@ -75,6 +75,7 @@ contract SeedixDeployer {
         d.launcher = new Launcher(d.roles, p.poolManager, d.hook, d.locker, d.implementation, d.executor, p.pairs);
 
         d.hook.setLauncher(address(d.launcher));
+        d.hook.setLocker(address(d.locker));
         d.vault.setHook(d.hook);
         d.executor.wire(d.hook, address(d.launcher));
         d.locker.wire(d.hook, address(d.launcher), address(d.executor));

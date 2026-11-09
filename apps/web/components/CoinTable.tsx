@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { coins, modeLabel, type Mode } from "@/lib/mock";
+import { Tabs } from "@/components/ui/Tabs";
 
 function age(sec: number): string {
   if (sec < 60) return `${sec}s`;
@@ -27,13 +28,18 @@ export function CoinTable() {
           <h1>Coins</h1>
           <p className="lede">Eight live test coins. Pick one to trade, or launch your own.</p>
         </div>
-        <div className="filters" role="tablist">
-          {(["all", "keep", "kickback", "burn"] as const).map((key) => (
-            <button key={key} className="filter" type="button" data-on={filter === key} onClick={() => setFilter(key)}>
-              {key === "all" ? "All" : modeLabel(key)}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          label="Coin mode"
+          size="sm"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { id: "all", label: "All" },
+            { id: "keep", label: modeLabel("keep") },
+            { id: "kickback", label: modeLabel("kickback") },
+            { id: "burn", label: modeLabel("burn") },
+          ]}
+        />
       </div>
       <div className="board">
         <div className="head">
@@ -41,7 +47,7 @@ export function CoinTable() {
           <span className="hide-sm">Pair</span>
           <span>Mode</span>
           <span className="num">Mcap</span>
-          <span className="num hide-sm">Age</span>
+          <span className="num hide-sm hide-md">Age</span>
         </div>
         {rows.map((coin) => (
           <Link key={coin.id} href={`/coin/${coin.id}`} className="row">
@@ -49,7 +55,7 @@ export function CoinTable() {
               <span className="mark" data-tone={coin.ticker.length % 4}>
                 {coin.ticker.slice(0, 1)}
               </span>
-              <span>
+              <span className="coin-copy">
                 <span className="name">{coin.name}</span>
                 <span className="ticker"> ${coin.ticker}</span>
               </span>
@@ -59,7 +65,7 @@ export function CoinTable() {
               {modeLabel(coin.mode)}
             </span>
             <span className="num">{money(coin.mcap)}</span>
-            <span className="num hide-sm">{age(coin.ageSec)}</span>
+            <span className="num hide-sm hide-md">{age(coin.ageSec)}</span>
           </Link>
         ))}
       </div>

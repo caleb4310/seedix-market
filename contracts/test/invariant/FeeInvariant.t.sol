@@ -22,9 +22,12 @@ contract FeeInvariantTest is StdInvariant, Fixture {
         handler = new FeeHandler(router, d.hook, whype, coin, id);
         whype.transfer(address(handler), 500_000 ether);
         targetContract(address(handler));
-        bytes4[] memory sels = new bytes4[](2);
+        bytes4[] memory sels = new bytes4[](5);
         sels[0] = handler.buyExactIn.selector;
         sels[1] = handler.sellExactIn.selector;
+        sels[2] = handler.buyExactOut.selector;
+        sels[3] = handler.sellExactOut.selector;
+        sels[4] = handler.warp.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: sels}));
     }
 

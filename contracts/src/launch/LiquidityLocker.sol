@@ -9,6 +9,7 @@ import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {LaunchHook} from "../hook/LaunchHook.sol";
 import {LaunchCurve} from "../libraries/LaunchCurve.sol";
 
@@ -17,6 +18,7 @@ import {LaunchCurve} from "../libraries/LaunchCurve.sol";
 contract LiquidityLocker is IUnlockCallback {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
+    using SafeERC20 for IERC20;
 
     error NotPoolManager();
     error NotLauncher();
@@ -124,11 +126,11 @@ contract LiquidityLocker is IUnlockCallback {
         if (amt < 0) {
             uint256 owe = uint256(uint128(-amt));
             poolManager.sync(c);
-            IERC20(Currency.unwrap(c)).transfer(address(poolManager), owe);
+            IERC20(Currency.unwrap(c)).safeTransfer(address(poolManager), owe);
             poolManager.settle();
         } else if (amt > 0) {
-            // A positive delta here would be the pair token coming back. Keep it in the locker.
-            poolManager.take(c, address(this), uint256(uint128(amt)));
+            // A positive seed delta is the pair token coming back. The executor routes it into a burn pot.
+            poolManager.take(c, buybackExecutor, uint256(uint128(amt)));
         }
     }
 

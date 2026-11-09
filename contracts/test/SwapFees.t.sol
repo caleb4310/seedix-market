@@ -11,10 +11,14 @@ import {SeedixConstants as C} from "../src/libraries/SeedixConstants.sol";
 contract SwapFeesTest is Fixture {
     address internal coin;
     PoolId internal id;
+    PoolId internal kickId;
+    PoolId internal burnId;
 
     function setUp() public override {
         super.setUp();
         (coin, id) = _launch(0);
+        (, kickId) = _launch(1);
+        (, burnId) = _launch(2);
         IERC20(coin).approve(address(router), type(uint256).max);
     }
 
@@ -62,16 +66,25 @@ contract SwapFeesTest is Fixture {
     }
 
     function test_kickAndBurnModes() public {
-        (, PoolId kick) = _launch(1);
-        (, PoolId burn) = _launch(2);
-        // Launches in this test share the transaction with the following swaps, which the
-        // launch guard forbids. The pools above were created in this transaction.
-        kick;
-        burn;
+        vm.warp(vm.getBlockTimestamp() + 10);
+        _buy(kickId, 100 ether);
+        _buy(burnId, 100 ether);
+        (uint128 kickCreator,, uint128 kickKick,,) = d.hook.pots(kickId);
+        (uint128 burnCreator,, uint128 burnKick, uint128 burnPair,) = d.hook.pots(burnId);
+        assertEq(kickCreator, 0);
+        assertEq(kickKick, 1 ether);
+        assertEq(burnCreator, 0);
+        assertEq(burnKick, 0);
+        assertEq(burnPair, 1 ether);
     }
 
-    function test_modesFromSetup() public {
-        // Covered by ModeTest, which launches in setUp.
+    function test_modesFromSetup() public view {
+        (,,, uint8 keepMode,,,) = d.hook.config(id);
+        (,,, uint8 kickMode,,,) = d.hook.config(kickId);
+        (,,, uint8 burnMode,,,) = d.hook.config(burnId);
+        assertEq(keepMode, 0);
+        assertEq(kickMode, 1);
+        assertEq(burnMode, 2);
     }
 
     function _creatorCoin() internal view returns (uint256) {

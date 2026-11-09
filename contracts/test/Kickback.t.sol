@@ -16,8 +16,11 @@ contract KickbackTest is Fixture {
     }
 
     function _accrue() internal {
-        vm.warp(block.timestamp + 10);
+        vm.warp(vm.getBlockTimestamp() + 10);
         _buy(id, 1_000 ether);
+        (,,,,, uint40 launchTime,) = d.hook.config(id);
+        uint256 closed = uint256(launchTime) + 1 hours;
+        if (vm.getBlockTimestamp() < closed) vm.warp(closed);
     }
 
     function test_publisherFundsAndPosts_guardianCancels() public {

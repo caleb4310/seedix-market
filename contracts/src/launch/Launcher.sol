@@ -8,6 +8,7 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SeedixRoles} from "../access/SeedixRoles.sol";
 import {SeedixConstants as C} from "../libraries/SeedixConstants.sol";
 import {LaunchCurve} from "../libraries/LaunchCurve.sol";
@@ -20,6 +21,7 @@ import {BuybackExecutor} from "../buyback/BuybackExecutor.sol";
 ///         Swaps in that same transaction revert. Pause is instant for the guardian role.
 contract Launcher {
     using PoolIdLibrary for PoolKey;
+    using SafeERC20 for IERC20;
 
     error NotGuardian();
     error NotAdmin();
@@ -184,7 +186,7 @@ contract Launcher {
         hook.armLaunchGuard(id);
         hook.stage(key, built.coin, pair, built.coinIsToken0, mode, isPlatform, params.feeRecipient);
         poolManager.initialize(key, curve.sqrtPriceX96);
-        IERC20(built.coin).transfer(address(locker), built.liqAmt);
+        IERC20(built.coin).safeTransfer(address(locker), built.liqAmt);
         locker.seed(key, curve.near, curve.far);
         emit CoinLaunched(
             id,

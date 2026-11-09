@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Instrument_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
+import { tokenCss } from "@/lib/tokens";
 import { Providers } from "@/components/Providers";
 import { Shell } from "@/components/Shell";
 
@@ -14,8 +15,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
       <body>
+        <style dangerouslySetInnerHTML={{ __html: tokenCss }} />
         <script
           dangerouslySetInnerHTML={{
             __html:

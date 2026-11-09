@@ -27,6 +27,7 @@ contract FeeVault {
     address public immutable initializer;
     LaunchHook public hook;
     address public feeWallet;
+    uint256 public feeWalletNonce;
 
     constructor(SeedixRoles roles_, address feeWallet_, address initializer_) {
         if (feeWallet_ == address(0) || feeWallet_ == C.DEAD) revert BadWallet();
@@ -67,13 +68,15 @@ contract FeeVault {
         emit PlatformWalletClaimed(Currency.unwrap(pair), to, amount);
     }
 
-    function queueFeeWallet(address next) external {
+    function queueFeeWallet(address next) external returns (bytes32 salt) {
         if (msg.sender != roles.admin()) revert NotAdmin();
         if (next == address(0) || next == C.DEAD) revert BadWallet();
         bytes memory data = abi.encodeCall(this.setFeeWallet, (next));
         TimelockController tl = roles.timelock();
         uint256 delay = tl.getMinDelay();
-        tl.schedule(address(this), 0, data, bytes32(0), bytes32(uint256(2)), delay);
+        salt = keccak256(abi.encode("seedix.feeWallet", next, feeWalletNonce));
+        feeWalletNonce += 1;
+        tl.schedule(address(this), 0, data, bytes32(0), salt, delay);
         emit FeeWalletQueued(next, block.timestamp + delay);
     }
 

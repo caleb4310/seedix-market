@@ -30,27 +30,30 @@ contract RolesTest is Fixture {
     function test_feeWalletTakes48Hours() public {
         address next = address(0x123456);
         vm.prank(admin);
-        d.vault.queueFeeWallet(next);
+        bytes32 salt = d.vault.queueFeeWallet(next);
         bytes memory data = abi.encodeCall(d.vault.setFeeWallet, (next));
         TimelockController tl = d.roles.timelock();
         vm.prank(admin);
         vm.expectRevert();
-        tl.execute(address(d.vault), 0, data, bytes32(0), bytes32(uint256(2)));
+        tl.execute(address(d.vault), 0, data, bytes32(0), salt);
         vm.warp(block.timestamp + 48 hours);
         vm.prank(admin);
-        tl.execute(address(d.vault), 0, data, bytes32(0), bytes32(uint256(2)));
+        tl.execute(address(d.vault), 0, data, bytes32(0), salt);
         assertEq(d.vault.feeWallet(), next);
     }
 
     function test_splitGuardianThroughTimelock() public {
         address next = address(0x6A2D);
         vm.prank(admin);
-        d.roles.queueSetGuardian(next);
+        bytes32 salt = d.roles.queueSetGuardian(next);
         bytes memory data = abi.encodeCall(d.roles.setGuardian, (next));
         TimelockController tl = d.roles.timelock();
         vm.warp(block.timestamp + 48 hours);
         vm.prank(admin);
-        tl.execute(address(d.roles), 0, data, bytes32(0), bytes32(uint256(1)));
+        tl.execute(address(d.roles), 0, data, bytes32(0), salt);
+        vm.prank(admin);
+        bytes32 again = d.roles.queueSetGuardian(address(0xBEEF));
+        assertTrue(again != salt);
         assertEq(d.roles.guardian(), next);
         vm.prank(admin);
         vm.expectRevert();

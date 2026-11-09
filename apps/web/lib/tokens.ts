@@ -36,13 +36,22 @@ export const light = {
   warn: "#8a5810",
   danger: "#8d2e2a",
   focus: "#0e6b4f",
+  shadow: "0 1px 0 rgba(28, 27, 22, 0.04)",
+  warnBg: "#fff1e4",
+  warnInk: "#6a3114",
+  warnLine: "#e2b48a",
+  modeKeep: "#1c7a46",
+  modeKick: "#3d5a8a",
+  modeBurn: "#9a5b2f",
+  toastBg: "#1c1b16",
+  toastInk: "#f3f1ea",
 } as const;
 
 export const dark = {
   bg: "#121410",
   bgRaised: "#1b1e19",
   ink: "#eceae3",
-  inkSoft: "#a8a396",
+  inkSoft: "#c2bdb0",
   line: "#2e332c",
   accent: "#9ee0bf",
   accentInk: "#102119",
@@ -50,7 +59,44 @@ export const dark = {
   warn: "#e6c98a",
   danger: "#f0b0aa",
   focus: "#9ee0bf",
+  shadow: "0 1px 0 rgba(0, 0, 0, 0.4)",
+  warnBg: "#3a2118",
+  warnInk: "#f6e2c8",
+  warnLine: "#8a4b2a",
+  modeKeep: "#9ee0bf",
+  modeKick: "#b7c7ea",
+  modeBurn: "#e2b08a",
+  toastBg: "#eceae3",
+  toastInk: "#121410",
 } as const;
+
+function vars(theme: { [K in keyof typeof light]: string }): string {
+  return [
+    `--bg: ${theme.bg}`,
+    `--bg-raised: ${theme.bgRaised}`,
+    `--ink: ${theme.ink}`,
+    `--ink-soft: ${theme.inkSoft}`,
+    `--line: ${theme.line}`,
+    `--accent: ${theme.accent}`,
+    `--accent-ink: ${theme.accentInk}`,
+    `--success: ${theme.success}`,
+    `--warn: ${theme.warn}`,
+    `--danger: ${theme.danger}`,
+    `--focus: ${theme.focus}`,
+    `--shadow: ${theme.shadow}`,
+    `--warn-bg: ${theme.warnBg}`,
+    `--warn-ink: ${theme.warnInk}`,
+    `--warn-line: ${theme.warnLine}`,
+    `--mode-keep: ${theme.modeKeep}`,
+    `--mode-kick: ${theme.modeKick}`,
+    `--mode-burn: ${theme.modeBurn}`,
+    `--toast-bg: ${theme.toastBg}`,
+    `--toast-ink: ${theme.toastInk}`,
+  ].join(";");
+}
+
+/** Runtime CSS variables. Component styles only reference these names. */
+export const tokenCss = `:root{${vars(light)};--sans:${type.sans};--mono:${type.mono};--space-1:${space[1]}px;--space-2:${space[2]}px;--space-3:${space[3]}px;--space-4:${space[4]}px;--space-5:${space[5]}px;--space-6:${space[6]}px;--space-8:${space[7]}px;--space-10:${space[8]}px;--space-12:${space[9]}px;--space-16:${space[10]}px;--r-sm:${radius.sm};--r-md:${radius.md};--r-lg:${radius.lg};--dur-fast:${motion.fast};--dur:${motion.base};--dur-slow:${motion.slow};--ease:${motion.ease};color-scheme:light} :root[data-theme="dark"]{${vars(dark)};color-scheme:dark}`;
 
 export const fees = {
   startPips: 800_000,

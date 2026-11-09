@@ -24,6 +24,21 @@ export const excludedRoles = [
   "dead",
 ] as const;
 
+/**
+ * The on-chain leaf is the double hash
+ * `keccak256(bytes.concat(keccak256(abi.encode(chainId, distributor, coin, pair, epochId, account, amount))))`.
+ * Field order is fixed. JSON is not a leaf.
+ */
+export const LEAF_FIELDS = [
+  "uint256 chainId",
+  "address distributor",
+  "address coin",
+  "address pair",
+  "uint64 epochId",
+  "address account",
+  "uint256 amount",
+] as const;
+
 export function leaf(parts: {
   chainId: number;
   distributor: string;
@@ -33,7 +48,8 @@ export function leaf(parts: {
   recipient: string;
   amount: bigint;
 }): string {
-  return JSON.stringify(parts);
+  void parts;
+  throw new Error(`Kickback leaf must be abi.encode of ${LEAF_FIELDS.join(", ")}`);
 }
 
 export function main(): void {

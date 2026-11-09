@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {SeedixRoles} from "../access/SeedixRoles.sol";
@@ -13,6 +14,7 @@ import {LaunchHook} from "../hook/LaunchHook.sol";
 ///         The publisher can fund and post a root. Only the guardian role can cancel, and only
 ///         during the review hour. Cancel returns the pair tokens to the pool's kickback pot.
 contract KickbackDistributor {
+    using SafeERC20 for IERC20;
     error NotPublisher();
     error NotGuardian();
     error NotTimelock();
@@ -105,9 +107,16 @@ contract KickbackDistributor {
         (,,,,, uint40 launchTime,) = hook.config(id);
         if (launchTime == 0) revert BadEpoch();
 
+        uint256 window = C.REVIEW_WINDOW;
+        uint64 cursor = lastEnd[id] == 0 ? uint64(launchTime) : lastEnd[id];
+        if (block.timestamp < uint256(cursor) + window) revert BadEpoch();
+        uint256 elapsed = block.timestamp - uint256(cursor);
+        uint256 closedEnd = block.timestamp - (elapsed % window);
+        if (closedEnd < uint256(cursor) + window) revert BadEpoch();
+        uint64 end = uint64(closedEnd);
+        uint64 start = end - uint64(window);
+
         epochId = ++nextEpoch[id];
-        uint64 start = lastEnd[id] == 0 ? uint64(launchTime) : lastEnd[id];
-        uint64 end = start + uint64(C.REVIEW_WINDOW);
         epochs[id][epochId] = Epoch({
             funded: amount,
             claimed: 0,
@@ -130,6 +139,7 @@ contract KickbackDistributor {
         if (msg.sender != publisher) revert NotPublisher();
         Epoch storage e = epochs[id][epochId];
         if (e.funded == 0 || e.cancelled || e.postedAt != 0) revert BadEpoch();
+        if (block.timestamp < e.end) revert BadEpoch();
         if (root == bytes32(0) || manifestHash == bytes32(0)) revert BadEpoch();
         e.root = root;
         e.manifestHash = manifestHash;
@@ -148,8 +158,7 @@ contract KickbackDistributor {
         (, Currency pair,,,,,) = hook.config(id);
         address token = Currency.unwrap(pair);
         liabilities[token] -= amount;
-        IERC20(token).approve(address(hook), 0);
-        IERC20(token).approve(address(hook), amount);
+        IERC20(token).forceApprove(address(hook), amount);
         hook.restoreKickback(id, amount);
         emit KickbackCancelled(id, epochId, amount);
     }
@@ -174,7 +183,7 @@ contract KickbackDistributor {
         e.claimed += uint128(amount);
         address token = Currency.unwrap(pair);
         liabilities[token] -= amount;
-        IERC20(token).transfer(account, amount);
+        IERC20(token).safeTransfer(account, amount);
         emit KickbackClaimed(id, epochId, account, amount);
     }
 

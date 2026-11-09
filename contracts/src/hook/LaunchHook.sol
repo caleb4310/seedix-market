@@ -14,16 +14,18 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SeedixConstants as C} from "../libraries/SeedixConstants.sol";
 import {FeeMath} from "../libraries/FeeMath.sol";
 import {OracleLib} from "../libraries/OracleLib.sol";
 
 /// @notice Ownerless fee hook. Pots are ERC-6909 claims. Spending them is a per-pot debit.
-///         Observations are written at most once per 30 seconds, using the pre-swap tick.
+///         The cumulative accrues on every swap. Ring writes stay on a 30 second cadence.
 contract LaunchHook is IHooks, IUnlockCallback {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using StateLibrary for IPoolManager;
+    using SafeERC20 for IERC20;
 
     error NotPoolManager();
     error NotLauncher();
@@ -31,6 +33,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
     error NotDistributor();
     error NotExecutor();
     error NotInitializer();
+    error NotLocker();
     error Locked();
     error NotInitiator();
     error UnknownPool();
@@ -52,6 +55,9 @@ contract LaunchHook is IHooks, IUnlockCallback {
     uint256 internal constant META_EXACT_IN = 4;
 
     bytes32 internal constant LOCK_SLOT = keccak256("seedix.lock");
+    bytes32 internal constant STAGE_COIN = keccak256("seedix.stage.coin");
+    bytes32 internal constant STAGE_PAIR = keccak256("seedix.stage.pair");
+    bytes32 internal constant STAGE_META = keccak256("seedix.stage.meta");
     bytes32 internal constant META_SLOT = keccak256("seedix.meta");
     bytes32 internal constant HOOK_AMT_SLOT = keccak256("seedix.hookAmt");
     bytes32 internal constant PLAT_AMT_SLOT = keccak256("seedix.platAmt");
@@ -99,13 +105,12 @@ contract LaunchHook is IHooks, IUnlockCallback {
     address public immutable initializer;
 
     address public launcher;
-    Stage private _stage;
+    address public locker;
 
     mapping(PoolId => CoinConfig) public config;
     mapping(PoolId => Pots) public pots;
     mapping(Currency => uint256) public platformBurn;
     mapping(Currency => uint256) public platformWallet;
-    mapping(Currency => uint256) public potSum;
     mapping(Currency => uint256) public accounted;
     mapping(PoolId => OracleLib.State) internal _oracle;
 
@@ -150,6 +155,16 @@ contract LaunchHook is IHooks, IUnlockCallback {
         launcher = next;
     }
 
+    function setLocker(address next) external {
+        if (msg.sender != initializer || locker != address(0) || next == address(0)) revert NotInitializer();
+        locker = next;
+    }
+
+    /// @dev `potSum` is the accounted balance. One counter is enough.
+    function potSum(Currency c) external view returns (uint256) {
+        return accounted[c];
+    }
+
     function poolCount() external view returns (uint256) {
         return pools.length;
     }
@@ -164,6 +179,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
         });
     }
 
+    /// @notice Test helper. Do not call this on-chain once many pools exist.
     function sumPots(Currency c) public view returns (uint256 s) {
         s = platformBurn[c] + platformWallet[c];
         uint256 n = pools.length;
@@ -195,7 +211,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
     function consult(PoolId id, uint32 window) external view returns (int24 twapTick, int24 spotTick) {
         if (config[id].launchTime == 0) revert UnknownPool();
         (, spotTick,,) = poolManager.getSlot0(id);
-        twapTick = OracleLib.consult(_oracle[id], uint32(block.timestamp), window);
+        twapTick = OracleLib.consult(_oracle[id], uint32(block.timestamp), window, spotTick);
     }
 
     function armLaunchGuard(PoolId id) external {
@@ -213,16 +229,18 @@ contract LaunchHook is IHooks, IUnlockCallback {
         address feeRecipient
     ) external {
         if (msg.sender != launcher) revert NotLauncher();
-        if (_stage.coin != address(0)) revert StageOccupied();
+        if (_readStage().coin != address(0)) revert StageOccupied();
         _checkKey(key, coin, pair, coinIsToken0);
-        _stage = Stage({
-            coin: coin,
-            pair: pair,
-            coinIsToken0: coinIsToken0,
-            mode: mode,
-            isPlatform: isPlatform,
-            feeRecipient: feeRecipient
-        });
+        _writeStage(
+            Stage({
+                coin: coin,
+                pair: pair,
+                coinIsToken0: coinIsToken0,
+                mode: mode,
+                isPlatform: isPlatform,
+                feeRecipient: feeRecipient
+            })
+        );
     }
 
     function beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
@@ -232,10 +250,10 @@ contract LaunchHook is IHooks, IUnlockCallback {
     {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
         if (sender != launcher) revert NotLauncher();
-        Stage memory s = _stage;
+        Stage memory s = _readStage();
         if (s.coin == address(0)) revert StageMissing();
         _checkKey(key, s.coin, s.pair, s.coinIsToken0);
-        delete _stage;
+        _clearStage();
         PoolId id = key.toId();
         if (config[id].launchTime != 0) revert PoolExists();
         config[id] = CoinConfig({
@@ -256,13 +274,14 @@ contract LaunchHook is IHooks, IUnlockCallback {
         return IHooks.afterInitialize.selector;
     }
 
-    function beforeAddLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
+    function beforeAddLiquidity(address sender, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
         external
         view
         override
         returns (bytes4)
     {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
+        if (sender != locker) revert NotLocker();
         return IHooks.beforeAddLiquidity.selector;
     }
 
@@ -330,8 +349,9 @@ contract LaunchHook is IHooks, IUnlockCallback {
         if (cfg.launchTime == 0) revert UnknownPool();
 
         (, int24 tick,,) = poolManager.getSlot0(id);
-        OracleLib.maybeWrite(_oracle[id], uint32(block.timestamp), tick);
+        OracleLib.onSwap(_oracle[id], uint32(block.timestamp), tick);
 
+        // Exemption is the PoolManager sender. The executor must call the manager itself, not a router.
         if (sender == buybackExecutor) {
             _tstore(META_SLOT, META_EXEMPT);
             return (IHooks.beforeSwap.selector, toBeforeSwapDelta(0, 0), 0);
@@ -480,8 +500,20 @@ contract LaunchHook is IHooks, IUnlockCallback {
         _pull(c, msg.sender, amount);
         Pots storage p = pots[id];
         p.kickbackPair = _asUint128(uint256(p.kickbackPair) + amount);
-        potSum[c] += amount;
-        accounted[c] += amount;
+        _credit(c, amount);
+        _closeMove();
+    }
+
+    /// @dev Buyback executor deposits tokens it was paid (LP fees, seed remainder) into the burn pots.
+    function depositCollected(PoolId id, Currency token, uint256 amount) external {
+        if (msg.sender != buybackExecutor) revert NotExecutor();
+        _openMove();
+        CoinConfig memory cfg = config[id];
+        if (cfg.launchTime == 0 || amount == 0) revert Amount();
+        _pull(token, msg.sender, amount);
+        if (token == cfg.pair) _addBurnPair(id, amount);
+        else if (Currency.unwrap(token) == cfg.coin) _addBurnCoin(id, amount);
+        else revert Amount();
         _closeMove();
     }
 
@@ -494,7 +526,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
             poolManager.take(c, who, amount);
         } else if (action == ACTION_PULL) {
             poolManager.sync(c);
-            IERC20(Currency.unwrap(c)).transferFrom(who, address(poolManager), amount);
+            IERC20(Currency.unwrap(c)).safeTransferFrom(who, address(poolManager), amount);
             poolManager.settle();
             poolManager.mint(address(this), c.toId(), amount);
         } else {
@@ -627,13 +659,37 @@ contract LaunchHook is IHooks, IUnlockCallback {
     }
 
     function _credit(Currency c, uint256 amt) internal {
-        potSum[c] += amt;
         accounted[c] += amt;
     }
 
     function _debitAccount(Currency c, uint256 amt) internal {
-        potSum[c] -= amt;
         accounted[c] -= amt;
+    }
+
+    function _readStage() internal view returns (Stage memory s) {
+        s.coin = address(uint160(_tload(STAGE_COIN)));
+        s.pair = Currency.wrap(address(uint160(_tload(STAGE_PAIR))));
+        uint256 meta = _tload(STAGE_META);
+        s.feeRecipient = address(uint160(meta));
+        s.coinIsToken0 = meta & (1 << 160) != 0;
+        s.mode = uint8((meta >> 161) & 0xff);
+        s.isPlatform = meta & (1 << 169) != 0;
+    }
+
+    function _writeStage(Stage memory s) internal {
+        _tstore(STAGE_COIN, uint256(uint160(s.coin)));
+        _tstore(STAGE_PAIR, uint256(uint160(Currency.unwrap(s.pair))));
+        uint256 meta = uint256(uint160(s.feeRecipient));
+        if (s.coinIsToken0) meta |= uint256(1) << 160;
+        meta |= uint256(s.mode) << 161;
+        if (s.isPlatform) meta |= uint256(1) << 169;
+        _tstore(STAGE_META, meta);
+    }
+
+    function _clearStage() internal {
+        _tstore(STAGE_COIN, 0);
+        _tstore(STAGE_PAIR, 0);
+        _tstore(STAGE_META, 0);
     }
 
     function _mint(Currency c, uint256 amt) internal {

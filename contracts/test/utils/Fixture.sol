@@ -8,12 +8,13 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {IPoolManager as IManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {SeedixConstants as C} from "../../src/libraries/SeedixConstants.sol";
 import {MockXStock} from "../../src/token/MockXStock.sol";
 import {SeedixRouter} from "../../src/router/SeedixRouter.sol";
-import {SeedixDeployer} from "../../src/deploy/SeedixDeployer.sol";
+import {SeedixDeployer} from "./SeedixDeployer.sol";
 import {Launcher} from "../../src/launch/Launcher.sol";
 
 contract Fixture is Test {
@@ -79,21 +80,30 @@ contract Fixture is Test {
         return d.hook.keyOf(id);
     }
 
+    function _lim(bool zeroForOne) internal pure returns (uint160) {
+        return zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1;
+    }
+
+    function _swap(PoolId id, bool zeroForOne, int256 amountSpecified) internal returns (BalanceDelta) {
+        uint256 limitAmount = amountSpecified < 0 ? 0 : type(uint128).max;
+        return router.swap(_key(id), zeroForOne, amountSpecified, limitAmount, block.timestamp, _lim(zeroForOne));
+    }
+
     function _buy(PoolId id, uint256 amount) internal returns (int128 coinDelta) {
         (,, bool coinIsToken0,,,,) = d.hook.config(id);
-        BalanceDelta delta = router.swap(_key(id), !coinIsToken0, -int256(amount), 0);
+        BalanceDelta delta = _swap(id, !coinIsToken0, -int256(amount));
         coinDelta = coinIsToken0 ? delta.amount0() : delta.amount1();
     }
 
     function _sell(PoolId id, uint256 amount) internal returns (int128 pairDelta) {
         (,, bool coinIsToken0,,,,) = d.hook.config(id);
-        BalanceDelta delta = router.swap(_key(id), coinIsToken0, -int256(amount), 0);
+        BalanceDelta delta = _swap(id, coinIsToken0, -int256(amount));
         pairDelta = coinIsToken0 ? delta.amount1() : delta.amount0();
     }
 
     function _buyExactOut(PoolId id, uint256 coinOut) internal returns (int128 pairDelta) {
         (,, bool coinIsToken0,,,,) = d.hook.config(id);
-        BalanceDelta delta = router.swap(_key(id), !coinIsToken0, int256(coinOut), 0);
+        BalanceDelta delta = _swap(id, !coinIsToken0, int256(coinOut));
         pairDelta = coinIsToken0 ? delta.amount1() : delta.amount0();
     }
 }

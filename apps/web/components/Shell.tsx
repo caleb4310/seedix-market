@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { WalletButton } from "./WalletButton";
+import { Button } from "@/components/ui/Button";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
@@ -40,9 +41,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="nav-spacer" />
         <div className="chain-pill">ELYSIUM TESTNET · 99801</div>
-        <button className="ghost" type="button" onClick={toggle} aria-label="Toggle color theme">
+        <Button variant="ghost" type="button" onClick={toggle} aria-pressed={theme === "dark"} aria-label="Color theme">
           {theme === "light" ? "Dark" : "Light"}
-        </button>
+        </Button>
         <WalletButton />
       </header>
       <main className="main">{children}</main>

@@ -26,7 +26,14 @@ contract SameTxBuyer {
         PoolId id = hook.pools(hook.poolCount() - 1);
         (,, bool coinIsToken0,,,,) = hook.config(id);
         pair.approve(address(router), type(uint256).max);
-        router.swap(hook.keyOf(id), !coinIsToken0, -1 ether, 0);
+        router.swap(
+            hook.keyOf(id),
+            !coinIsToken0,
+            -1 ether,
+            0,
+            block.timestamp,
+            !coinIsToken0 ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+        );
     }
 }
 

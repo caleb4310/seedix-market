@@ -15,6 +15,7 @@
   },
   "scripts": {
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "npm run dev -w @seedix/web",
     "lint": "npm run lint --workspaces --if-present",
     "build": "npm run build --workspaces --if-present"
   }
