@@ -136,7 +136,11 @@ function stamp(seconds: number): Date {
 }
 
 export class PgStore implements Store {
-  constructor(private readonly db: Queryable) {}
+  private readonly db: Queryable;
+
+  constructor(db: Queryable) {
+    this.db = db;
+  }
 
   async tx<T>(fn: (store: Store) => Promise<T>): Promise<T> {
     await this.db.query("BEGIN");

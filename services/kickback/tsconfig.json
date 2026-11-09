@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "strict": true,
     "noEmit": true,
+    "erasableSyntaxOnly": true,
     "skipLibCheck": true,
     "types": ["node"]
   },

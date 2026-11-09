@@ -82,6 +82,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Boot services under Node strip-types
+        run: node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON services/strip-types-boot.mjs
       - run: npm run lint -w @seedix/shared -w @seedix/indexer -w @seedix/api -w @seedix/kickback -w @seedix/keeper
       - run: npm run typecheck -w @seedix/shared -w @seedix/indexer -w @seedix/api -w @seedix/kickback -w @seedix/keeper
       - name: Compose ports stay on localhost
