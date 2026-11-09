@@ -2,6 +2,7 @@ import type { Hex } from "./hex.ts";
 import { lower } from "./hex.ts";
 import { coinPrice, swapLegs } from "./price.ts";
 import type { Store } from "./store.ts";
+import { cleanSocials } from "@seedix/shared";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -28,6 +29,7 @@ export type Readers = {
   blockTime(blockNumber: bigint): Promise<number>;
   coinMeta(coin: Hex, pair: Hex, poolId: Hex): Promise<CoinMeta>;
   epochWindow(poolId: Hex, epoch: bigint): Promise<{ start: number; end: number } | null>;
+  readMetadata?(cid: string): Promise<unknown>;
 };
 
 function asHex(value: unknown): Hex {
@@ -89,9 +91,32 @@ export async function ingest(store: Store, chainId: number, logs: RawLog[], read
         coinIsToken0: meta.coinIsToken0,
         coinDecimals: meta.coinDecimals,
         pairDecimals: meta.pairDecimals,
+        category: typeof log.args.category === "number" || typeof log.args.category === "bigint" ? asNumber(log.args.category) : 0,
+        pairStatus:
+          typeof log.args.pairStatus === "number" || typeof log.args.pairStatus === "bigint"
+            ? asNumber(log.args.pairStatus)
+            : 0,
       });
       byPool.set(lower(poolId), { poolId, coin, coinIsToken0: meta.coinIsToken0 });
       byToken.set(lower(coin), poolId);
+      continue;
+    }
+    if (log.eventName === "PairClassified") {
+      await store.classifyPair(chainId, asHex(log.args.pair), asNumber(log.args.status), asNumber(log.args.category));
+      continue;
+    }
+    if (log.eventName === "MetadataPinned") {
+      const poolId = asHex(log.args.poolId);
+      const cid = typeof log.args.cid === "string" ? log.args.cid : "";
+      const raw = readers.readMetadata ? await readers.readMetadata(cid) : null;
+      const record = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+      const socials = cleanSocials(record);
+      await store.setSocials(chainId, poolId, {
+        description: socials.description,
+        website: socials.website,
+        xUrl: socials.x,
+        telegram: socials.telegram,
+      });
       continue;
     }
     if (log.eventName === "Swap") {

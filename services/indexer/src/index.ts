@@ -29,6 +29,10 @@ export const indexerConfig: IndexerConfig & { databaseUrl: string; pollMs: numbe
   poolManager: envAddress("POOL_MANAGER_ADDRESS", deployment.poolManager),
   buybackExecutor: envAddress("BUYBACK_EXECUTOR", deployment.buybackExecutor),
   kickbackDistributor: envAddress("KICKBACK_DISTRIBUTOR", deployment.kickbackDistributor),
+  metadata:
+    process.env.METADATA_ADDRESS && isAddress(process.env.METADATA_ADDRESS)
+      ? (process.env.METADATA_ADDRESS as Hex)
+      : undefined,
 };
 
 export async function main(): Promise<void> {

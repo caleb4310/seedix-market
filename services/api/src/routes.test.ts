@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { candles } from "./chart.ts";
+import { cleanSocials } from "@seedix/shared";
 import { handleRequest, type Db } from "./routes.ts";
 
 const pool = "11".repeat(32);
@@ -93,5 +94,35 @@ describe("api", () => {
     assert.match(sql, /c\.mode = \$2/);
     assert.match(sql, /ORDER BY holders DESC/);
     assert.match(sql, /ILIKE/);
+  });
+
+  it("lists pre-IPO pairs from the registry and drops a bad website", async () => {
+    const db = new FakeDb();
+    db.query = async <T>(sql: string) => {
+      db.calls.push(sql);
+      if (sql.includes("FROM pairs") && sql.includes("category =")) {
+        return { rows: [{ address: "55".repeat(20), status: 1, category: 2 }] as T[], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    };
+    const pairs = await handleRequest(db, "GET", "/pairs", new URLSearchParams("category=preipo"));
+    assert.equal(pairs.status, 200);
+    const body = pairs.json as { pairs: { category: string }[] };
+    assert.equal(body.pairs[0]?.category, "preipo");
+    const cleaned = cleanSocials({
+      description: "hello\u202e",
+      website: "javascript:alert(1)",
+      x: "@seedix_market",
+      telegram: "http://t.me/seedix",
+    });
+    assert.equal(cleaned.description, "hello");
+    assert.equal(cleaned.website, null);
+    assert.equal(cleaned.x, "https://x.com/seedix_market");
+    assert.equal(cleaned.telegram, null);
+    const posted = await handleRequest(db, "POST", "/metadata", new URLSearchParams(), {
+      body: { description: "A coin", website: "https://seedix.example/coin", x: "seedix" },
+    });
+    assert.equal((posted.json as { website: string }).website, "https://seedix.example/coin");
+    assert.equal((posted.json as { x: string }).x, "https://x.com/seedix");
   });
 });

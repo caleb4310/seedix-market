@@ -23,6 +23,33 @@ export class MemoryStore implements Store {
       .map((row) => ({ poolId: row.poolId, coin: row.coin, coinIsToken0: row.coinIsToken0 }));
   }
 
+  readonly pairs = new Map<string, { status: number; category: number }>();
+
+  async classifyPair(chainId: number, pair: Hex, status: number, category: number): Promise<void> {
+    this.pairs.set(`${chainId}:${lower(pair)}`, { status, category });
+    for (const [key, coin] of this.coins) {
+      if (coin.chainId === chainId && lower(coin.pair) === lower(pair)) {
+        this.coins.set(key, { ...coin, category, pairStatus: status });
+      }
+    }
+  }
+
+  async setSocials(
+    chainId: number,
+    poolId: Hex,
+    socials: { description: string | null; website: string | null; xUrl: string | null; telegram: string | null },
+  ): Promise<void> {
+    const coin = this.coins.get(lower(poolId));
+    if (!coin || coin.chainId !== chainId) return;
+    this.coins.set(lower(poolId), {
+      ...coin,
+      description: socials.description,
+      website: socials.website,
+      xUrl: socials.xUrl,
+      telegram: socials.telegram,
+    });
+  }
+
   async upsertCoin(row: CoinRow): Promise<void> {
     const prev = this.coins.get(lower(row.poolId));
     this.coins.set(lower(row.poolId), {

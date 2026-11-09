@@ -202,4 +202,63 @@ describe("ingest", () => {
     assert.equal(store.epochs.has(`99801:${pool.toLowerCase()}:2`), false);
     assert.equal(store.balances.get(`99801:${pool.toLowerCase()}:${holder.toLowerCase()}`), 1_000n);
   });
+
+  it("keeps a pre-IPO classification and drops a javascript website", async () => {
+    const store = new MemoryStore();
+    await ingest(
+      store,
+      99801,
+      [
+        {
+          address: coin,
+          blockNumber: 1n,
+          logIndex: 1,
+          transactionHash: `0x${"ab".repeat(32)}` as Hex,
+          eventName: "CoinLaunched",
+          args: {
+            poolId: pool,
+            coin,
+            pair,
+            mode: 0,
+            isPlatform: false,
+            feeRecipient: holder,
+            teamWallet: zero,
+            teamAmount: 0n,
+            startMcap: 1n,
+            category: 2,
+            pairStatus: 1,
+          },
+        },
+        {
+          address: coin,
+          blockNumber: 1n,
+          logIndex: 2,
+          transactionHash: `0x${"ac".repeat(32)}` as Hex,
+          eventName: "PairClassified",
+          args: { pair, status: 1, category: 2 },
+        },
+        {
+          address: coin,
+          blockNumber: 2n,
+          logIndex: 1,
+          transactionHash: `0x${"ad".repeat(32)}` as Hex,
+          eventName: "MetadataPinned",
+          args: { poolId: pool, cid: "bafyexample" },
+        },
+      ],
+      {
+        ...readers,
+        async readMetadata() {
+          return { description: "Space test", website: "javascript:alert(1)", x: "@space_x", telegram: "https://t.me/seedix" };
+        },
+      },
+    );
+    const row = store.coins.get(pool.toLowerCase());
+    assert.equal(row?.category, 2);
+    assert.equal(store.pairs.get(`99801:${pair.toLowerCase()}`)?.category, 2);
+    assert.equal(row?.description, "Space test");
+    assert.equal(row?.website, null);
+    assert.equal(row?.xUrl, "https://x.com/space_x");
+    assert.equal(row?.telegram, "https://t.me/seedix");
+  });
 });

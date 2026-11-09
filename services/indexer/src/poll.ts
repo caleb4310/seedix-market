@@ -17,6 +17,11 @@ const eventAbi = {
   CoinLaunched: parseAbiItem(
     "event CoinLaunched(bytes32 indexed poolId, address indexed coin, address indexed pair, uint8 mode, bool isPlatform, address feeRecipient, address teamWallet, uint256 teamAmount, uint256 startMcap)",
   ),
+  CoinLaunchedV2: parseAbiItem(
+    "event CoinLaunched(bytes32 indexed poolId, address indexed coin, address indexed pair, uint8 mode, bool isPlatform, address feeRecipient, address teamWallet, uint256 teamAmount, uint256 startMcap, uint8 category, uint8 pairStatus)",
+  ),
+  PairClassified: parseAbiItem("event PairClassified(address indexed pair, uint8 status, uint8 category)"),
+  MetadataPinned: parseAbiItem("event MetadataPinned(bytes32 indexed poolId, address indexed creator, string cid)"),
   Swap: parseAbiItem(
     "event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)",
   ),
@@ -68,6 +73,7 @@ export type IndexerConfig = {
   poolManager: Hex;
   buybackExecutor: Hex;
   kickbackDistributor: Hex;
+  metadata?: Hex;
 };
 
 function pick(value: unknown, index: number, name: string): unknown {
@@ -148,6 +154,17 @@ function readers(client: PublicClient, hook: Hex, distributor: Hex): Readers {
         return null;
       }
     },
+    async readMetadata(cid) {
+      if (!/^[A-Za-z0-9]{10,128}$/.test(cid)) return null;
+      const gateway = process.env.IPFS_GATEWAY ?? "http://127.0.0.1:18486";
+      try {
+        const response = await fetch(`${gateway}/ipfs/${cid}`);
+        if (!response.ok) return null;
+        return await response.json();
+      } catch {
+        return null;
+      }
+    },
   };
 }
 
@@ -164,12 +181,26 @@ export async function pollOnce(client: PublicClient, store: Store, cfg: IndexerC
     const tokens = [...new Set(known.map((coin) => coin.coin))];
     const sources: Array<Promise<RawLog[]>> = [
       pull(client, cfg.launcher, eventAbi.CoinLaunched, "CoinLaunched", range.from, range.to),
+      pull(client, cfg.launcher, eventAbi.CoinLaunchedV2, "CoinLaunched", range.from, range.to),
+      pull(client, cfg.launcher, eventAbi.PairClassified, "PairClassified", range.from, range.to),
+      ...(cfg.metadata
+        ? [pull(client, cfg.metadata, eventAbi.MetadataPinned, "MetadataPinned", range.from, range.to)]
+        : []),
       pull(client, cfg.hook, eventAbi.FeesTaken, "FeesTaken", range.from, range.to),
       pull(client, cfg.poolManager, eventAbi.Swap, "Swap", range.from, range.to),
       pull(client, cfg.buybackExecutor, eventAbi.BuybackExecuted, "BuybackExecuted", range.from, range.to),
     ];
     for (const [name, abi] of Object.entries(eventAbi)) {
-      if (name === "CoinLaunched" || name === "FeesTaken" || name === "Swap" || name === "BuybackExecuted" || name === "Transfer") {
+      if (
+        name === "CoinLaunched" ||
+        name === "CoinLaunchedV2" ||
+        name === "PairClassified" ||
+        name === "MetadataPinned" ||
+        name === "FeesTaken" ||
+        name === "Swap" ||
+        name === "BuybackExecuted" ||
+        name === "Transfer"
+      ) {
         continue;
       }
       sources.push(pull(client, cfg.kickbackDistributor, abi as AbiEvent, name, range.from, range.to));
