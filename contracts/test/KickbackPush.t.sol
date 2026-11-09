@@ -190,6 +190,8 @@ contract KickbackPushTest is Fixture {
         SelectiveBlacklist token = new SelectiveBlacklist();
         token.mint(address(this), 1_000_000 ether);
         _timelock(address(d.launcher), abi.encodeCall(d.launcher.setPairAllowed, (address(token), true)));
+        token.mint(address(this), 4 ether);
+        _openRoute(address(token));
         token.approve(address(router), type(uint256).max);
         (address launched, PoolId pool) = d.launcher.launch(_params(address(token), 1, 0, address(0)));
         coin = launched;

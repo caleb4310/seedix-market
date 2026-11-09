@@ -7,6 +7,8 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 /// @notice Testnet stand-in for a bridged xStock, WHYPE, or USDC.
 ///         18 decimals for xStocks. The issuer can pause transfers and set a display multiplier.
+///         `multiplier` is display-only. Balances do not change, so this mock is not a rebasing token.
+///         The real unwrapped xStocks rebase. The w-prefixed mainnet addresses are not verified here.
 contract MockXStock is ERC20, Ownable, Pausable {
     error BadMultiplier();
 
@@ -43,7 +45,7 @@ contract MockXStock is ERC20, Ownable, Pausable {
         _mint(to, amount);
     }
 
-    function _update(address from, address to, uint256 value) internal override whenNotPaused {
+    function _update(address from, address to, uint256 value) internal virtual override whenNotPaused {
         super._update(from, to, value);
     }
 }

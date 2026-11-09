@@ -186,6 +186,7 @@ contract OrientationTest is Fixture {
         vm.warp(block.timestamp + 48 hours + 1);
         vm.prank(admin);
         tl.execute(address(d.launcher), 0, data, bytes32(0), keccak256(abi.encode(pair)));
+        _openRoute(pair);
     }
 
     function _boundary(PoolId id, bool coinIsToken0) internal view {

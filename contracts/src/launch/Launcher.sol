@@ -19,6 +19,10 @@ import {BuybackExecutor} from "../buyback/BuybackExecutor.sol";
 
 /// @notice Ownerless launcher. One transaction deploys the coin, initialises the pool, and seeds it.
 ///         Swaps in that same transaction revert. Pause is instant for the guardian role.
+///
+///         Vetted pairs may use Kickback. A pasted or unvetted pair may use Keep or Burn only.
+///         Pasted pairs are probed for fee-on-transfer in this transaction. Rebasing cannot be
+///         proved here. A rebasing pair is unsafe for the pool and for Kickback. See docs/pairs.md.
 contract Launcher {
     using PoolIdLibrary for PoolKey;
     using SafeERC20 for IERC20;
@@ -26,6 +30,7 @@ contract Launcher {
     error NotGuardian();
     error NotAdmin();
     error NotTimelock();
+    error NotInitializer();
     error Paused();
     error BadArgs();
     error PairNotAllowed();
@@ -33,6 +38,21 @@ contract Launcher {
     error RateLimited();
     error PlatformAlreadyLaunched();
     error TighteningOnly();
+    error UnsafePair();
+    error PairRefused();
+    error KickbackNeedsVetted();
+    error RouteNotReady();
+    error FeeOnTransfer();
+    error Reentered();
+
+    uint8 public constant STATUS_UNKNOWN = 0;
+    uint8 public constant STATUS_VETTED = 1;
+    uint8 public constant STATUS_UNVETTED = 2;
+    uint8 public constant STATUS_REFUSED = 3;
+    uint8 public constant CATEGORY_CRYPTO = 0;
+    uint8 public constant CATEGORY_STOCK = 1;
+    uint8 public constant CATEGORY_PREIPO = 2;
+    uint8 public constant MODE_KICKBACK = 1;
 
     struct LaunchParams {
         string name;
@@ -45,6 +65,26 @@ contract Launcher {
         uint256 startMcapInPair;
     }
 
+    struct Inspection {
+        bool ok;
+        bool codePresent;
+        bool metadataOk;
+        bool decimalsOk;
+        bool launchToken;
+        bool protocol;
+        bool refused;
+        bool kickbackAllowed;
+        bool routeReady;
+        bool feeProbeRequired;
+        uint8 status;
+        uint8 category;
+        uint8 decimals;
+        uint256 routeDepth;
+        uint256 minDepth;
+        string name;
+        string symbol;
+    }
+
     event CoinLaunched(
         PoolId indexed poolId,
         address indexed coin,
@@ -54,11 +94,14 @@ contract Launcher {
         address feeRecipient,
         address teamWallet,
         uint256 teamAmount,
-        uint256 startMcap
+        uint256 startMcap,
+        uint8 category,
+        uint8 pairStatus
     );
     event LaunchesPaused(address indexed by);
     event LaunchesUnpaused();
     event PairAllowed(address indexed pair, bool allowed);
+    event PairClassified(address indexed pair, uint8 status, uint8 category);
 
     SeedixRoles public immutable roles;
     IPoolManager public immutable poolManager;
@@ -66,14 +109,19 @@ contract Launcher {
     LiquidityLocker public immutable locker;
     LaunchToken public immutable implementation;
     BuybackExecutor public immutable executor;
+    address public immutable initializer;
 
     bool public launchesPaused;
     bool public platformLaunched;
-    mapping(address => bool) public pairAllowed;
+    bool public categoriesBootstrapped;
+    mapping(PoolId => address) public creatorOf;
+    mapping(address => uint8) public statusOf;
+    mapping(address => uint8) public categoryOf;
     uint256 public maxLaunchesPerHour;
     uint256 public windowStart;
     uint256 public launchesInWindow;
     uint256 public launchNonce;
+    uint256 private _entered;
 
     constructor(
         SeedixRoles roles_,
@@ -82,20 +130,59 @@ contract Launcher {
         LiquidityLocker locker_,
         LaunchToken implementation_,
         BuybackExecutor executor_,
+        address initializer_,
         address[] memory pairs
     ) {
+        if (initializer_ == address(0)) revert NotInitializer();
         roles = roles_;
         poolManager = poolManager_;
         hook = hook_;
         locker = locker_;
         implementation = implementation_;
         executor = executor_;
+        initializer = initializer_;
         uint256 n = pairs.length;
         for (uint256 i; i < n; ++i) {
             if (pairs[i] == address(0)) revert BadArgs();
-            pairAllowed[pairs[i]] = true;
+            statusOf[pairs[i]] = STATUS_VETTED;
             emit PairAllowed(pairs[i], true);
+            emit PairClassified(pairs[i], STATUS_VETTED, CATEGORY_CRYPTO);
         }
+    }
+
+    function pairAllowed(address pair) external view returns (bool) {
+        return statusOf[pair] == STATUS_VETTED;
+    }
+
+    /// @notice Read-only preflight. The fee-on-transfer probe is not in here. It moves tokens,
+    ///         so `probePair` and `launch` run it. `feeProbeRequired` tells the UI that.
+    function inspect(address pair) external view returns (Inspection memory info) {
+        info.status = statusOf[pair];
+        info.category = categoryOf[pair];
+        info.minDepth = executor.minRouteDepth();
+        info.refused = info.status == STATUS_REFUSED;
+        info.kickbackAllowed = info.status == STATUS_VETTED;
+        info.feeProbeRequired = info.status != STATUS_VETTED && info.status != STATUS_REFUSED;
+        if (pair.code.length == 0) return info;
+        info.codePresent = true;
+        info.launchToken = pair == address(implementation) || _isLaunchClone(pair);
+        info.protocol = _isProtocol(pair);
+        (info.metadataOk, info.name, info.symbol, info.decimals) = _tryMeta(pair);
+        info.decimalsOk = info.metadataOk && info.decimals >= 6 && info.decimals <= 18;
+        address whype = Currency.unwrap(executor.whype());
+        if (pair == whype) {
+            info.routeReady = true;
+        } else if (executor.routeOk(Currency.wrap(pair))) {
+            info.routeReady = true;
+            info.routeDepth = executor.routeDepth(Currency.wrap(pair));
+        }
+        info.ok = info.codePresent && info.metadataOk && info.decimalsOk && !info.launchToken && !info.protocol
+            && !info.refused && info.routeReady;
+    }
+
+    /// @notice Balance-delta probe. Refunds whatever arrived. `eth_call` this for a preflight.
+    function probePair(address pair) external returns (bool exact) {
+        return _probe(pair);
     }
 
     function launch(LaunchParams calldata params) external returns (address coin, PoolId id) {
@@ -124,15 +211,49 @@ contract Launcher {
         emit LaunchesUnpaused();
     }
 
+    /// @notice `allowed` marks the pair vetted in Crypto, or refuses it.
+    ///         Category changes go through `setPair` or `bootstrapCategories`.
     function setPairAllowed(address pair, bool allowed) external {
         if (pair == address(0)) revert BadArgs();
         if (allowed) {
             if (msg.sender != address(roles.timelock())) revert NotTimelock();
-        } else if (msg.sender != roles.guardian() && msg.sender != address(roles.timelock())) {
-            revert NotGuardian();
+            statusOf[pair] = STATUS_VETTED;
+        } else {
+            if (msg.sender != roles.guardian() && msg.sender != address(roles.timelock())) revert NotGuardian();
+            statusOf[pair] = STATUS_REFUSED;
         }
-        pairAllowed[pair] = allowed;
         emit PairAllowed(pair, allowed);
+        emit PairClassified(pair, statusOf[pair], categoryOf[pair]);
+    }
+
+    /// @notice Timelock sets vetted, unvetted, or unknown, and the category.
+    ///         The guardian may only refuse. A refusal does not relabel the category.
+    function setPair(address pair, uint8 status, uint8 category) external {
+        if (pair == address(0) || pair.code.length == 0) revert BadArgs();
+        if (status > STATUS_REFUSED || category > CATEGORY_PREIPO) revert BadArgs();
+        if (status == STATUS_REFUSED) {
+            if (msg.sender != roles.guardian() && msg.sender != address(roles.timelock())) revert NotGuardian();
+        } else if (msg.sender != address(roles.timelock())) {
+            revert NotTimelock();
+        }
+        statusOf[pair] = status;
+        if (status != STATUS_REFUSED) categoryOf[pair] = category;
+        emit PairAllowed(pair, status == STATUS_VETTED);
+        emit PairClassified(pair, statusOf[pair], categoryOf[pair]);
+    }
+
+    /// @notice One-shot category labels for pairs the constructor already vetted.
+    function bootstrapCategories(address[] calldata tokens, uint8[] calldata categories) external {
+        if (msg.sender != initializer || categoriesBootstrapped) revert NotInitializer();
+        if (tokens.length != categories.length) revert BadArgs();
+        categoriesBootstrapped = true;
+        uint256 n = tokens.length;
+        for (uint256 i; i < n; ++i) {
+            if (statusOf[tokens[i]] != STATUS_VETTED) revert BadArgs();
+            if (categories[i] > CATEGORY_PREIPO) revert BadArgs();
+            categoryOf[tokens[i]] = categories[i];
+            emit PairClassified(tokens[i], STATUS_VETTED, categories[i]);
+        }
     }
 
     function setMaxLaunchesPerHour(uint256 next) external {
@@ -152,12 +273,15 @@ contract Launcher {
     }
 
     function _launch(LaunchParams calldata params, bool isPlatform) internal returns (address coin, PoolId id) {
+        if (_entered == 1) revert Reentered();
+        _entered = 1;
         if (launchesPaused) revert Paused();
         _check(params, isPlatform);
         _consumeRate();
         Built memory built = _buildCoin(params);
         coin = built.coin;
         id = _openPool(params, isPlatform, built);
+        _entered = 0;
     }
 
     function _buildCoin(LaunchParams calldata params) internal returns (Built memory built) {
@@ -172,6 +296,13 @@ contract Launcher {
 
     function _openPool(LaunchParams calldata params, bool isPlatform, Built memory built) internal returns (PoolId id) {
         uint8 mode = isPlatform ? 2 : params.mode;
+        uint8 status = statusOf[params.pair];
+        if (status == STATUS_UNKNOWN) {
+            statusOf[params.pair] = STATUS_UNVETTED;
+            categoryOf[params.pair] = CATEGORY_CRYPTO;
+            status = STATUS_UNVETTED;
+            emit PairClassified(params.pair, STATUS_UNVETTED, CATEGORY_CRYPTO);
+        }
         Currency pair = Currency.wrap(params.pair);
         Currency coinCur = Currency.wrap(built.coin);
         PoolKey memory key = PoolKey({
@@ -182,6 +313,7 @@ contract Launcher {
             hooks: IHooks(address(hook))
         });
         id = key.toId();
+        creatorOf[id] = msg.sender;
         LaunchCurve.Plan memory curve = LaunchCurve.plan(built.coinIsToken0, params.startMcapInPair, built.liqAmt);
         hook.armLaunchGuard(id);
         hook.stage(key, built.coin, pair, built.coinIsToken0, mode, isPlatform, params.feeRecipient);
@@ -197,21 +329,93 @@ contract Launcher {
             params.feeRecipient,
             params.teamWallet,
             built.teamAmt,
-            params.startMcapInPair
+            params.startMcapInPair,
+            categoryOf[params.pair],
+            status
         );
     }
 
-    function _check(LaunchParams calldata params, bool isPlatform) internal view {
+    function _check(LaunchParams calldata params, bool isPlatform) internal {
         uint256 nameLen = bytes(params.name).length;
         uint256 symLen = bytes(params.symbol).length;
         if (nameLen == 0 || nameLen > 32 || symLen == 0 || symLen > 8) revert BadArgs();
         if (!isPlatform && params.mode > 2) revert BadArgs();
-        if (!pairAllowed[params.pair] || params.pair.code.length == 0) revert PairNotAllowed();
+        if (params.pair.code.length == 0) revert UnsafePair();
+        if (_isProtocol(params.pair) || params.pair == address(implementation) || _isLaunchClone(params.pair)) {
+            revert UnsafePair();
+        }
+        uint8 status = statusOf[params.pair];
+        if (status == STATUS_REFUSED) revert PairRefused();
+        if (status != STATUS_VETTED) {
+            (bool meta,,,) = _tryMeta(params.pair);
+            if (!meta) revert UnsafePair();
+            uint8 dec = _decimals(params.pair);
+            if (dec < 6 || dec > 18) revert UnsafePair();
+            if (!_probe(params.pair)) revert FeeOnTransfer();
+        }
+        if (!isPlatform && params.mode == MODE_KICKBACK && status != STATUS_VETTED) revert KickbackNeedsVetted();
+        address whype = Currency.unwrap(executor.whype());
+        if (params.pair != whype && !executor.routeOk(Currency.wrap(params.pair))) revert RouteNotReady();
         if (params.teamBps > C.MAX_TEAM_BPS) revert BadArgs();
         if (params.teamBps > 0 && params.teamWallet == address(0)) revert BadArgs();
         if (params.startMcapInPair == 0) revert BadArgs();
         address r = params.feeRecipient;
         if (r == address(0) || r == C.DEAD || r == C.FEE_WALLET) revert BadRecipient();
+    }
+
+    function _probe(address pair) internal returns (bool exact) {
+        uint256 amount = _probeAmount(pair);
+        uint256 beforeBal = IERC20(pair).balanceOf(address(this));
+        IERC20(pair).safeTransferFrom(msg.sender, address(this), amount);
+        uint256 mid = IERC20(pair).balanceOf(address(this));
+        exact = mid == beforeBal + amount;
+        uint256 got = mid > beforeBal ? mid - beforeBal : 0;
+        if (got > 0) IERC20(pair).safeTransfer(msg.sender, got);
+    }
+
+    function _probeAmount(address pair) internal view returns (uint256) {
+        uint8 dec = _decimals(pair);
+        if (dec < 6 || dec > 18) revert UnsafePair();
+        return 10 ** (uint256(dec) - 2);
+    }
+
+    function _decimals(address pair) internal view returns (uint8) {
+        (bool ok, bytes memory data) = pair.staticcall(abi.encodeWithSignature("decimals()"));
+        if (!ok || data.length < 32) revert UnsafePair();
+        return abi.decode(data, (uint8));
+    }
+
+    function _tryMeta(address pair)
+        internal
+        view
+        returns (bool ok, string memory name, string memory symbol, uint8 decimals)
+    {
+        (bool dOk, bytes memory dData) = pair.staticcall(abi.encodeWithSignature("decimals()"));
+        if (!dOk || dData.length < 32) return (false, "", "", 0);
+        decimals = abi.decode(dData, (uint8));
+        (bool nOk, bytes memory nData) = pair.staticcall(abi.encodeWithSignature("name()"));
+        (bool sOk, bytes memory sData) = pair.staticcall(abi.encodeWithSignature("symbol()"));
+        if (!nOk || !sOk || nData.length < 64 || sData.length < 64) return (false, "", "", decimals);
+        name = abi.decode(nData, (string));
+        symbol = abi.decode(sData, (string));
+        ok = bytes(name).length > 0 && bytes(name).length <= 64 && bytes(symbol).length > 0
+            && bytes(symbol).length <= 16;
+    }
+
+    function _isLaunchClone(address token) internal view returns (bool) {
+        bytes memory code = token.code;
+        if (code.length != 45) return false;
+        address impl;
+        assembly {
+            impl := shr(96, mload(add(code, 42)))
+        }
+        return impl == address(implementation);
+    }
+
+    function _isProtocol(address token) internal view returns (bool) {
+        return token == address(hook) || token == address(locker) || token == address(executor)
+            || token == address(poolManager) || token == address(this) || token == hook.feeVault()
+            || token == hook.kickbackDistributor() || token == address(0) || token == C.DEAD;
     }
 
     function _consumeRate() internal {

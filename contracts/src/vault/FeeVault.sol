@@ -9,6 +9,8 @@ import {SeedixConstants as C} from "../libraries/SeedixConstants.sol";
 import {LaunchHook} from "../hook/LaunchHook.sol";
 
 /// @notice Pull claims. The fee-wallet address changes only through the 48-hour timelock.
+///         This contract does not custody pair tokens. A rebasing pair changes the PoolManager
+///         balance under the hook's ERC-6909 claims, and this vault cannot sweep that.
 ///         Creator pair and creator coin are claimed separately so a paused pair token
 ///         cannot freeze the coin claim.
 contract FeeVault {
