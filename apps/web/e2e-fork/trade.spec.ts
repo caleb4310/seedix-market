@@ -165,7 +165,10 @@ test("launch, buy, sell, and claim on an anvil fork", async ({ page }) => {
 
   await fundAndPost(poolId, coin);
   await page.reload();
-  await page.getByRole("button", { name: "Claim", exact: true }).click();
+  const claim = page.getByRole("button", { name: "Claim", exact: true });
+  await claim.scrollIntoViewIfNeeded();
+  await expect(claim).toBeVisible({ timeout: 30_000 });
+  await claim.click();
   await expect(page.getByText("Claim Kickback confirmed")).toBeVisible({ timeout: 120_000 });
   const afterClaim = await balanceOf(whype, account);
   expect(afterClaim > whypeAfterBuy).toBe(true);

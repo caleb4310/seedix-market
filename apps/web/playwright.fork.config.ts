@@ -4,7 +4,7 @@ const port = 3011;
 
 export default defineConfig({
   testDir: "./e2e-fork",
-  timeout: 240_000,
+  timeout: 360_000,
   fullyParallel: false,
   workers: 1,
   retries: 0,

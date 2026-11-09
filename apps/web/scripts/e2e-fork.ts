@@ -74,6 +74,7 @@ async function stop(): Promise<void> {
 async function addressesForFork(): Promise<Record<string, string>> {
   const file = JSON.parse(readFileSync(path.resolve(webRoot, "../../deployments/99801.json"), "utf8")) as {
     contracts: { launcher: string };
+    tokens: { whype: string };
   };
   const code = String(await rpc("eth_getCode", [file.contracts.launcher, "latest"]));
   if (code.toLowerCase().includes("97a5d5b5")) {
@@ -83,6 +84,12 @@ async function addressesForFork(): Promise<Record<string, string>> {
   console.log("launcher bytecode has no statusOf; deploying a fresh stack on the fork");
   const deployer = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
   await rpc("anvil_setBalance", [deployer, `0x${(1000n * 10n ** 18n).toString(16)}`]);
+  await rpc("eth_sendTransaction", [{
+    from: deployer,
+    to: file.tokens.whype,
+    data: "0xd0e30db0",
+    value: `0x${(3n * 10n ** 18n).toString(16)}`,
+  }]);
   const forge = spawnSync(
     "forge",
     ["script", "script/Deploy.s.sol", "--rpc-url", anvilRpc, "--broadcast", "--skip-simulation", "-vv"],
@@ -159,9 +166,17 @@ async function main(): Promise<void> {
   const db = { async query() { return { rows: [], rowCount: 0 }; } };
   const claims = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, OPTIONS" });
+      res.end();
+      return;
+    }
     handleRequest(db, req.method ?? "GET", url.pathname, url.searchParams)
       .then((result) => {
-        res.writeHead(result.status, { "content-type": "application/json" });
+        res.writeHead(result.status, {
+          "content-type": "application/json",
+          "access-control-allow-origin": "*",
+        });
         res.end(JSON.stringify(result.json));
       })
       .catch(() => {
