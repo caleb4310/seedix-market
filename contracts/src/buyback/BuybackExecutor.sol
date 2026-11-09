@@ -2,9 +2,11 @@
 pragma solidity ^0.8.26;
 
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
@@ -14,6 +16,8 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {SeedixRoles} from "../access/SeedixRoles.sol";
 import {SeedixConstants as C} from "../libraries/SeedixConstants.sol";
 import {TwapGuard} from "../libraries/TwapGuard.sol";
+import {OracleLib} from "../libraries/OracleLib.sol";
+import {RouteDepth} from "../libraries/RouteDepth.sol";
 import {LaunchHook} from "../hook/LaunchHook.sol";
 import {LaunchToken} from "../token/LaunchToken.sol";
 
@@ -22,6 +26,8 @@ import {LaunchToken} from "../token/LaunchToken.sol";
 ///         The bought coin is burned in the same call. A fill below the TWAP floor reverts the debit.
 contract BuybackExecutor is IUnlockCallback {
     using SafeERC20 for IERC20;
+    using PoolIdLibrary for PoolKey;
+    using StateLibrary for IPoolManager;
     error NotGuardian();
     error NotTimelock();
     error NotLauncher();
@@ -43,6 +49,7 @@ contract BuybackExecutor is IUnlockCallback {
     error ExceedsPot(uint256 pot);
     error NotPoolManager();
     error TooLittleReceived();
+    error ShallowRoute();
 
     event BuybacksPausedSet(address indexed by);
     event BuybacksUnpaused();
@@ -55,6 +62,12 @@ contract BuybackExecutor is IUnlockCallback {
 
     struct Route {
         PoolId poolId;
+        Currency currency0;
+        Currency currency1;
+        uint24 fee;
+        int24 tickSpacing;
+        address hooks;
+        bool hookOracle;
         bool set;
     }
 
@@ -73,17 +86,24 @@ contract BuybackExecutor is IUnlockCallback {
     address public platformToken;
     PoolId public platformPoolId;
     mapping(Currency => Route) public whypeRoute;
+    mapping(address => OracleLib.State) internal routeOracle;
+    /// @notice Minimum WHYPE in the active liquidity across one tick spacing.
+    ///         Zero disables the check. Mainnet's documented default is 10_000 WHYPE.
+    ///         Chain 99801 is set lower because the deployer cannot seed that much.
+    uint256 public minRouteDepth;
+    bool public routesBootstrapped;
     mapping(PoolId => uint256) public lastBuybackAt;
     mapping(PoolId => uint256) public periodStart;
     mapping(PoolId => uint256) public spentInPeriod;
     mapping(Currency => uint256) public collected;
     uint256 public maxInPerPeriod = 50_000 ether;
 
-    constructor(SeedixRoles roles_, Currency whype_, address initializer_) {
+    constructor(SeedixRoles roles_, Currency whype_, address initializer_, uint256 minRouteDepth_) {
         if (initializer_ == address(0)) revert NotInitializer();
         roles = roles_;
         whype = whype_;
         initializer = initializer_;
+        minRouteDepth = minRouteDepth_;
     }
 
     function wire(LaunchHook hook_, address launcher_, address locker_) external {
@@ -142,8 +162,67 @@ contract BuybackExecutor is IUnlockCallback {
         bool matchWhype = coin == Currency.unwrap(whype) || Currency.unwrap(other) == Currency.unwrap(whype);
         bool matchPair = coin == Currency.unwrap(pair) || Currency.unwrap(other) == Currency.unwrap(pair);
         if (!matchWhype || !matchPair || Currency.unwrap(pair) == Currency.unwrap(whype)) revert BadRoute();
-        whypeRoute[pair] = Route({poolId: id, set: true});
-        emit RouteRegistered(Currency.unwrap(pair), id);
+        PoolKey memory key = hook.keyOf(id);
+        _storeRoute(pair, key, true);
+    }
+
+    /// @notice Timelock registers a hookless pair/WHYPE pool. Later changes use this, not bootstrap.
+    function registerExternal(PoolKey calldata key) external {
+        if (msg.sender != address(roles.timelock())) revert NotTimelock();
+        _registerExternal(key);
+    }
+
+    /// @notice Deploy-time routes. The initializer can call this once, including with an empty list,
+    ///         which only burns the right.
+    function bootstrapRoutes(PoolKey[] calldata keys) external {
+        if (msg.sender != initializer || routesBootstrapped) revert NotInitializer();
+        routesBootstrapped = true;
+        uint256 n = keys.length;
+        for (uint256 i; i < n; ++i) {
+            _registerExternal(keys[i]);
+        }
+    }
+
+    function setMinRouteDepth(uint256 next) external {
+        if (msg.sender != address(roles.timelock())) revert NotTimelock();
+        minRouteDepth = next;
+    }
+
+    function routeOk(Currency pair) external view returns (bool) {
+        Route memory route = whypeRoute[pair];
+        if (!route.set) return false;
+        if (minRouteDepth == 0) return true;
+        return _depth(route) + 1 >= minRouteDepth;
+    }
+
+    function routeDepth(Currency pair) external view returns (uint256) {
+        Route memory route = whypeRoute[pair];
+        if (!route.set) return 0;
+        return _depth(route);
+    }
+
+    /// @notice Accrues the last observed tick across the gap, not the live tick.
+    ///         A jump since the last poke then fails the spot band instead of rewriting the TWAP.
+    function pokeRoute(address pair) public {
+        Route memory route = whypeRoute[Currency.wrap(pair)];
+        if (!route.set || route.hookOracle) return;
+        OracleLib.State storage oracle = routeOracle[pair];
+        if (oracle.count == 0) return;
+        int24 remembered = oracle.obs[oracle.index].tick;
+        OracleLib.onSwap(oracle, uint32(block.timestamp), remembered);
+    }
+
+    /// @notice Tokens above the recorded `collected` balance. A positive rebase or a stray transfer.
+    ///         A shortfall is left in place. This does not repair pool reserves.
+    function recoverToken(address token, address to) external {
+        if (msg.sender != address(roles.timelock())) revert NotTimelock();
+        if (to == address(0)) revert Nothing();
+        uint256 beforeBal = IERC20(token).balanceOf(address(this));
+        uint256 owed = collected[Currency.wrap(token)];
+        if (beforeBal <= owed) revert Nothing();
+        uint256 extra = beforeBal - owed;
+        IERC20(token).safeTransfer(to, extra);
+        if (IERC20(token).balanceOf(address(this)) + extra != beforeBal) revert TooLittleReceived();
     }
 
     /// @dev Guardian can only tighten the per-call cap. Raising it goes through the timelock.
@@ -210,9 +289,7 @@ contract BuybackExecutor is IUnlockCallback {
         if (Currency.unwrap(pair) != Currency.unwrap(whype)) {
             Route memory route = whypeRoute[pair];
             if (!route.set) revert RouteNotRegistered();
-            whypeFloor = TwapGuard.effectiveMin(
-                _guard(route.poolId, amountIn, _inputIsCurrency0(route.poolId, pair)), minWhypeOut
-            );
+            whypeFloor = TwapGuard.effectiveMin(_routeFloor(pair, route, amountIn), minWhypeOut);
             platformIn = whypeFloor;
         }
         platformFloor = TwapGuard.effectiveMin(
@@ -225,6 +302,7 @@ contract BuybackExecutor is IUnlockCallback {
         returns (uint256 whypeFloor, uint256 platformFloor)
     {
         if (msg.sender != keeper || keeper == address(0)) revert NotKeeper();
+        if (Currency.unwrap(pair) != Currency.unwrap(whype)) pokeRoute(Currency.unwrap(pair));
         (whypeFloor, platformFloor) = quotePlatform(pair, amountIn, minWhypeOut, minPlatformOut);
         // Every platform buyback, including the stock leg, shares the platform pool's interval.
         // The route pool keeps its own coin-buyback slot.
@@ -232,7 +310,8 @@ contract BuybackExecutor is IUnlockCallback {
         hook.debitPlatformBurn(pair, amountIn, address(this));
         uint256 whypeIn = amountIn;
         if (Currency.unwrap(pair) != Currency.unwrap(whype)) {
-            whypeIn = _swap(whypeRoute[pair].poolId, pair, amountIn, whypeFloor);
+            Route memory route = whypeRoute[pair];
+            whypeIn = _swapKey(_routeKey(route), pair, amountIn, whypeFloor);
         }
         uint256 burned = _swapAndBurn(platformPoolId, whype, whypeIn, platformFloor);
         emit BuybackReserved(platformPoolId, amountIn, platformFloor);
@@ -305,10 +384,82 @@ contract BuybackExecutor is IUnlockCallback {
     }
 
     function _swap(PoolId id, Currency input, uint256 amountIn, uint256 minOut) internal returns (uint256 out) {
-        PoolKey memory key = hook.keyOf(id);
+        out = _swapKey(hook.keyOf(id), input, amountIn, minOut);
+    }
+
+    function _swapKey(PoolKey memory key, Currency input, uint256 amountIn, uint256 minOut)
+        internal
+        returns (uint256 out)
+    {
         bool zeroForOne = Currency.unwrap(input) == Currency.unwrap(key.currency0);
         bytes memory res = hook.poolManager().unlock(abi.encode(key, zeroForOne, amountIn, minOut));
         out = abi.decode(res, (uint256));
+    }
+
+    function _storeRoute(Currency pair, PoolKey memory key, bool hookOracle) internal {
+        if (minRouteDepth != 0 && _depthKey(key) + 1 < minRouteDepth) revert ShallowRoute();
+        whypeRoute[pair] = Route({
+            poolId: key.toId(),
+            currency0: key.currency0,
+            currency1: key.currency1,
+            fee: key.fee,
+            tickSpacing: key.tickSpacing,
+            hooks: address(key.hooks),
+            hookOracle: hookOracle,
+            set: true
+        });
+        if (!hookOracle) {
+            (, int24 tick,,) = hook.poolManager().getSlot0(key.toId());
+            OracleLib.init(routeOracle[Currency.unwrap(pair)], uint32(block.timestamp), tick);
+        }
+        emit RouteRegistered(Currency.unwrap(pair), key.toId());
+    }
+
+    function _registerExternal(PoolKey calldata key) internal {
+        bool whype0 = Currency.unwrap(key.currency0) == Currency.unwrap(whype);
+        bool whype1 = Currency.unwrap(key.currency1) == Currency.unwrap(whype);
+        if (whype0 == whype1) revert BadRoute();
+        address pair = whype0 ? Currency.unwrap(key.currency1) : Currency.unwrap(key.currency0);
+        (uint160 sqrtP,,,) = hook.poolManager().getSlot0(key.toId());
+        if (sqrtP == 0) revert BadRoute();
+        _storeRoute(Currency.wrap(pair), key, false);
+    }
+
+    function _routeKey(Route memory route) internal pure returns (PoolKey memory) {
+        return PoolKey({
+            currency0: route.currency0,
+            currency1: route.currency1,
+            fee: route.fee,
+            tickSpacing: route.tickSpacing,
+            hooks: IHooks(route.hooks)
+        });
+    }
+
+    function _depth(Route memory route) internal view returns (uint256) {
+        return _depthKey(_routeKey(route));
+    }
+
+    function _depthKey(PoolKey memory key) internal view returns (uint256) {
+        return RouteDepth.whypeInNextSpacing(hook.poolManager(), key, whype);
+    }
+
+    function _routeFloor(Currency pair, Route memory route, uint256 amountIn) internal view returns (uint256) {
+        if (route.hookOracle) {
+            return _guard(route.poolId, amountIn, _inputIsCurrency0(route.poolId, pair));
+        }
+        return _guardExternal(pair, route, amountIn);
+    }
+
+    function _guardExternal(Currency pair, Route memory route, uint256 amountIn) internal view returns (uint256 floor) {
+        if (buybacksPaused) revert BuybackIsPaused();
+        if (amountIn == 0) revert Nothing();
+        address token = Currency.unwrap(pair);
+        PoolKey memory key = _routeKey(route);
+        (, int24 spot,,) = hook.poolManager().getSlot0(key.toId());
+        int24 twap = OracleLib.consult(routeOracle[token], uint32(block.timestamp), C.TWAP_WINDOW, spot);
+        TwapGuard.assertBand(spot, twap);
+        bool zeroForOne = Currency.unwrap(pair) == Currency.unwrap(key.currency0);
+        floor = TwapGuard.minOut(amountIn, twap, zeroForOne);
     }
 
     function _swapAndBurn(PoolId id, Currency input, uint256 amountIn, uint256 minOut)

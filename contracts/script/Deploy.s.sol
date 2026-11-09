@@ -12,6 +12,8 @@ import {StateView} from "@uniswap/v4-periphery/src/lens/StateView.sol";
 import {V4Quoter} from "@uniswap/v4-periphery/src/lens/V4Quoter.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SeedixConstants as C} from "../src/libraries/SeedixConstants.sol";
 import {HookMiner} from "../src/libraries/HookMiner.sol";
 import {MockXStock} from "../src/token/MockXStock.sol";
@@ -19,6 +21,8 @@ import {LaunchToken} from "../src/token/LaunchToken.sol";
 import {LaunchHook} from "../src/hook/LaunchHook.sol";
 import {LiquidityLocker} from "../src/launch/LiquidityLocker.sol";
 import {Launcher} from "../src/launch/Launcher.sol";
+import {RouteSeeder} from "../src/launch/RouteSeeder.sol";
+import {CoinMetadata} from "../src/launch/CoinMetadata.sol";
 import {FeeVault} from "../src/vault/FeeVault.sol";
 import {BuybackExecutor} from "../src/buyback/BuybackExecutor.sol";
 import {KickbackDistributor} from "../src/kickback/KickbackDistributor.sol";
@@ -31,6 +35,13 @@ contract DeploySeedix is Script {
     error ForbiddenChain(uint256 chainId);
     error Permit2Missing();
     error MissingCode(address target);
+    error SeedBudget(uint256 total, uint256 cap);
+
+    /// @dev One tick spacing of WHYPE. 0.5 WHYPE per pool across the curated set exceeds the
+    ///      1.5 HYPE seed cap (8 pools would be 4 HYPE). 99801 uses 0.15. Mainnet default is
+    ///      `SeedixConstants.MAINNET_MIN_ROUTE_DEPTH` (10_000 WHYPE), set by the timelock there.
+    uint256 internal constant TESTNET_MIN_ROUTE_DEPTH = 0.15 ether;
+    uint256 internal constant SEED_BUDGET = 1.5 ether;
 
     struct Result {
         address deployer;
@@ -77,14 +88,16 @@ contract DeploySeedix is Script {
 
         vm.startBroadcast(pk);
 
-        (address whype, address usdc, address permit2) = _canonicalOrMock(admin);
+        (address whype, address usdc, address permit2) = _canonicalOrMock(deployer);
         IPoolManager manager = IPoolManager(address(new PoolManager(address(0))));
 
-        address nvda = address(new MockXStock("Wrapped NVIDIA xStock", "wNVDAx", 18, admin));
-        address spy = address(new MockXStock("Wrapped S&P 500 xStock", "wSPYx", 18, admin));
-        address qqq = address(new MockXStock("Wrapped Nasdaq-100 xStock", "wQQQx", 18, admin));
-        address mu = address(new MockXStock("Wrapped Micron xStock", "wMUx", 18, admin));
-        address skhy = address(new MockXStock("Wrapped SK hynix xStock", "wSKHYx", 18, admin));
+        address nvda = address(new MockXStock("Wrapped NVIDIA xStock", "wNVDAx", 18, deployer));
+        address spy = address(new MockXStock("Wrapped S&P 500 xStock", "wSPYx", 18, deployer));
+        address qqq = address(new MockXStock("Wrapped Nasdaq-100 xStock", "wQQQx", 18, deployer));
+        address mu = address(new MockXStock("Wrapped Micron xStock", "wMUx", 18, deployer));
+        address skhy = address(new MockXStock("Wrapped SK hynix xStock", "wSKHYx", 18, deployer));
+        address spacex = address(new MockXStock("TEST Wrapped SpaceX", "wSPACEx", 18, deployer));
+        address openai = address(new MockXStock("TEST Wrapped OpenAI", "wOPENAIx", 18, deployer));
 
         PositionManager posm = new PositionManager(
             manager, IAllowanceTransfer(permit2), 300_000, IPositionDescriptor(address(0)), IWETH9(whype)
@@ -112,7 +125,7 @@ contract DeploySeedix is Script {
         SeedixRoles roles = new SeedixRoles(tl, admin);
         LaunchToken impl = new LaunchToken();
         FeeVault vault = new FeeVault(roles, C.FEE_WALLET, deployer);
-        BuybackExecutor executor = new BuybackExecutor(roles, Currency.wrap(whype), deployer);
+        BuybackExecutor executor = new BuybackExecutor(roles, Currency.wrap(whype), deployer, TESTNET_MIN_ROUTE_DEPTH);
         KickbackDistributor distributor =
             new KickbackDistributor(roles, publisher, 1_000_000 ether, 10_000_000 ether, deployer);
         require(address(vault) == vaultA && address(executor) == execA && address(distributor) == distA, "nonce");
@@ -144,7 +157,7 @@ contract DeploySeedix is Script {
         pairs[6] = skhy;
 
         LiquidityLocker locker = new LiquidityLocker(manager, deployer);
-        Launcher launcher = new Launcher(roles, manager, hook, locker, impl, executor, pairs);
+        Launcher launcher = new Launcher(roles, manager, hook, locker, impl, executor, deployer, pairs);
         hook.setLauncher(address(launcher));
         hook.setLocker(address(locker));
         vault.setHook(hook);
@@ -153,6 +166,49 @@ contract DeploySeedix is Script {
         distributor.wire(hook, address(manager), address(locker), address(vault), address(executor));
         executor.grantKeeper(keeper);
         distributor.grantKeeper(keeper);
+
+        address[] memory stockTokens = new address[](5);
+        uint8[] memory stockCats = new uint8[](5);
+        stockTokens[0] = nvda;
+        stockTokens[1] = spy;
+        stockTokens[2] = qqq;
+        stockTokens[3] = mu;
+        stockTokens[4] = skhy;
+        for (uint256 i; i < 5; ++i) {
+            stockCats[i] = launcher.CATEGORY_STOCK();
+        }
+        launcher.bootstrapCategories(stockTokens, stockCats);
+
+        address[] memory seeded = new address[](7);
+        seeded[0] = nvda;
+        seeded[1] = spy;
+        seeded[2] = qqq;
+        seeded[3] = mu;
+        seeded[4] = skhy;
+        seeded[5] = spacex;
+        seeded[6] = openai;
+        console2.log("planned route pools", uint256(seeded.length));
+        console2.log("planned whype per pool", TESTNET_MIN_ROUTE_DEPTH);
+        console2.log("planned whype total", TESTNET_MIN_ROUTE_DEPTH * seeded.length);
+        console2.log("mainnet min route depth", C.MAINNET_MIN_ROUTE_DEPTH);
+        RouteSeeder seeder = new RouteSeeder();
+        PoolKey[] memory stockRoutes = new PoolKey[](5);
+        uint256 whypeSpent;
+        for (uint256 i; i < seeded.length; ++i) {
+            MockXStock(seeded[i]).transfer(address(seeder), TESTNET_MIN_ROUTE_DEPTH * 4);
+            IERC20(whype).transfer(address(seeder), TESTNET_MIN_ROUTE_DEPTH * 4);
+            (PoolKey memory key, uint256 spent) = seeder.seed(manager, whype, seeded[i], TESTNET_MIN_ROUTE_DEPTH);
+            whypeSpent += spent;
+            console2.log("seeded", seeded[i], spent);
+            if (i < 5) stockRoutes[i] = key;
+        }
+        console2.log("whype seed total", whypeSpent);
+        if (whypeSpent > SEED_BUDGET) revert SeedBudget(whypeSpent, SEED_BUDGET);
+        executor.bootstrapRoutes(stockRoutes);
+        CoinMetadata meta = new CoinMetadata(launcher);
+        console2.log("metadata", address(meta));
+        console2.log("preipo unregistered", spacex);
+        console2.log("preipo unregistered", openai);
 
         vm.stopBroadcast();
 

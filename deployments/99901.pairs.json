@@ -1,0 +1,15 @@
+{
+  "chainId": 99901,
+  "note": "Curated addresses for a future mainnet deploy. Not verified on chain. Do not treat the w-prefixed stocks as non-rebasing until docs/runbooks/add-preipo-token.md is completed for each one. Unwrapped xStocks rebase.",
+  "minRouteDepth": "10000000000000000000000",
+  "minRouteDepthHuman": "10000 WHYPE",
+  "whype": "0xbA876237B0F021A6c6D852d6c26E107997cC5E81",
+  "stocks": [
+    { "symbol": "wNVDAx", "address": "0x11265018bF2d5a99fb71EFaE73aD670203C1dF44", "verified": false },
+    { "symbol": "wSPYx", "address": "0x437c847644ff22Cbcf0eA56896aA25504Aad93b4", "verified": false },
+    { "symbol": "wQQQx", "address": "0x9039Ebd84eE2a0e198EB265E692390762995872C", "verified": false },
+    { "symbol": "wMUx", "address": "0xD4012d8b8095345cF3a83A7C118BbCf58F617079", "verified": false },
+    { "symbol": "wSKHYx", "address": "0x455dD9857DfC2CD599DA185bE0203ba8Bb456603", "verified": false }
+  ],
+  "preipo": []
+}

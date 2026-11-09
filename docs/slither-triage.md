@@ -53,3 +53,18 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - unused-return SeedixRouter._settle | `settle` returns the amount the router just transferred. The swap's delta already fixed that amount.
 - unused-return BuybackExecutor._settle | `settle` returns the amount this contract just transferred into the pool. The swap delta already fixed that amount, and the coin received is checked before this call.
 - unused-return BuybackExecutor._swapAndBurn | `config` is read for the coin address that gets burned. Pair, mode, and recipient are not the burned balance.
+- reentrancy-balance RouteSeeder.seedWide | The entered flag is set before `initialize` and `unlock`. A token callback cannot start a second seed. The flag is cleared only after the position is paid, and a revert rolls the flag back with the transaction.
+- reentrancy-no-eth RouteSeeder.seedWide | Same entered flag. The token transfer inside the unlock callback cannot reenter `seedWide`, and the pool is paid before the flag is cleared.
+- incorrect-equality LaunchHook.recoverToken | `balance == 0` means the hook is not holding this ERC-20, so there is nothing to sweep. A non-zero balance afterwards means the token did not actually leave.
+- incorrect-equality Launcher._probe | The recipient balance must rise by the exact amount sent. Anything else is fee-on-transfer and the launch reverts. This equality is the check.
+- incorrect-equality BuybackExecutor._guard | `launchTime == 0` means this pool id was never configured, so there is no oracle to guard.
+- incorrect-equality KickbackDistributor._tryTransfer | A 32-byte return of 1 is the ERC-20 success word. Any other word is a failed transfer. The equality is the ABI check, not a balance.
+- reentrancy-no-eth Launcher._launch | The entered flag is set before the pair probe and the pool calls. A token callback cannot open a second launch in the same transaction, and a revert rolls the flag back.
+- unused-return RouteSeeder.unlockCallback | `modifyLiquidity` returns the caller delta, which `_pay` settles, and a second protocol-fee delta that a new position does not use.
+- unused-return BuybackExecutor._registerExternal | `getSlot0` is read for a non-zero sqrt price, which means the pool was initialized. The tick and fee fields are not the existence check.
+- unused-return RouteSeeder.seedWide | `initialize` returns the tick. The sqrt price passed in is tick 0, and the tick is not stored again.
+- unused-return BuybackExecutor._guardExternal | `getSlot0` contributes the live tick to the external TWAP. The sqrt price and the two fee fields are not inputs to that consult.
+- unused-return RouteDepth.whypeInNextSpacing | `getSlot0` contributes the sqrt price and the tick. The two fee fields are not part of the depth.
+- unused-return RouteSeeder._pay | `settle` returns the amount this contract just transferred. The liquidity delta already fixed that amount.
+- unused-return BuybackExecutor.pokeRoute | `onSwap` reports whether it wrote a ring slot. The cumulative is updated either way, and the caller does not branch on the write.
+- unused-return BuybackExecutor._storeRoute | `getSlot0` contributes the tick that starts the external oracle. The sqrt price and the fee fields are not stored.

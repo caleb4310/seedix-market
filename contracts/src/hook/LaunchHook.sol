@@ -16,6 +16,11 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SeedixConstants as C} from "../libraries/SeedixConstants.sol";
+import {SeedixRoles} from "../access/SeedixRoles.sol";
+
+interface IHasRoles {
+    function roles() external view returns (SeedixRoles);
+}
 import {FeeMath} from "../libraries/FeeMath.sol";
 import {OracleLib} from "../libraries/OracleLib.sol";
 
@@ -45,6 +50,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
     error Amount();
     error Overflow();
     error FeeTooLarge();
+    error NotTimelock();
 
     uint8 internal constant ACTION_PAY = 1;
     uint8 internal constant ACTION_PULL = 2;
@@ -504,6 +510,17 @@ contract LaunchHook is IHooks, IUnlockCallback {
         p.kickbackPair = _asUint128(uint256(p.kickbackPair) + amount);
         _credit(c, amount);
         _closeMove();
+    }
+
+    /// @notice Stray ERC-20 sent to this hook. Pots are ERC-6909 claims on the PoolManager, not this balance.
+    ///         A rebase of tokens inside the PoolManager is not visible here and is not recoverable.
+    function recoverToken(address token, address to) external {
+        if (msg.sender != address(IHasRoles(kickbackDistributor).roles().timelock())) revert NotTimelock();
+        if (to == address(0)) revert Amount();
+        uint256 beforeBal = IERC20(token).balanceOf(address(this));
+        if (beforeBal == 0) revert Amount();
+        IERC20(token).safeTransfer(to, beforeBal);
+        if (IERC20(token).balanceOf(address(this)) != 0) revert Amount();
     }
 
     /// @dev Buyback executor deposits tokens it was paid (LP fees, seed remainder) into the burn pots.

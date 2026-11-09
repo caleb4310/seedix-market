@@ -16,6 +16,8 @@ import {MockXStock} from "../../src/token/MockXStock.sol";
 import {SeedixRouter} from "../../src/router/SeedixRouter.sol";
 import {SeedixDeployer} from "./SeedixDeployer.sol";
 import {Launcher} from "../../src/launch/Launcher.sol";
+import {RouteSeeder} from "../../src/launch/RouteSeeder.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract Fixture is Test {
     using StateLibrary for IManager;
@@ -70,6 +72,20 @@ contract Fixture is Test {
             teamBps: teamBps,
             startMcapInPair: 20_000 ether
         });
+    }
+
+    /// @dev Hookless WHYPE pool plus a timelocked `registerExternal`, so a non-WHYPE pair can launch.
+    function _openRoute(address token) internal {
+        _openRouteFor(token, 1 ether);
+    }
+
+    function _openRouteFor(address token, uint256 target) internal {
+        RouteSeeder seeder = new RouteSeeder();
+        whype.mint(address(seeder), target * 4);
+        require(IERC20(token).transfer(address(seeder), target * 4), "route fund");
+        (PoolKey memory key,) = seeder.seed(pm, address(whype), token, target);
+        vm.prank(address(d.roles.timelock()));
+        d.executor.registerExternal(key);
     }
 
     function _launch(uint8 mode) internal returns (address coin, PoolId id) {

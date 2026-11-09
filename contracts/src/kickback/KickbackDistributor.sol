@@ -388,6 +388,19 @@ contract KickbackDistributor {
         revert SweepNotEnabled();
     }
 
+    /// @notice Sends tokens above `liabilities` to `to`. A positive rebase or a stray transfer.
+    ///         A shortfall stays owed. This does not lower `liabilities`, and it cannot repair
+    ///         a v4 pool whose reserves rebase inside the PoolManager.
+    function recoverSurplus(address token, address to) external nonReentrant {
+        if (msg.sender != address(roles.timelock())) revert NotTimelock();
+        if (to == address(0)) revert Nothing();
+        uint256 beforeBal = IERC20(token).balanceOf(address(this));
+        uint256 owed = liabilities[token];
+        if (beforeBal <= owed) revert Nothing();
+        uint256 extra = beforeBal - owed;
+        if (_send(token, to, extra) != SendResult.Ok) revert TransferFailed();
+    }
+
     function roundOf(PoolId id, uint64 epochId) public view returns (Round memory r) {
         Epoch storage e = epochs[id][epochId];
         r.funded = e.funded;

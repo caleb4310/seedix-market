@@ -23,6 +23,9 @@ library SeedixConstants {
     /// @dev ln(1.02) / ln(1.0001) ≈ 198. A spot this far from TWAP is about 2%.
     int24 internal constant BAND_TICKS = 198;
     uint256 internal constant MIN_OUT_PIPS = 990_000;
+    /// @dev Documented mainnet minimum for one tick spacing of WHYPE in a route pool.
+    ///      99801 uses a smaller constructor value. See docs/pairs.md.
+    uint256 internal constant MAINNET_MIN_ROUTE_DEPTH = 10_000 ether;
     uint160 internal constant HOOK_FLAGS = uint160((1 << 13) | (1 << 11) | (1 << 7) | (1 << 6) | (1 << 3) | (1 << 2));
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address internal constant FEE_WALLET = 0xf4383D1Ecfb525294A266929c7D4796314a764F9;
