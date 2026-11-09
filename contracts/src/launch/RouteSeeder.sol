@@ -15,8 +15,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @notice Seeds a hookless pair/WHYPE pool around tick 0.
-///         The caller must already have sent both tokens to this contract.
-///         WHYPE spent is the amount that leaves this contract for the position.
+///         The caller may pre-fund this contract. Any of either token that the position does not
+///         take is sent back to the caller. WHYPE spent is what the pool kept.
 contract RouteSeeder is IUnlockCallback {
     using PoolIdLibrary for PoolKey;
     using SafeERC20 for IERC20;
@@ -59,6 +59,8 @@ contract RouteSeeder is IUnlockCallback {
         uint256 afterWhype = IERC20(whype).balanceOf(address(this));
         if (afterWhype > beforeWhype) revert SeedFailed();
         whypeSpent = beforeWhype - afterWhype;
+        _sweep(whype);
+        _sweep(token);
         _entered = 0;
     }
 
@@ -89,13 +91,29 @@ contract RouteSeeder is IUnlockCallback {
         return "";
     }
 
+    /// @dev Pays the pool from this contract first. A shortfall is pulled from the caller, so a
+    ///      pre-fund larger than the position cannot be required.
     function _pay(Currency c, int128 amt) internal {
         if (amt < 0) {
+            uint256 owe = uint256(uint128(-amt));
+            address token = Currency.unwrap(c);
+            uint256 here = IERC20(token).balanceOf(address(this));
             poolManager.sync(c);
-            IERC20(Currency.unwrap(c)).safeTransfer(address(poolManager), uint256(uint128(-amt)));
+            if (here >= owe) {
+                IERC20(token).safeTransfer(address(poolManager), owe);
+            } else {
+                if (here > 0) IERC20(token).safeTransfer(address(poolManager), here);
+                IERC20(token).safeTransferFrom(payer, address(poolManager), owe - here);
+            }
             poolManager.settle();
         } else if (amt > 0) {
             poolManager.take(c, payer, uint256(uint128(amt)));
         }
+    }
+
+    function _sweep(address token) internal {
+        uint256 bal = IERC20(token).balanceOf(address(this));
+        if (bal == 0) return;
+        IERC20(token).safeTransfer(payer, bal);
     }
 }

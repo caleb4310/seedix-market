@@ -53,8 +53,8 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - unused-return SeedixRouter._settle | `settle` returns the amount the router just transferred. The swap's delta already fixed that amount.
 - unused-return BuybackExecutor._settle | `settle` returns the amount this contract just transferred into the pool. The swap delta already fixed that amount, and the coin received is checked before this call.
 - unused-return BuybackExecutor._swapAndBurn | `config` is read for the coin address that gets burned. Pair, mode, and recipient are not the burned balance.
-- reentrancy-balance RouteSeeder.seedWide | The entered flag is set before `initialize` and `unlock`. A token callback cannot start a second seed. The flag is cleared only after the position is paid, and a revert rolls the flag back with the transaction.
-- reentrancy-no-eth RouteSeeder.seedWide | Same entered flag. The token transfer inside the unlock callback cannot reenter `seedWide`, and the pool is paid before the flag is cleared.
+- reentrancy-balance RouteSeeder.seedWide | The entered flag is set before `initialize` and `unlock`. A token callback cannot start a second seed. The flag stays set while the position is paid and while leftover WHYPE and the pair token are swept back to the caller. It is cleared only after that sweep, and a revert rolls the flag back with the transaction.
+- reentrancy-no-eth RouteSeeder.seedWide | Same entered flag. The token transfer inside the unlock callback, and the leftover sweep after it, cannot reenter `seedWide`. The pool is paid and the leftovers are returned before the flag is cleared.
 - incorrect-equality LaunchHook.recoverToken | `balance == 0` means the hook is not holding this ERC-20, so there is nothing to sweep. A non-zero balance afterwards means the token did not actually leave.
 - incorrect-equality Launcher._probe | The recipient balance must rise by the exact amount sent. Anything else is fee-on-transfer and the launch reverts. This equality is the check.
 - incorrect-equality BuybackExecutor._guard | `launchTime == 0` means this pool id was never configured, so there is no oracle to guard.
