@@ -25,6 +25,12 @@ export type CoinRow = {
   coinIsToken0: boolean;
   coinDecimals: number;
   pairDecimals: number;
+  category?: number;
+  pairStatus?: number;
+  description?: string | null;
+  website?: string | null;
+  xUrl?: string | null;
+  telegram?: string | null;
 };
 
 export type SwapRow = {
@@ -113,6 +119,12 @@ export type KnownCoin = { poolId: Hex; coin: Hex; coinIsToken0: boolean };
 export interface Store {
   listCoins(chainId: number): Promise<KnownCoin[]>;
   upsertCoin(row: CoinRow): Promise<void>;
+  classifyPair(chainId: number, pair: Hex, status: number, category: number): Promise<void>;
+  setSocials(
+    chainId: number,
+    poolId: Hex,
+    socials: { description: string | null; website: string | null; xUrl: string | null; telegram: string | null },
+  ): Promise<void>;
   noteTeam(chainId: number, poolId: Hex, team: Hex): Promise<void>;
   addCarry(chainId: number, poolId: Hex, epoch: bigint, amount: bigint, blockNumber: bigint): Promise<void>;
   sealEpoch(chainId: number, poolId: Hex, epoch: bigint, rolled: bigint): Promise<void>;
@@ -171,9 +183,9 @@ export class PgStore implements Store {
       `INSERT INTO coins (
          pool_id, chain_id, coin, pair, name, symbol, pair_symbol, mode, is_platform,
          fee_recipient, team_wallet, team_amount, start_mcap, launch_time,
-         coin_is_token0, coin_decimals, pair_decimals, launch_block
+         coin_is_token0, coin_decimals, pair_decimals, launch_block, category, pair_status
        ) VALUES (
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,to_timestamp($14),$15,$16,$17,$18
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,to_timestamp($14),$15,$16,$17,$18,$19,$20
        )
        ON CONFLICT (pool_id) DO UPDATE SET
          name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE coins.name END,
@@ -182,6 +194,8 @@ export class PgStore implements Store {
          coin_is_token0 = EXCLUDED.coin_is_token0,
          coin_decimals = EXCLUDED.coin_decimals,
          pair_decimals = EXCLUDED.pair_decimals,
+         category = EXCLUDED.category,
+         pair_status = EXCLUDED.pair_status,
          team_wallet = COALESCE(EXCLUDED.team_wallet, coins.team_wallet)`,
       [
         toBuffer(row.poolId),
@@ -202,7 +216,34 @@ export class PgStore implements Store {
         row.coinDecimals,
         row.pairDecimals,
         row.launchBlock.toString(),
+        row.category ?? 0,
+        row.pairStatus ?? 0,
       ],
+    );
+  }
+
+  async classifyPair(chainId: number, pair: Hex, status: number, category: number): Promise<void> {
+    await this.db.query(
+      `INSERT INTO pairs (chain_id, address, status, category) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (chain_id, address) DO UPDATE SET status = EXCLUDED.status, category = EXCLUDED.category`,
+      [chainId, toBuffer(pair), status, category],
+    );
+    await this.db.query(`UPDATE coins SET category = $3, pair_status = $2 WHERE chain_id = $1 AND pair = $4`, [
+      chainId,
+      status,
+      category,
+      toBuffer(pair),
+    ]);
+  }
+
+  async setSocials(
+    chainId: number,
+    poolId: Hex,
+    socials: { description: string | null; website: string | null; xUrl: string | null; telegram: string | null },
+  ): Promise<void> {
+    await this.db.query(
+      `UPDATE coins SET description = $3, website = $4, x_url = $5, telegram = $6 WHERE chain_id = $1 AND pool_id = $2`,
+      [chainId, toBuffer(poolId), socials.description, socials.website, socials.xUrl, socials.telegram],
     );
   }
 

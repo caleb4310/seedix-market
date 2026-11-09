@@ -18,17 +18,32 @@ export async function main(): Promise<void> {
   const pool = new pg.Pool({ connectionString: apiConfig.databaseUrl });
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    handleRequest(pool, req.method ?? "GET", url.pathname, url.searchParams)
-      .then((result) => {
-        const body = JSON.stringify(result.json);
-        res.writeHead(result.status, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(body) });
-        res.end(body);
-      })
-      .catch((err: unknown) => {
-        console.error("api request failed", err instanceof Error ? err.message : "unknown error");
-        res.writeHead(500, { "content-type": "application/json; charset=utf-8" });
-        res.end(JSON.stringify({ error: "unavailable" }));
-      });
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => {
+      let parsed: unknown;
+      if (chunks.length > 0) {
+        try {
+          parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        } catch {
+          parsed = undefined;
+        }
+      }
+      handleRequest(pool, req.method ?? "GET", url.pathname, url.searchParams, { body: parsed })
+        .then((result) => {
+          const payload = JSON.stringify(result.json);
+          res.writeHead(result.status, {
+            "content-type": "application/json; charset=utf-8",
+            "content-length": Buffer.byteLength(payload),
+          });
+          res.end(payload);
+        })
+        .catch((err: unknown) => {
+          console.error("api request failed", err instanceof Error ? err.message : "unknown error");
+          res.writeHead(500, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ error: "unavailable" }));
+        });
+    });
   });
   // Compose publishes this port on 127.0.0.1. Inside the container the process listens on all interfaces.
   server.listen(apiConfig.port, apiConfig.host, () => {

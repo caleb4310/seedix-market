@@ -61,3 +61,13 @@ export const pins = {
 } as const;
 
 export type Mode = "keep" | "kickback" | "burn";
+
+export {
+  cleanDescription,
+  cleanSocials,
+  httpsUrl,
+  stripControls,
+  telegramUrl,
+  xUrl,
+  type Socials,
+} from "./metadata.ts";
