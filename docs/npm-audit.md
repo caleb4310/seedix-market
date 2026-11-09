@@ -25,4 +25,4 @@ Every high is transitive. `npm audit` offers a fix only by jumping to `wagmi@3.7
 | `@coinbase/cdp-sdk` >=1.0.0 | Reaches `abitype` and `zod` | `@wagmi/connectors` base-account connector, imported by RainbowKit | No. The web build stubs `@x402/*` so those modules are not bundled |
 | `postcss` <=8.5.22 | XSS in CSS stringify; source-map path read | Next 15 | No. The suggested fix is Next 16 |
 
-Direct dependencies stay on the pinned ranges in `apps/web/package.json` (`next` ^15.1.3, `viem` ^2.22.9, `wagmi` ^2.14.6, `@rainbow-me/rainbowkit` ^2.2.11). Revisit this list when RainbowKit supports wagmi 3, or when Next 15 ships a `postcss` release that clears GHSA-6g55-p6wh-862q without a major bump.
+Direct dependencies stay on the pinned ranges in `apps/web/package.json` (`next` ^15.1.3, `viem` ^2.22.9, `wagmi` ^2.14.6, `@rainbow-me/rainbowkit` ^2.2.11). The indexer also depends on `viem` ^2.22.9 and `pg`. That does not add an advisory; the counts above are unchanged. Revisit this list when RainbowKit supports wagmi 3, or when Next 15 ships a `postcss` release that clears GHSA-6g55-p6wh-862q without a major bump.

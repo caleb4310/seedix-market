@@ -1,6 +1,6 @@
 # Seedix
 
-Seedix is a Longbow-style memecoin launchpad for Kinetiq Elysium. This repository is the week-1 foundation: Foundry contracts with a real fee engine, a testnet deploy script, service skeletons, and a static web app wired to chain 99801.
+Seedix is a Longbow-style memecoin launchpad for Kinetiq Elysium. This repository is the week-1 foundation: Foundry contracts with a real fee engine, a testnet deploy script, an indexer and API, and a web app wired to chain 99801.
 
 It is testnet only. The deploy script reverts on every chain except Elysium testnet (`99801`) and local Anvil (`31337`). Do not broadcast it to a public RPC.
 
@@ -10,7 +10,7 @@ It is testnet only. The deploy script reverts on every chain except Elysium test
 |---|---|
 | `contracts/` | Foundry contracts, tests, and the deploy script |
 | `apps/web/` | Next.js app. Wallet connect uses a custom chain for 99801 |
-| `services/` | Indexer, API, Kickback publisher, and keeper skeletons, plus the Postgres migration |
+| `services/` | Indexer, API, Kickback publisher, and keeper. Postgres migrations live with the indexer |
 | `infra/` | Compose project `launchpad`, nginx site file, nightly `pg_dump` |
 
 ## Fee model
@@ -140,7 +140,7 @@ Wallet connection uses RainbowKit on wagmi and viem. Elysium testnet (99801) is 
 
 ## Services and infra
 
-Services are TypeScript skeletons with a shared chain config. The indexer migration is `services/indexer/migrations/0001_init.sql`.
+The indexer follows chain 99801 from the deploy block and writes launches, swaps, fees, buybacks, holder balances, and Kickback payouts into the host `launchpad` database. Migrations are `services/indexer/migrations/0001_init.sql` and `0002_activity.sql`. The API listens on port 3001 and serves `/coins`, charts, holders, swaps, kickbacks, buybacks, and `/portfolio/:address`. The Kickback publisher and the keeper are still skeletons. Set `DATABASE_URL` to the host database. No private key belongs in the indexer or the API.
 
 `infra/docker-compose.yml` is project `launchpad` on network `launchpad_net`. Ports are `127.0.0.1` in the 18400 range. Kubo API 5001 is not published. There is no Postgres container. API and indexer mount the host socket and use role `launchpad`.
 
@@ -150,6 +150,6 @@ Backups: `infra/backup/nightly-pg-dump.sh` dumps only the `launchpad` database t
 
 ## What is real this week, and what is a skeleton
 
-Real: fee math, pot accounting, 6909 debits, oracle cadence, launch and seed, creator and wallet claims, Kickback fund / root / claim / cancel, Kickback auto-push, coin `burn()`, timelocked fee wallet, guardian pause.
+Real: fee math, pot accounting, 6909 debits, oracle cadence, launch and seed, creator and wallet claims, Kickback fund / root / claim / cancel, Kickback auto-push, buyback swap and burn, the indexer, the read API, coin `burn()`, timelocked fee wallet, guardian pause.
 
-Skeleton: indexer, API, and the off-chain keeper service. The web trade card quotes with V4Quoter when `NEXT_PUBLIC_ROUTER`, `NEXT_PUBLIC_QUOTER`, and `NEXT_PUBLIC_STATE_VIEW` are set, and refuses to sign without that quote.
+Skeleton: the Kickback publisher and the keeper service. The web trade card quotes with V4Quoter when `NEXT_PUBLIC_ROUTER`, `NEXT_PUBLIC_QUOTER`, and `NEXT_PUBLIC_STATE_VIEW` are set, and refuses to sign without that quote.
