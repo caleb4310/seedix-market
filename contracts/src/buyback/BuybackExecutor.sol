@@ -63,6 +63,8 @@ contract BuybackExecutor is IUnlockCallback {
     address public launcher;
     address public locker;
     address public keeper;
+    /// @dev One-shot. Deploy burns this so the deployer cannot grant a keeper later.
+    bool public initialKeeperUsed;
     address public immutable initializer;
     Currency public immutable whype;
 
@@ -98,6 +100,16 @@ contract BuybackExecutor is IUnlockCallback {
     function setKeeper(address next) external {
         if (msg.sender != roles.admin()) revert NotAdmin();
         emit KeeperSet(keeper, next);
+        keeper = next;
+    }
+
+    /// @notice Deploy-time grant. The initializer can call this once, including with the zero address,
+    ///         which only burns the right. Later changes go through `setKeeper`.
+    function grantKeeper(address next) external {
+        if (msg.sender != initializer || initialKeeperUsed) revert NotInitializer();
+        initialKeeperUsed = true;
+        if (next == address(0)) return;
+        emit KeeperSet(address(0), next);
         keeper = next;
     }
 

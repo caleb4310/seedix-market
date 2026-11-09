@@ -26,7 +26,15 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - unused-return BuybackExecutor.registerRoute | The route is valid when one of the two currencies is WHYPE. Launch time and the recipient are not part of that check.
 - unused-return BuybackExecutor.sweepCollected | The flush targets the platform coin and its pair. The other `config` fields would let a caller aim the sweep at a different pool, which this function does not.
 - unused-return FeeVault.claimCreator | Three separate reads: the recipient from `config`, then `creatorPair` and `creatorCoin` from `pots`. Each call uses the one field that claim needs.
+- incorrect-equality KickbackDistributor._send | `afterBal == beforeBal` means the token moved nothing, so the push is recorded as claimable. `beforeBal == afterBal + amount` means the distributor balance fell by exactly the owed amount. A different decrease reverts.
+- incorrect-equality KickbackDistributor.conserves | `funded == 0` means this epoch was never opened, so there is no pot to add up.
+- reentrancy-no-eth KickbackDistributor.claim | The account is marked claimed before the token call, and `nonReentrant` rejects a callback. The bucket is chosen from the balance change after the call. A partial move reverts the transaction.
+- reentrancy-no-eth KickbackDistributor.push | The same lock covers the batch and the gas reimbursement. Reimbursement is counted only after the pair token balance falls by exactly the paid amount. A nested push, claim, or seal reverts.
+- reentrancy-no-eth KickbackDistributor._pushOne | The claimed bit is set before the transfer. Success, the claimable credit, or rollover is written from that result. The outer lock rejects a reentering call.
+- unused-return KickbackDistributor._leaf | The leaf hashes the coin and the pair. Mode, launch time, and the fee recipient are not part of the leaf.
+- unused-return KickbackDistributor._pairToken | Only the pair currency is the kickback token. The coin and the mode are not the asset being pushed.
 - unused-return KickbackDistributor.cancel | The refund is paid in the pair token. The coin address and the mode are not the asset being returned.
+- unused-return KickbackDistributor.teamWallet | `config` is read for the coin. That coin's `teamWallet` is the address Kickback always skips. The pair and the fee fields are not the exclusion.
 - unused-return KickbackDistributor.claim | The claim pays the coin or the pair, whichever the leaf names. The other `config` fields are not a payment amount.
 - unused-return KickbackDistributor.fund | One read checks `launchTime` so the epoch has started. The other reads the pair currency that `debitKickback` pulls. They are different tuples.
 - unused-return LaunchHook._payout | `unlock` returns the callback bytes. The payout amount was fixed before the call, and the callback settles that amount.

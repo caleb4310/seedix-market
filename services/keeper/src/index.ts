@@ -1,6 +1,6 @@
 import { deployment99801, elysiumTestnet } from "@seedix/shared";
 
-/** Buyback keeper. Anyone can trigger a guarded buyback; this process just does it on a timer. */
+/** Buyback and Kickback keeper. Buybacks stay on the TWAP interval. Kickback pushes are batched. */
 export const keeperConfig = {
   chainId: elysiumTestnet.id,
   rpcUrl: elysiumTestnet.rpcUrls[0],

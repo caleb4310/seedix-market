@@ -35,5 +35,5 @@
     "feeWallet": "0xf4383D1Ecfb525294A266929c7D4796314a764F9",
     "keeper": "0x6071b00861a449dfA741055F1E54343DDf7C1a42"
   },
-  "notes": "Deployed from e836bd3 plus the admin-renounce fix. KickbackDistributor.publisher is the admin. Changing the publisher is a 48 hour timelock. LaunchHook.kickbackDistributor is immutable, so an auto-push distributor cannot be swapped in without a new protocol deploy."
+  "notes": "Previous 99801 deployment, before Kickback auto-push. LaunchHook.kickbackDistributor is immutable, so these addresses cannot run auto-push. A full redeploy is required. Do not broadcast from this repository. See the README redeploy steps. KickbackDistributor.publisher on this deployment is the admin."
 }

@@ -40,6 +40,23 @@ The platform fee is always in the pair token. On a normal pool it splits `burn =
 
 Swaps whose PoolManager sender is the buyback executor pay neither fee.
 
+## Kickback auto-push
+
+Kickback mode still accrues the pair-token base in `kickbackPair`. The publisher funds an hourly epoch from that pot and posts the same merkle root as before. After the review hour a keeper pushes the leaves.
+
+`LaunchHook.kickbackDistributor` is immutable, so this distributor is wired in at deploy. The live 99801 hook cannot be pointed at it. See the README for the redeploy.
+
+| Rule | What the contract does |
+|---|---|
+| Batch | `push` takes at most 32 leaves. The loop is bounded. Repeat the call for the rest of the round |
+| Dust | An amount strictly below `dustThreshold` (default 1e6 wei) is not transferred. It joins `poolCarry` and the next `fund` |
+| Skip | The team wallet is always skipped. So are the zero address, the dead address, the hook, this distributor, the PoolManager, the locker, the vault, the buyback executor, and any address with code. A contract is paid only if the timelock allowlisted it. Allowlisting does not override the team wallet or the protocol addresses |
+| Failed transfer | A revert, a `false` return, or a blacklist leaves the tokens here and credits `claimable`. The holder pulls with `claimFailed`. The rest of the batch still runs. One transfer is capped at 200,000 gas |
+| Gas | The keeper is paid in the pair token from that round. The payment is `gas used × gas price`, and it cannot exceed `gasCapBps` of the round. The ceiling is 200 bps (2%). On 99801 and 31337 the timelock can set the bps up to that ceiling and the guardian can only lower it. On any other chain the setter reverts and the cap stays 2% |
+| Conservation | `pushed + claimable + rollover + gasPaid + pending = funded`. `seal` rolls `pending` into the next round, and then `pushed + claimable + rollover = funded - gasPaid`. The unpaid gas reserve is part of `pending` until it is paid or sealed. A manifest has to fit in `holderBudget`, which is the round minus that reserve |
+
+`sweep` still reverts. Push and seal are the distribution path. A keeper is granted with `KEEPER` at deploy, or later with `setKeeper`. On this testnet `setKeeper` is immediate. Mainnet must timelock the grant. Revoking it stays immediate.
+
 ## Launch transaction
 
 `Launcher.launch` deploys the coin, initialises the pool, and seeds it in one call. It arms a transient guard for that pool. Any swap in the same transaction reverts with `SwapDuringLaunch`, so the creator cannot buy inside the launch transaction. The guard clears when the transaction ends.

@@ -26,8 +26,8 @@ Handlers live in `test/invariant/handlers/FeeHandler.sol`. `FeeHandler._afterAct
 | B-7, B-8, B-9, B-10, B-12 | Stubbed | Interval storage exists. No per-period cap. No profitability fuzz |
 | B-11 | Done as fail-closed | Unregistered xStock to WHYPE routes revert |
 | K-1, K-6, K-7, K-8, K-9, K-12 | Done | `Kickback.t.sol` |
-| K-2, K-3, K-4 | Partial | Single-leaf claims, double-claim, domain-separated leaf. No multi-leaf fuzz |
-| K-5, K-10, K-11, K-13, K-14 | Stubbed | Sweep reverts `SweepNotEnabled`. No FFI tree parity |
+| K-2, K-3, K-4 | Done | Single-leaf and multi-leaf push, double-pay, domain-separated leaf in `KickbackPush.t.sol` |
+| K-5, K-10, K-11, K-13, K-14 | Done for auto-push | Conservation, skip rules, claim fallback, and the 2% gas cap in `KickbackPush.t.sol` and `KickbackInvariant.t.sol`. `sweep` still reverts `SweepNotEnabled`. No FFI tree parity |
 | T-1, T-4, T-6 | Done | 48h fee wallet. Guardian pause is instant. Unpause is timelocked |
 | T-3 | Done as one key | Guardian address equals admin at deploy and can be moved with the timelock |
 | S-1, S-3 | Done | Supply and 5% team cap |

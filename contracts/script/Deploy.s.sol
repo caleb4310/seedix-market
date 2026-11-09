@@ -57,11 +57,19 @@ contract DeploySeedix is Script {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address admin = vm.envOr("ADMIN", vm.addr(pk));
         address publisher = vm.envOr("KICKBACK_PUBLISHER", admin);
-        deploy(pk, admin, publisher);
+        address keeper = vm.envOr("KEEPER", address(0));
+        deploy(pk, admin, publisher, keeper);
     }
 
     /// @dev `admin` receives the admin, guardian, proposer, and executor roles. The broadcasting key keeps none.
     function deploy(uint256 pk, address admin, address publisher) public {
+        deploy(pk, admin, publisher, address(0));
+    }
+
+    /// @dev `keeper` receives the buyback keeper and the kickback keeper. The zero address burns the
+    ///      deploy-time grant so the deployer cannot assign one later. `admin == deployer` still keeps
+    ///      the timelock proposer, executor, and canceller roles.
+    function deploy(uint256 pk, address admin, address publisher, address keeper) public {
         if (block.chainid != 99801 && block.chainid != 31337) revert ForbiddenChain(block.chainid);
         address deployer = vm.addr(pk);
         if (admin == address(0)) admin = deployer;
@@ -143,6 +151,8 @@ contract DeploySeedix is Script {
         executor.wire(hook, address(launcher), address(locker));
         locker.wire(hook, address(launcher), address(executor));
         distributor.wire(hook, address(manager), address(locker), address(vault), address(executor));
+        executor.grantKeeper(keeper);
+        distributor.grantKeeper(keeper);
 
         vm.stopBroadcast();
 
@@ -174,6 +184,7 @@ contract DeploySeedix is Script {
         console2.log("executor", address(executor));
         console2.log("distributor", address(distributor));
         console2.log("locker", address(locker));
+        console2.log("keeper", keeper);
         console2.log("whype", whype);
         console2.log("poolManager hash");
         console2.logBytes32(address(manager).codehash);
