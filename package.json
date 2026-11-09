@@ -1,0 +1,22 @@
+{
+  "name": "seedix",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "services/shared",
+    "services/indexer",
+    "services/api",
+    "services/kickback",
+    "services/keeper"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "typescript": "^5.7.3"
+  },
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "npm run dev -w @seedix/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  }
+}

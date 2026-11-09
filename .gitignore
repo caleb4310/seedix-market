@@ -1,0 +1,16 @@
+node_modules/
+.next/
+*.tsbuildinfo
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+*.log
+.DS_Store
+test-results/
+playwright-report/
+slither.json

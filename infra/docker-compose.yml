@@ -1,0 +1,103 @@
+# Seedix compose project. Isolated by name and network.
+# Postgres is the host's existing server. Do not add a database container.
+# Every published port is bound to 127.0.0.1. Kubo API 5001 is not published.
+
+name: launchpad
+
+networks:
+  launchpad:
+    name: launchpad_net
+    driver: bridge
+
+services:
+  web:
+    image: node:22-bookworm
+    working_dir: /app
+    command: ["npm", "run", "start"]
+    networks: [launchpad]
+    ports:
+      - "127.0.0.1:18480:3000"
+    mem_limit: 1g
+    cpus: 1.0
+    restart: unless-stopped
+
+  api:
+    image: node:22-bookworm
+    working_dir: /app
+    command: ["npm", "run", "start"]
+    networks: [launchpad]
+    ports:
+      - "127.0.0.1:18481:3001"
+    environment:
+      DATABASE_URL: postgres://launchpad@/launchpad?host=/var/run/postgresql
+    volumes:
+      - /var/run/postgresql:/var/run/postgresql:ro
+    mem_limit: 1g
+    cpus: 1.0
+    restart: unless-stopped
+
+  indexer:
+    image: node:22-bookworm
+    working_dir: /app
+    command: ["npm", "run", "start"]
+    networks: [launchpad]
+    ports:
+      - "127.0.0.1:18482:42069"
+    environment:
+      DATABASE_URL: postgres://launchpad@/launchpad?host=/var/run/postgresql
+    volumes:
+      - /var/run/postgresql:/var/run/postgresql:ro
+    mem_limit: 3g
+    cpus: 1.5
+    restart: unless-stopped
+
+  kickback:
+    image: node:22-bookworm
+    working_dir: /app
+    command: ["npm", "run", "start"]
+    networks: [launchpad]
+    environment:
+      DATABASE_URL: postgres://launchpad@/launchpad?host=/var/run/postgresql
+    volumes:
+      - /var/run/postgresql:/var/run/postgresql:ro
+    mem_limit: 1g
+    cpus: 0.5
+    restart: unless-stopped
+
+  keeper:
+    image: node:22-bookworm
+    working_dir: /app
+    command: ["npm", "run", "start"]
+    networks: [launchpad]
+    mem_limit: 512m
+    cpus: 0.25
+    restart: unless-stopped
+
+  kubo:
+    image: ipfs/kubo:v0.32.1
+    networks: [launchpad]
+    # API stays on the compose network. Do not publish 5001.
+    # Swarm is on localhost only, and not on host port 4001.
+    ports:
+      - "127.0.0.1:18401:4001"
+      - "127.0.0.1:18486:8080"
+    volumes:
+      - kubo:/data/ipfs
+    mem_limit: 2g
+    cpus: 1.0
+    restart: unless-stopped
+
+  monitoring:
+    image: louislam/uptime-kuma:1
+    networks: [launchpad]
+    ports:
+      - "127.0.0.1:18487:3001"
+    volumes:
+      - kuma:/app/data
+    mem_limit: 512m
+    cpus: 0.5
+    restart: unless-stopped
+
+volumes:
+  kubo:
+  kuma:

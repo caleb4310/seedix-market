@@ -1,0 +1,15 @@
+{
+  "name": "@seedix/indexer",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit",
+    "start": "node --experimental-strip-types src/index.ts"
+  },
+  "dependencies": {
+    "@seedix/shared": "*"
+  }
+}
