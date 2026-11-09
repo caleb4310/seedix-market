@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  contracts-test:
+    name: contracts-test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Format
+        run: forge fmt --check
+      - name: Build
+        run: forge build
+      - name: Test
+        run: forge test
+
+  block-number-ban:
+    name: block-number-ban
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject parent-chain block counter in contract source
+        run: |
+          if grep -RIn --include='*.sol' 'block.number' contracts/src; then
+            echo "block.number is forbidden in contracts/src. Use block.timestamp, or ArbSys.arbBlockNumber() if an L2 block id is required."
+            exit 1
+          fi
+
+  slither:
+    name: slither
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Install Slither
+        run: pipx install slither-analyzer
+      - name: Slither
+        working-directory: contracts
+        run: slither . --exclude-dependencies --fail-none || true
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: npm run lint -w @seedix/web
+      - run: npm run typecheck -w @seedix/web
+      - run: npm run build -w @seedix/web
+
+  services:
+    name: services
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: npm run lint -w @seedix/shared -w @seedix/indexer -w @seedix/api -w @seedix/kickback -w @seedix/keeper
+      - run: npm run typecheck -w @seedix/shared -w @seedix/indexer -w @seedix/api -w @seedix/kickback -w @seedix/keeper
+      - name: Compose ports stay on localhost
+        run: |
+          if grep -E '^\s+- "[0-9]' infra/docker-compose.yml; then
+            echo "published ports must be bound to 127.0.0.1"
+            exit 1
+          fi
+          if grep -E '5001:' infra/docker-compose.yml; then
+            echo "Kubo API 5001 must not be published"
+            exit 1
+          fi
