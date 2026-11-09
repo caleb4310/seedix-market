@@ -136,6 +136,8 @@ Check these widths with the browser device toolbar. Nothing should scroll sidewa
 
 `/coin/kiln` is still inside the 10 second decay, so the buy panel asks you to confirm the hook fee. Add `?side=sell` to see the sell receipt. Add `?theme=dark` for the dark palette. With no browser wallet, Connect explains that and links to a wallet install. Nothing is marked confirmed until a transaction hash comes back.
 
+Set `NEXT_PUBLIC_API_URL` to read the board, the price chart, Kickback history, and the portfolio from the API. Leave it empty and the board still reads `CoinLaunched` from the chain. Trades still quote with the extreme sqrt price limit, not a band around the spot price.
+
 Wallet connection uses RainbowKit on wagmi and viem. Elysium testnet (99801) is registered as a custom chain. The modal colors come from `apps/web/lib/tokens.ts`, and they follow the Seedix light and dark toggle. Set `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` (see `.env.example`) to add WalletConnect. If that variable is empty, the modal offers injected wallets only.
 
 ## Services and infra

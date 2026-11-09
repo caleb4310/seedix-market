@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { fees, hookPips } from "@/lib/tokens";
 import { coinAge, modeLabel, type Coin } from "@/lib/coin";
 import { Price } from "@/components/Price";
+import { Chart } from "@/components/Chart";
+import { Kickbacks } from "@/components/Kickbacks";
 
 function shortAddress(value: string): string {
   return value.length > 12 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value;
@@ -62,21 +64,7 @@ export function CoinBody({ coin }: { coin: Coin }) {
             </div>
           </div>
         </div>
-        {coin.price !== undefined ? (
-        <svg className="spark" viewBox="0 0 240 72" preserveAspectRatio="none" role="img" aria-label="Price over the last hour">
-          <path
-            d="M0 52 C 20 50, 30 46, 48 44 S 80 28, 100 34 S 140 58, 168 40 S 210 18, 240 22 V 72 H 0 Z"
-            fill="currentColor"
-            opacity="0.12"
-          />
-          <path
-            d="M0 52 C 20 50, 30 46, 48 44 S 80 28, 100 34 S 140 58, 168 40 S 210 18, 240 22"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          />
-        </svg>
-        ) : null}
+        <Chart poolId={coin.poolId} />
         <p className="address-chip">
           <span>Contract</span>
           <span className="addr-short">{shortAddress(contract)}</span>
@@ -99,6 +87,7 @@ export function CoinBody({ coin }: { coin: Coin }) {
           {coin.holders !== undefined ? `${coin.holders} holders. ` : null}
           The hook fee above 1% burns the coin for the first 10 seconds. The team can receive up to 5% of supply at launch, outside the pool.
         </p>
+        <Kickbacks poolId={coin.poolId} />
       </section>
     </>
   );

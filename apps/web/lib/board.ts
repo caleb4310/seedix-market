@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
+import { apiUrl, coinFromApi, getCoins } from "./api";
 import type { Coin, Mode } from "./coin";
 import { hookAddress, hookConfigAbi, indexerStartBlock, launcherAbi, launcherAddress, tokenMetaAbi } from "./trade";
 
@@ -22,6 +23,15 @@ export function useBoard(): Board {
     const dev = process.env.NODE_ENV !== "production";
 
     async function load() {
+      if (apiUrl) {
+        try {
+          const body = await getCoins();
+          if (!cancel) setBoard({ status: "ready", coins: body.coins.map((row) => coinFromApi(row, hookAddress || undefined)) });
+        } catch {
+          if (!cancel) setBoard({ status: "error", coins: [], error: "The coin list is unavailable." });
+        }
+        return;
+      }
       if (!launcherAddress || !hookAddress || !client) {
         if (dev && !launcherAddress) {
           const mock = await import("./mock");

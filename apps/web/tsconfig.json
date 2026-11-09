@@ -18,5 +18,5 @@
     "paths": { "@/*": ["./*"] }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "lib/amounts.test.ts"]
+  "exclude": ["node_modules", "lib/amounts.test.ts", "lib/api.test.ts"]
 }
