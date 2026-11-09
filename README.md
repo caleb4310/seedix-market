@@ -146,7 +146,7 @@ The indexer follows chain 99801 from the deploy block and writes launches, swaps
 
 `infra/docker-compose.yml` is project `launchpad` on network `launchpad_net`. It uses the host Postgres socket and does not start a database. Nginx stays the host's: install `infra/nginx/sites-available/launchpad.conf` as its own site and do not edit the others. Ports are `127.0.0.1` in the 18400 range. Kubo API 5001 is not published. The keeper reads `/run/secrets/keeper_key` through `KEEPER_PRIVATE_KEY`, mounted from `SEEDIX_KEEPER_KEY_FILE` (default `/etc/seedix/keeper.key`). That file is mode 600, owned by root, and it is not in the repo. Build the web on the host with `NEXT_PUBLIC_API_URL=/api` before `docker compose up`, so the browser calls the API through nginx.
 
-Nginx: copy `infra/nginx/sites-available/launchpad.conf` to `/etc/nginx/sites-available/launchpad.conf`, symlink it, replace `SEEDIX_DOMAIN`, then `nginx -t` and `systemctl reload nginx`. Certificate: `certbot --nginx -d SEEDIX_DOMAIN`. Do not edit other site files.
+Nginx: with no domain, copy `infra/nginx/sites-available/launchpad-ip.conf` and enable that file only. It listens on 8088 and does not take port 80 or 443. When a domain exists, copy `infra/nginx/sites-available/launchpad.conf` instead, replace `SEEDIX_DOMAIN`, then `nginx -t` and `systemctl reload nginx`. Certificate: `certbot --nginx -d SEEDIX_DOMAIN`. Do not enable both files, and do not edit other site files.
 
 Backups: `infra/backup/nightly-pg-dump.sh` dumps only the `launchpad` database to `/srv/backups/launchpad`.
 
