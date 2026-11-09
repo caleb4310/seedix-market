@@ -10,6 +10,7 @@
 # The keeper key is a host file, mode 600, owner root. It is not in this repo.
 #   install -m 600 -o root /dev/null /etc/seedix/keeper.key
 #   SEEDIX_KEEPER_KEY_FILE=/etc/seedix/keeper.key
+# DATABASE_URL is the host Postgres URL. The default uses the host socket.
 
 name: launchpad
 
@@ -47,7 +48,7 @@ services:
     ports:
       - "127.0.0.1:18481:3001"
     environment:
-      DATABASE_URL: postgres://launchpad@/launchpad?host=/var/run/postgresql
+      DATABASE_URL: ${DATABASE_URL:-postgres://launchpad@/launchpad?host=/var/run/postgresql}
       API_HOST: 0.0.0.0
       API_PORT: "3001"
     volumes:
@@ -64,8 +65,9 @@ services:
       ["node", "--experimental-strip-types", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--eval", "import('./services/indexer/src/index.ts').then((m) => m.main())"]
     networks: [launchpad]
     environment:
-      DATABASE_URL: postgres://launchpad@/launchpad?host=/var/run/postgresql
+      DATABASE_URL: ${DATABASE_URL:-postgres://launchpad@/launchpad?host=/var/run/postgresql}
       RPC_URL: https://testnet-rpc.elysium.kinetiq.xyz
+      INDEXER_CONFIRMATIONS: "12"
     volumes:
       - ..:/app
       - /var/run/postgresql:/var/run/postgresql:ro
@@ -80,7 +82,7 @@ services:
       ["node", "--experimental-strip-types", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--eval", "import('./services/kickback/src/index.ts').then((m) => m.main())"]
     networks: [launchpad]
     environment:
-      DATABASE_URL: postgres://launchpad@/launchpad?host=/var/run/postgresql
+      DATABASE_URL: ${DATABASE_URL:-postgres://launchpad@/launchpad?host=/var/run/postgresql}
     volumes:
       - ..:/app
       - /var/run/postgresql:/var/run/postgresql:ro
@@ -95,7 +97,10 @@ services:
       ["node", "--experimental-strip-types", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--eval", "import('./services/keeper/src/index.ts').then((m) => m.main())"]
     networks: [launchpad]
     environment:
-      KEEPER_KEY_FILE: /run/secrets/keeper_key
+      KEEPER_PRIVATE_KEY: /run/secrets/keeper_key
+      KICKBACK_MANIFEST_DIR: /var/lib/seedix/manifests
+      KEEPER_MAX_FEE_GWEI: "100"
+      KEEPER_MAX_GAS: "12000000"
       RPC_URL: https://testnet-rpc.elysium.kinetiq.xyz
     secrets:
       - keeper_key
