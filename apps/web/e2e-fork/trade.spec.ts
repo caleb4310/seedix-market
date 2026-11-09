@@ -5,7 +5,7 @@ import { encodeAbiParameters, encodeFunctionData, decodeFunctionResult, keccak25
 import { buildTree, kickbackLeaf } from "../../../services/api/src/merkle.ts";
 
 const deployment = JSON.parse(readFileSync(path.resolve(process.cwd(), "../../deployments/99801.json"), "utf8")) as {
-  contracts: { launchHook: string; kickbackDistributor: string; seedixRouter: string };
+  contracts: { launcher: string; launchHook: string; kickbackDistributor: string; seedixRouter: string };
   tokens: { whype: string };
   accounts: { admin: string };
 };
@@ -111,6 +111,12 @@ async function connect(page: Page) {
 }
 
 test("launch, buy, sell, and claim on an anvil fork", async ({ page }) => {
+  const recorded = deployment.contracts.launcher;
+  const recordedCode = String(await rpc("eth_getCode", [recorded, "latest"]));
+  const usingRecorded = !overlay.NEXT_PUBLIC_LAUNCHER || overlay.NEXT_PUBLIC_LAUNCHER.toLowerCase() === recorded.toLowerCase();
+  if (recordedCode.toLowerCase().includes("97a5d5b5") && !usingRecorded) {
+    throw new Error(`deployments/99801.json launcher ${recorded} has statusOf; the fork must use it`);
+  }
   await rpc("anvil_setBalance", [account, word(1_000n * 10n ** 18n)]);
   await page.goto("/launch");
   await connect(page);

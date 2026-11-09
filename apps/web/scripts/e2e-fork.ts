@@ -71,15 +71,31 @@ async function stop(): Promise<void> {
   }
 }
 
+const STATUS_OF = "97a5d5b5";
+
+function hasStatusOf(code: string): boolean {
+  return code.toLowerCase().includes(STATUS_OF);
+}
+
 async function addressesForFork(): Promise<Record<string, string>> {
   const file = JSON.parse(readFileSync(path.resolve(webRoot, "../../deployments/99801.json"), "utf8")) as {
-    contracts: { launcher: string };
+    contracts: Record<string, string>;
     tokens: { whype: string };
   };
-  const code = String(await rpc("eth_getCode", [file.contracts.launcher, "latest"]));
-  if (code.toLowerCase().includes("97a5d5b5")) {
-    console.log("launcher in deployments/99801.json matches the current ABI");
-    return {};
+  const recorded = file.contracts.launcher;
+  const code = String(await rpc("eth_getCode", [recorded, "latest"]));
+  if (!recorded || hasStatusOf(code)) {
+    console.log(`E2E launcher is deployments/99801.json ${recorded} (statusOf present)`);
+    return {
+      NEXT_PUBLIC_LAUNCHER: recorded ?? "",
+      NEXT_PUBLIC_ROUTER: file.contracts.seedixRouter ?? "",
+      NEXT_PUBLIC_QUOTER: file.contracts.v4Quoter ?? "",
+      NEXT_PUBLIC_HOOK: file.contracts.launchHook ?? "",
+      NEXT_PUBLIC_STATE_VIEW: file.contracts.stateView ?? "",
+      NEXT_PUBLIC_KICKBACK: file.contracts.kickbackDistributor ?? "",
+      NEXT_PUBLIC_COIN_METADATA: file.contracts.coinMetadata ?? "",
+      NEXT_PUBLIC_WHYPE: file.tokens.whype,
+    };
   }
   console.log("launcher bytecode has no statusOf; deploying a fresh stack on the fork");
   const deployer = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
@@ -107,12 +123,21 @@ async function addressesForFork(): Promise<Record<string, string>> {
   const output = `${forge.stdout ?? ""}\n${forge.stderr ?? ""}`;
   const pick = (label: string) => output.match(new RegExp(`${label}:?\\s+(0x[0-9a-fA-F]{40})`))?.[1] ?? "";
   const launcher = pick("launcher");
-  if (forge.status !== 0 || !launcher) {
+  const deployed = launcher ? String(await rpc("eth_getCode", [launcher, "latest"])) : "";
+  if (forge.status !== 0 || !launcher || !hasStatusOf(deployed)) {
     console.error(output.slice(-2500));
-    console.error("fresh deploy did not replace the launcher; the fork keeps deployments/99801.json");
-    return {};
+    console.error("fresh deploy did not produce a statusOf launcher; the fork keeps deployments/99801.json");
+    return {
+      NEXT_PUBLIC_LAUNCHER: recorded,
+      NEXT_PUBLIC_ROUTER: file.contracts.seedixRouter ?? "",
+      NEXT_PUBLIC_QUOTER: file.contracts.v4Quoter ?? "",
+      NEXT_PUBLIC_HOOK: file.contracts.launchHook ?? "",
+      NEXT_PUBLIC_STATE_VIEW: file.contracts.stateView ?? "",
+      NEXT_PUBLIC_KICKBACK: file.contracts.kickbackDistributor ?? "",
+      NEXT_PUBLIC_WHYPE: file.tokens.whype,
+    };
   }
-  console.log(`fork launcher ${launcher}`);
+  console.log(`fork launcher ${launcher} has statusOf`);
   return {
     NEXT_PUBLIC_LAUNCHER: launcher,
     NEXT_PUBLIC_ROUTER: pick("router"),
