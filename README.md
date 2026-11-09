@@ -89,7 +89,7 @@ On Anvil, Permit2 is not at the canonical address, so the script deploys a stand
 
 ## Redeploy Kickback auto-push
 
-`LaunchHook.kickbackDistributor` is immutable. The deployment recorded in [`deployments/99801.json`](deployments/99801.json) (hook `0x11250C2cD56d4E37a3f8390570A99703848768cC`, distributor `0xDc5312c71313C01569865FFC30Bd3ba15a4B22Db`) cannot be upgraded in place. Auto-push needs a new protocol deploy on chain 99801. This repository does not broadcast that deploy.
+`LaunchHook.kickbackDistributor` is immutable. The live auto-push deployment is in [`deployments/99801.json`](deployments/99801.json): hook `0x2FD55b6d1fAe64f156CF6e14b03775B1F781e8cC`, distributor `0xB023F3b7D35420d98fB205C0B96BC25Ed3e60a0E`, indexer start block `26841592`. The previous hook `0x11250C2cD56d4E37a3f8390570A99703848768cC` is retired. This repository does not broadcast deploys.
 
 From `contracts/`, simulation only:
 
@@ -110,13 +110,13 @@ forge script script/Deploy.s.sol --rpc-url https://testnet-rpc.elysium.kinetiq.x
 
 Chain id must be 99801. The script reverts on every other chain except local Anvil (31337). Do not add `--broadcast` against the public RPC. Do not point `PRIVATE_KEY` at a key you use anywhere else.
 
-After a later broadcast that you run yourself, copy the logged addresses into `deployments/99801.json`, `services/shared/src/index.ts`, and the `NEXT_PUBLIC_*` / service variables in `.env`. Until that happens the committed addresses are the previous deployment.
+A new broadcast replaces the addresses in `deployments/99801.json`, `services/shared/src/index.ts`, and the `NEXT_PUBLIC_*` / service variables in `.env`. The committed values are the live 99801 deployment.
 
 ## Web
 
 A production build lists coins from `Launcher` `CoinLaunched` logs. Set `NEXT_PUBLIC_LAUNCHER` and `NEXT_PUBLIC_HOOK` (and the router, quoter, and state view) or the board is empty: "No coins yet. Launch the first one." Mock coins in `apps/web/lib/mock.ts` load only in `next dev`, and only when `NEXT_PUBLIC_LAUNCHER` is empty.
 
-`NEXT_PUBLIC_EXPLORER_TX_URL_TEMPLATE` is the transaction link, with `{hash}` replaced by the hash. The live default is `https://explorer-elysium-testnet.t.conduit.xyz/tx/{hash}`. Addresses and the indexer start block (`26803633`, the block of deploy tx `0xe8f763ae…c6cb73`) are in `deployments/99801.json`.
+`NEXT_PUBLIC_EXPLORER_TX_URL_TEMPLATE` is the transaction link, with `{hash}` replaced by the hash. The live default is `https://explorer-elysium-testnet.t.conduit.xyz/tx/{hash}`. Addresses and the indexer start block (`26841592`, the block of deploy tx `0xe60b64d6…8609`) are in `deployments/99801.json`.
 
 ```bash
 npm install
