@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SeedixRoles} from "../access/SeedixRoles.sol";
@@ -11,10 +17,10 @@ import {TwapGuard} from "../libraries/TwapGuard.sol";
 import {LaunchHook} from "../hook/LaunchHook.sol";
 import {LaunchToken} from "../token/LaunchToken.sol";
 
-/// @notice Guarded buybacks. The swap itself is deferred until the executor is wired to a router.
+/// @notice Guarded buybacks. The executor calls the PoolManager itself so the hook fee exemption applies.
 ///         Guards run first: pause, pool age, 30-minute oracle coverage, 2% spot band, TWAP min-out.
-///         The xStock to WHYPE leg uses the same guards and reverts if that route is not a pool we can read.
-contract BuybackExecutor {
+///         The bought coin is burned in the same call. A fill below the TWAP floor reverts the debit.
+contract BuybackExecutor is IUnlockCallback {
     using SafeERC20 for IERC20;
     error NotGuardian();
     error NotTimelock();
@@ -35,6 +41,8 @@ contract BuybackExecutor {
     error NotAdmin();
     error TooSoon();
     error ExceedsPot(uint256 pot);
+    error NotPoolManager();
+    error TooLittleReceived();
 
     event BuybacksPausedSet(address indexed by);
     event BuybacksUnpaused();
@@ -42,8 +50,8 @@ contract BuybackExecutor {
     event RouteRegistered(address indexed pair, PoolId indexed poolId);
     event CoinSideBurned(PoolId indexed poolId, uint256 amount);
     event KeeperSet(address indexed previous, address indexed next);
-    /// @dev The floor is reserved. The swap itself is not executed in this milestone.
     event BuybackReserved(PoolId indexed poolId, uint256 amountIn, uint256 floor);
+    event BuybackExecuted(PoolId indexed poolId, uint256 amountIn, uint256 coinBurned);
 
     struct Route {
         PoolId poolId;
@@ -162,15 +170,18 @@ contract BuybackExecutor {
         emit CoinSideBurned(id, burnCoin);
     }
 
-    /// @notice Debits the burn-pair pot, then returns the floor. The swap itself is still unwired.
-    ///         The tokens sit on this contract until that swap is added, and the pot cannot be reserved again.
+    /// @notice Buys the coin with the burn-pair pot and burns what it receives.
+    ///         `effective` is the TWAP floor, raised to the caller's min-out when that is higher.
     function buybackCoin(PoolId id, uint256 amountIn, uint256 minOut) external returns (uint256 effective) {
         if (msg.sender != keeper || keeper == address(0)) revert NotKeeper();
-        uint256 floor = _guard(id, amountIn, _inputIsCurrency0(id, _pairOf(id)));
+        Currency pair = _pairOf(id);
+        uint256 floor = _guard(id, amountIn, _inputIsCurrency0(id, pair));
+        effective = TwapGuard.effectiveMin(floor, minOut);
         _consume(id, amountIn, _burnPair(id));
         hook.debitBurnPair(id, amountIn, address(this));
-        effective = TwapGuard.effectiveMin(floor, minOut);
+        uint256 burned = _swapAndBurn(id, pair, amountIn, effective);
         emit BuybackReserved(id, amountIn, effective);
+        emit BuybackExecuted(id, amountIn, burned);
     }
 
     /// @notice WHYPE pairs guard the platform pool. Stock pairs sell the stock for WHYPE first.
@@ -207,7 +218,13 @@ contract BuybackExecutor {
         // The route pool keeps its own coin-buyback slot.
         _consume(platformPoolId, amountIn, hook.platformBurn(pair));
         hook.debitPlatformBurn(pair, amountIn, address(this));
+        uint256 whypeIn = amountIn;
+        if (Currency.unwrap(pair) != Currency.unwrap(whype)) {
+            whypeIn = _swap(whypeRoute[pair].poolId, pair, amountIn, whypeFloor);
+        }
+        uint256 burned = _swapAndBurn(platformPoolId, whype, whypeIn, platformFloor);
         emit BuybackReserved(platformPoolId, amountIn, platformFloor);
+        emit BuybackExecuted(platformPoolId, whypeIn, burned);
     }
 
     function _guard(PoolId id, uint256 amountIn, bool zeroForOne) internal view returns (uint256 floor) {
@@ -251,6 +268,59 @@ contract BuybackExecutor {
         periodStart[id] = block.timestamp;
         spentInPeriod[id] = amountIn;
         lastBuybackAt[id] = block.timestamp;
+    }
+
+    /// @dev The PoolManager calls this while the executor is the locker. The hook then sees this contract as sender.
+    function unlockCallback(bytes calldata data) external returns (bytes memory) {
+        IPoolManager pm = hook.poolManager();
+        if (msg.sender != address(pm)) revert NotPoolManager();
+        (PoolKey memory key, bool zeroForOne, uint256 amountIn, uint256 minOut) =
+            abi.decode(data, (PoolKey, bool, uint256, uint256));
+        BalanceDelta delta = pm.swap(
+            key,
+            SwapParams({
+                zeroForOne: zeroForOne,
+                amountSpecified: -_asInt(amountIn),
+                sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+            }),
+            ""
+        );
+        int128 received = zeroForOne ? delta.amount1() : delta.amount0();
+        if (received <= 0 || uint256(uint128(received)) < minOut) revert TooLittleReceived();
+        _settle(pm, key.currency0, delta.amount0());
+        _settle(pm, key.currency1, delta.amount1());
+        return abi.encode(uint256(uint128(received)));
+    }
+
+    function _swap(PoolId id, Currency input, uint256 amountIn, uint256 minOut) internal returns (uint256 out) {
+        PoolKey memory key = hook.keyOf(id);
+        bool zeroForOne = Currency.unwrap(input) == Currency.unwrap(key.currency0);
+        bytes memory res = hook.poolManager().unlock(abi.encode(key, zeroForOne, amountIn, minOut));
+        out = abi.decode(res, (uint256));
+    }
+
+    function _swapAndBurn(PoolId id, Currency input, uint256 amountIn, uint256 minOut)
+        internal
+        returns (uint256 burned)
+    {
+        burned = _swap(id, input, amountIn, minOut);
+        (address coin,,,,,,) = hook.config(id);
+        LaunchToken(coin).burn(burned);
+    }
+
+    function _settle(IPoolManager pm, Currency token, int128 amt) internal {
+        if (amt < 0) {
+            pm.sync(token);
+            IERC20(Currency.unwrap(token)).safeTransfer(address(pm), uint256(uint128(-amt)));
+            pm.settle();
+        } else if (amt > 0) {
+            pm.take(token, address(this), uint256(uint128(amt)));
+        }
+    }
+
+    function _asInt(uint256 amount) internal pure returns (int256) {
+        if (amount > uint256(type(int256).max)) revert Nothing();
+        return int256(amount);
     }
 
     function _flush(Currency token) internal {
