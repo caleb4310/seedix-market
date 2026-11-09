@@ -329,9 +329,13 @@ contract KickbackDistributor {
         emit KeeperReimbursed(id, epochId, keeper, reimburse);
     }
 
+    /// @dev A revert or an explicit `false` is a failed payment and stays claimable.
+    ///      An empty return is success, matching SafeERC20, so that transfer is not paid again.
     function _tryPay(address token, address to, uint256 amount) internal returns (bool) {
         (bool ok, bytes memory data) = token.call(abi.encodeCall(IERC20.transfer, (to, amount)));
-        if (!ok || data.length < 32) return false;
+        if (!ok) return false;
+        if (data.length == 0) return true;
+        if (data.length < 32) revert BadEpoch();
         return abi.decode(data, (bool));
     }
 
