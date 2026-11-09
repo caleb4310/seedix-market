@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useAccount } from "wagmi";
 import { cleanSocials } from "@seedix/shared";
 import { modeLabel, type Mode } from "@/lib/coin";
 import { loadPairs, type ListedPair, type PairCategory } from "@/lib/registry";
-import { LaunchPreview, type PreviewModel } from "@/components/LaunchPreview";
+import { LaunchPreview } from "@/components/LaunchPreview";
+import type { CoinFace } from "@/components/CoinFace";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Tabs } from "@/components/ui/Tabs";
@@ -50,6 +52,7 @@ export function LaunchForm() {
   const start = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
+  const { isConnected } = useAccount();
 
   useEffect(() => {
     let cancel = false;
@@ -76,6 +79,7 @@ export function LaunchForm() {
   const pairOk = unverified ? addressOk : Boolean(selected);
   const teamOk = team >= 0 && team <= 5;
   const ready =
+    isConnected &&
     name.trim().length > 0 &&
     nameBytes <= 32 &&
     ticker.trim().length > 0 &&
@@ -86,24 +90,50 @@ export function LaunchForm() {
     (!unverified || ack) &&
     (mode !== "kickback" || vetted);
 
-  const model: PreviewModel = useMemo(
+  const pairSymbol = unverified ? "" : selected?.symbol ?? "";
+  const blockReason = !isConnected
+    ? "Connect your wallet"
+    : name.trim().length === 0
+      ? "Add a name"
+      : nameBytes > 32
+        ? "Shorten the name"
+        : ticker.trim().length === 0
+          ? "Add a ticker"
+          : tickerBytes > 8
+            ? "Shorten the ticker"
+            : !pairOk
+              ? unverified
+                ? "Paste a token address"
+                : source === "preipo"
+                  ? "No pre-IPO pair yet"
+                  : "Pick a pair"
+              : unverified && !ack
+                ? "Confirm the unverified token"
+                : mode === "kickback" && !vetted
+                  ? "Kickback needs a vetted pair"
+                  : mcap < 1000
+                    ? "Raise the starting cap"
+                    : "";
+
+  const face: CoinFace = useMemo(
     () => ({
       name,
       ticker,
       image,
-      pairSymbol: unverified ? "PAIR" : selected?.symbol || "PAIR",
-      pairLogo: unverified ? null : selected?.logo ?? null,
+      pairSymbol,
+      pairLogo: selected?.logo ?? null,
+      pairTest: selected?.test,
       category: unverified ? "crypto" : selected?.category ?? null,
       mode,
       mcap,
-      usd: null,
-      description: socials.description ?? "",
+      mcapUsd: selected?.usd != null ? mcap * selected.usd : null,
+      description: socials.description,
       website: socials.website,
       x: socials.x,
       telegram: socials.telegram,
       unverified,
     }),
-    [name, ticker, image, unverified, selected, mode, mcap, socials],
+    [name, ticker, image, pairSymbol, selected, unverified, mode, mcap, socials],
   );
 
   function press() {
@@ -129,7 +159,7 @@ export function LaunchForm() {
     setHolding(0);
   }
 
-  const preview = <LaunchPreview model={model} />;
+  const preview = <LaunchPreview face={face} />;
 
   return (
     <div className="launch-layout">
@@ -258,11 +288,11 @@ export function LaunchForm() {
                 onChange={(e) => setTeam(Math.min(5, Math.max(0, Number(e.target.value) || 0)))}
               />
             </Field>
-            <Field label={`Starting market cap · ${model.pairSymbol}`}>
+            <Field label={`Starting market cap · ${pairSymbol || "pair"}`}>
               <input type="number" min={1000} value={mcap} onChange={(e) => setMcap(Number(e.target.value))} />
             </Field>
             <Button variant="ghost" type="button" onClick={() => setMcap(20000)}>
-              Reset to 20,000 {model.pairSymbol}
+              Reset to 20,000 {pairSymbol || "pair"}
             </Button>
           </div>
         </details>
@@ -287,7 +317,7 @@ export function LaunchForm() {
           }}
         >
           <span className="hold-fill" style={{ width: `${holding * 100}%` }} />
-          <span className="hold-label">{done ? "Ready to sign" : "Hold to launch"}</span>
+          <span className="hold-label">{done ? "Ready to sign" : ready ? "Hold to launch" : blockReason}</span>
         </button>
         <p id="hold-help" className="note">
           Hold the button, or hold Enter or Space. Signing stays with the wallet flow.

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { fees, hookPips } from "@/lib/tokens";
-import { coinAge, modeLabel, type Coin } from "@/lib/coin";
+import { coinAge, type Coin } from "@/lib/coin";
+import { CoinHeader } from "@/components/CoinFace";
 import { Price } from "@/components/Price";
 import { Chart } from "@/components/Chart";
 import { Kickbacks } from "@/components/Kickbacks";
@@ -23,64 +24,30 @@ export function CoinBody({ coin }: { coin: Coin }) {
   const contract = coin.tokenAddress ?? coin.recipient;
   return (
     <>
-      <div className="coin-mobile-head">
-        <p className="kicker">{coin.pair} pair</p>
-        <h1>
-          {coin.name} <span className="ticker">${coin.ticker}</span>
-        </h1>
+      <section className="coin-main">
+        <CoinHeader
+          face={{
+            name: coin.name,
+            ticker: coin.ticker,
+            image: coin.image ?? null,
+            pairSymbol: coin.pair,
+            pairLogo: coin.pairLogo ?? null,
+            pairTest: coin.pairTest,
+            category: coin.category,
+            mode: coin.mode,
+            mcap: coin.mcap,
+            mcapUsd: coin.mcapUsd,
+            description: `${coin.description} ${decaying ? "The decay is still running." : "The hook fee has settled at 1%."}`,
+            x: coin.x,
+            telegram: coin.telegram,
+            website: coin.website,
+          }}
+        />
         {coin.price !== undefined ? (
           <p className="num">
             <Price value={coin.price} />
           </p>
         ) : null}
-      </div>
-      <section className="coin-main">
-        <p className="kicker">{coin.pair} pair</p>
-        <h1>
-          {coin.name} <span className="ticker">${coin.ticker}</span>
-        </h1>
-        <p className="lede">
-          {coin.description} {decaying ? "The decay is still running." : "The hook fee has settled at 1%."}
-        </p>
-        <p className="preview-links">
-          {coin.x ? (
-            <a className="icon-link" href={coin.x} target="_blank" rel="noopener noreferrer nofollow">
-              X
-            </a>
-          ) : null}
-          {coin.telegram ? (
-            <a className="icon-link" href={coin.telegram} target="_blank" rel="noopener noreferrer nofollow">
-              Tg
-            </a>
-          ) : null}
-          {coin.website ? (
-            <a className="icon-link" href={coin.website} target="_blank" rel="noopener noreferrer nofollow">
-              Web
-            </a>
-          ) : null}
-        </p>
-        <div className="statline">
-          {coin.price !== undefined ? (
-            <div>
-              <span>Price</span>
-              <div className="num">
-                <Price value={coin.price} />
-              </div>
-            </div>
-          ) : null}
-          {coin.mcap !== undefined ? (
-            <div>
-              <span>Market cap</span>
-              <div className="num">${coin.mcap.toLocaleString("en-US")}</div>
-            </div>
-          ) : null}
-          <div>
-            <span>Mode</span>
-            <div className="mode" data-mode={coin.mode}>
-              {modeLabel(coin.mode)}
-            </div>
-          </div>
-        </div>
         <Chart poolId={coin.poolId} />
         <p className="address-chip">
           <span>Contract</span>

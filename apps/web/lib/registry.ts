@@ -9,10 +9,20 @@ export type ListedPair = {
   symbol: string;
   name: string;
   logo: string | null;
+  usd: number | null;
+  test: boolean;
 };
 
 type PairResponse = { address?: string; status?: number; category?: string };
-type TokenResponse = { address?: string; symbol?: string; name?: string; logo?: string; category?: string };
+type TokenResponse = {
+  address?: string;
+  symbol?: string;
+  name?: string;
+  logo?: string;
+  category?: string;
+  usd?: number;
+  test?: boolean;
+};
 
 function categoryOf(value: string | undefined): PairCategory {
   if (value === "stock" || value === "preipo") return value;
@@ -37,9 +47,11 @@ export async function loadPairs(): Promise<ListedPair[]> {
         address: pair.address as `0x${string}`,
         status: Number(pair.status ?? 0),
         category: categoryOf(pair.category),
-        symbol: extra?.symbol || "PAIR",
-        name: extra?.name || extra?.symbol || "Pair",
+        symbol: extra?.symbol || "",
+        name: extra?.name || extra?.symbol || "",
         logo: extra?.logo ?? null,
+        usd: typeof extra?.usd === "number" ? extra.usd : null,
+        test: extra?.test === true,
       },
     ];
   });

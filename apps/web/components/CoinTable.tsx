@@ -5,6 +5,7 @@ import { useState } from "react";
 import { modeLabel, type Mode } from "@/lib/coin";
 import type { PairCategory } from "@/lib/registry";
 import { useBoard } from "@/lib/board";
+import { CoinLine } from "@/components/CoinFace";
 import { Tabs } from "@/components/ui/Tabs";
 
 function age(sec: number): string {
@@ -21,8 +22,6 @@ export function CoinTable() {
   const rows = board.coins.filter(
     (c) => (category === "all" || c.category === category) && (filter === "all" || c.mode === filter),
   );
-  const showMcap = board.coins.some((c) => c.mcap !== undefined);
-
   return (
     <>
       <div className="page-head">
@@ -67,7 +66,7 @@ export function CoinTable() {
           <span>Coin</span>
           <span className="hide-sm">Pair</span>
           <span>Mode</span>
-          {showMcap ? <span className="num">Mcap</span> : null}
+          <span className="num">Mcap</span>
           <span className="num hide-sm hide-md">Age</span>
         </div>
         {board.status === "loading" ? (
@@ -100,28 +99,26 @@ export function CoinTable() {
         ) : null}
         {board.status === "ready"
           ? rows.map((coin) => (
-              <div key={coin.id} className="row">
-                <Link className="coin-cell" href={`/coin/${coin.id}`}>
-                  <span className="mark" data-tone={coin.ticker.length % 4}>
-                    {coin.ticker.slice(0, 1)}
-                  </span>
-                  <span className="coin-copy">
-                    <span className="name">{coin.name}</span>
-                    <span className="ticker"> ${coin.ticker}</span>
-                  </span>
-                </Link>
-                <span className="hide-sm preview-links">
-                  {coin.pair}
-                  {coin.x ? <a className="icon-link" href={coin.x} target="_blank" rel="noopener noreferrer nofollow">X</a> : null}
-                  {coin.telegram ? <a className="icon-link" href={coin.telegram} target="_blank" rel="noopener noreferrer nofollow">Tg</a> : null}
-                  {coin.website ? <a className="icon-link" href={coin.website} target="_blank" rel="noopener noreferrer nofollow">Web</a> : null}
-                </span>
-                <span className="mode" data-mode={coin.mode}>
-                  {modeLabel(coin.mode)}
-                </span>
-                {showMcap ? <span className="num">{coin.mcap !== undefined ? `$${coin.mcap.toLocaleString("en-US")}` : "—"}</span> : null}
-                <span className="num hide-sm hide-md">{age(coin.launchTime !== undefined ? Math.max(0, Math.floor(Date.now() / 1000) - coin.launchTime) : coin.ageSec)}</span>
-              </div>
+              <CoinLine
+                key={coin.id}
+                face={{
+                  name: coin.name,
+                  ticker: coin.ticker,
+                  image: coin.image ?? null,
+                  pairSymbol: coin.pair,
+                  pairLogo: coin.pairLogo ?? null,
+                  pairTest: coin.pairTest,
+                  category: coin.category,
+                  mode: coin.mode,
+                  mcap: coin.mcap,
+                  mcapUsd: coin.mcapUsd,
+                  x: coin.x,
+                  telegram: coin.telegram,
+                  website: coin.website,
+                  age: age(coin.launchTime !== undefined ? Math.max(0, Math.floor(Date.now() / 1000) - coin.launchTime) : coin.ageSec),
+                  href: `/coin/${coin.id}`,
+                }}
+              />
             ))
           : null}
       </div>
