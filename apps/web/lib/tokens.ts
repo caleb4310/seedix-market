@@ -15,7 +15,7 @@ export const type = {
 
 export const space = [0, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80] as const;
 
-export const radius = { sm: "2px", md: "4px", lg: "8px" } as const;
+export const radius = { sm: "2px", md: "4px", lg: "8px", pill: "999px" } as const;
 
 export const motion = {
   fast: "80ms",
@@ -96,7 +96,7 @@ function vars(theme: { [K in keyof typeof light]: string }): string {
 }
 
 /** Runtime CSS variables. Component styles only reference these names. */
-export const tokenCss = `:root{${vars(light)};--sans:${type.sans};--mono:${type.mono};--space-1:${space[1]}px;--space-2:${space[2]}px;--space-3:${space[3]}px;--space-4:${space[4]}px;--space-5:${space[5]}px;--space-6:${space[6]}px;--space-8:${space[7]}px;--space-10:${space[8]}px;--space-12:${space[9]}px;--space-16:${space[10]}px;--r-sm:${radius.sm};--r-md:${radius.md};--r-lg:${radius.lg};--dur-fast:${motion.fast};--dur:${motion.base};--dur-slow:${motion.slow};--ease:${motion.ease};color-scheme:light} :root[data-theme="dark"]{${vars(dark)};color-scheme:dark}`;
+export const tokenCss = `:root{${vars(light)};--sans:${type.sans};--mono:${type.mono};--fs-micro:${type.scale.micro.size};--lh-micro:${type.scale.micro.line};--fs-caption:${type.scale.caption.size};--lh-caption:${type.scale.caption.line};--fs-body:${type.scale.body.size};--lh-body:${type.scale.body.line};--fs-title:${type.scale.title.size};--lh-title:${type.scale.title.line};--fs-display:${type.scale.display.size};--lh-display:${type.scale.display.line};--space-1:${space[1]}px;--space-2:${space[2]}px;--space-3:${space[3]}px;--space-4:${space[4]}px;--space-5:${space[5]}px;--space-6:${space[6]}px;--space-8:${space[7]}px;--space-10:${space[8]}px;--space-12:${space[9]}px;--space-16:${space[10]}px;--r-sm:${radius.sm};--r-md:${radius.md};--r-lg:${radius.lg};--r-pill:${radius.pill};--hair:1px;--focus-w:2px;--tap:44px;--page:1120px;--panel:280px;--toast-w:420px;--dur-fast:${motion.fast};--dur:${motion.base};--dur-slow:${motion.slow};--ease:${motion.ease};color-scheme:light} :root[data-theme="dark"]{${vars(dark)};color-scheme:dark}`;
 
 export const fees = {
   startPips: 800_000,

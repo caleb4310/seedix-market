@@ -92,9 +92,9 @@ Check these widths with the browser device toolbar. Nothing should scroll sidewa
 | 1024 | the same three routes |
 | 1440 | the same three routes |
 
-`/coin/kiln` is still inside the 10 second decay, so the buy panel asks you to confirm the hook fee. Add `?side=sell` to see the sell receipt. Add `?theme=dark` for the dark palette. Signing a trade or finishing the launch hold shows a toast. The swap itself is not broadcast.
+`/coin/kiln` is still inside the 10 second decay, so the buy panel asks you to confirm the hook fee. Add `?side=sell` to see the sell receipt. Add `?theme=dark` for the dark palette. With no browser wallet, Connect explains that and links to a wallet install. Nothing is marked confirmed until a transaction hash comes back.
 
-The app defines chain 99801 itself. It does not use viem's `elysiumTestnet`, which is a different network. Connect uses the injected wallet and asks for chain 99801.
+Wallet connection uses RainbowKit on wagmi and viem. Elysium testnet (99801) is registered as a custom chain. The modal colors come from `apps/web/lib/tokens.ts`, and they follow the Seedix light and dark toggle. Set `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` (see `.env.example`) to add WalletConnect. If that variable is empty, the modal offers injected wallets only.
 
 ## Services and infra
 

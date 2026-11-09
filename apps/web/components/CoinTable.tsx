@@ -49,6 +49,12 @@ export function CoinTable() {
           <span className="num">Mcap</span>
           <span className="num hide-sm hide-md">Age</span>
         </div>
+        {rows.length === 0 ? (
+          <div className="empty">
+            <p className="kicker">Empty</p>
+            <p className="lede">No coins in this filter. Choose another mode, or launch one.</p>
+          </div>
+        ) : null}
         {rows.map((coin) => (
           <Link key={coin.id} href={`/coin/${coin.id}`} className="row">
             <span className="coin-cell">

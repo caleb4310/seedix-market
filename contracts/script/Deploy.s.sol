@@ -30,6 +30,7 @@ import {SeedixRouter} from "../src/router/SeedixRouter.sol";
 contract DeploySeedix is Script {
     error ForbiddenChain(uint256 chainId);
     error Permit2Missing();
+    error MissingCode(address target);
 
     struct Result {
         address deployer;
@@ -51,6 +52,9 @@ contract DeploySeedix is Script {
     address internal constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
     address internal constant WHYPE_99801 = 0xCD57F65c2B0e5881CFC2E609F7CD53b746E1F234;
     address internal constant USDC_99801 = 0x7D29d8047B905000459c0E80c34a26CeedcB47b2;
+    address internal constant WHYPE_99901 = 0xbA876237B0F021A6c6D852d6c26E107997cC5E81;
+    /// @dev No canonical USDC is recorded for 99901. The zero address has no code, so that deploy reverts.
+    address internal constant USDC_99901 = address(0);
 
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
@@ -61,18 +65,17 @@ contract DeploySeedix is Script {
 
     /// @dev `admin` receives the admin, guardian, proposer, and executor roles. The broadcasting key keeps none.
     function deploy(uint256 pk, address admin, address publisher) public {
-        if (block.chainid != 99801 && block.chainid != 31337) revert ForbiddenChain(block.chainid);
+        if (block.chainid != 99801 && block.chainid != 99901 && block.chainid != 31337) {
+            revert ForbiddenChain(block.chainid);
+        }
         address deployer = vm.addr(pk);
         if (admin == address(0)) admin = deployer;
         if (publisher == address(0)) publisher = admin;
 
         vm.startBroadcast(pk);
 
-        address permit2 = PERMIT2.code.length == 0 ? _deployPermit2(admin) : PERMIT2;
+        (address whype, address usdc, address permit2) = _canonicalOrMock(admin);
         IPoolManager manager = IPoolManager(address(new PoolManager(address(0))));
-        address whype =
-            WHYPE_99801.code.length == 0 ? address(new MockXStock("Wrapped HYPE", "WHYPE", 18, admin)) : WHYPE_99801;
-        address usdc = USDC_99801.code.length == 0 ? address(new MockXStock("USD Coin", "USDC", 6, admin)) : USDC_99801;
 
         address nvda = address(new MockXStock("Wrapped NVIDIA xStock", "wNVDAx", 18, admin));
         address spy = address(new MockXStock("Wrapped S&P 500 xStock", "wSPYx", 18, admin));
@@ -113,10 +116,12 @@ contract DeploySeedix is Script {
 
         tl.grantRole(tl.PROPOSER_ROLE(), admin);
         tl.grantRole(tl.EXECUTOR_ROLE(), admin);
+        tl.grantRole(tl.CANCELLER_ROLE(), admin);
         tl.grantRole(tl.PROPOSER_ROLE(), address(roles));
         tl.grantRole(tl.PROPOSER_ROLE(), address(vault));
         tl.renounceRole(tl.PROPOSER_ROLE(), deployer);
         tl.renounceRole(tl.EXECUTOR_ROLE(), deployer);
+        tl.renounceRole(tl.CANCELLER_ROLE(), deployer);
         tl.renounceRole(tl.DEFAULT_ADMIN_ROLE(), deployer);
 
         LaunchHook hook =
@@ -137,7 +142,7 @@ contract DeploySeedix is Script {
         hook.setLauncher(address(launcher));
         hook.setLocker(address(locker));
         vault.setHook(hook);
-        executor.wire(hook, address(launcher));
+        executor.wire(hook, address(launcher), address(locker));
         locker.wire(hook, address(launcher), address(executor));
         distributor.wire(hook, address(manager), address(locker), address(vault), address(executor));
 
@@ -178,8 +183,37 @@ contract DeploySeedix is Script {
         console2.logBytes32(address(hook).codehash);
     }
 
+    /// @dev Canonical code is required on 99801 and 99901. Mocks exist only on local Anvil.
+    function _canonicalOrMock(address admin) internal returns (address whype, address usdc, address permit2) {
+        if (block.chainid == 31337) {
+            permit2 = PERMIT2.code.length == 0 ? _deployPermit2(admin) : PERMIT2;
+            whype = WHYPE_99801.code.length == 0
+                ? address(new MockXStock("Wrapped HYPE", "WHYPE", 18, admin))
+                : WHYPE_99801;
+            usdc = USDC_99801.code.length == 0 ? address(new MockXStock("USD Coin", "USDC", 6, admin)) : USDC_99801;
+            return (whype, usdc, permit2);
+        }
+        _requireCode(CREATE2_DEPLOYER);
+        if (block.chainid == 99801) {
+            whype = WHYPE_99801;
+            usdc = USDC_99801;
+        } else if (block.chainid == 99901) {
+            whype = WHYPE_99901;
+            usdc = USDC_99901;
+        } else {
+            revert ForbiddenChain(block.chainid);
+        }
+        _requireCode(whype);
+        _requireCode(usdc);
+        _requireCode(PERMIT2);
+        return (whype, usdc, PERMIT2);
+    }
+
+    function _requireCode(address target) internal view {
+        if (target.code.length == 0) revert MissingCode(target);
+    }
+
     /// @dev Permit2's bytecode is solc 0.8.17. The stand-in exists only on local Anvil.
-    ///      On 99801 a missing canonical Permit2 must stop the deploy.
     function _deployPermit2(address issuer) internal returns (address) {
         if (block.chainid != 31337) revert Permit2Missing();
         return address(new MockXStock("Permit2 stand-in", "P2", 18, issuer));

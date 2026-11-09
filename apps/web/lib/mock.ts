@@ -12,6 +12,11 @@ export type Coin = {
   creator: string;
   holders: number;
   description: string;
+  recipient: `0x${string}`;
+  coinIsToken0?: boolean;
+  tokenAddress?: `0x${string}`;
+  pairAddress?: `0x${string}`;
+  hooks?: `0x${string}`;
 };
 
 
@@ -27,7 +32,8 @@ export const coins: Coin[] = [
     ageSec: 2,
     creator: "0x4c1a…9e20",
     holders: 18,
-    description: "A burn-mode coin paired with WHYPE. The decay is still running.",
+    description: "A burn-mode coin paired with WHYPE.",
+    recipient: "0x4c1a000000000000000000000000000000009e20",
   },
   {
     id: "harbor",
@@ -41,6 +47,7 @@ export const coins: Coin[] = [
     creator: "0x91b0…44ac",
     holders: 640,
     description: "Fees stay with the creator. Paired with wrapped NVIDIA.",
+    recipient: "0x91b00000000000000000000000000000000044ac",
   },
   {
     id: "northline",
@@ -54,6 +61,7 @@ export const coins: Coin[] = [
     creator: "0x22de…10b4",
     holders: 311,
     description: "Pair-side fees are paid back to holders each hour.",
+    recipient: "0x22de0000000000000000000000000000000010b4",
   },
   {
     id: "orchard",
@@ -67,6 +75,7 @@ export const coins: Coin[] = [
     creator: "0x77a1…c0de",
     holders: 128,
     description: "Kickback coin. Holders split the pair token.",
+    recipient: "0x77a100000000000000000000000000000000c0de",
   },
   {
     id: "switchyard",
@@ -80,6 +89,7 @@ export const coins: Coin[] = [
     creator: "0x0aa4…8811",
     holders: 204,
     description: "USDC pair. Creator claims both sides.",
+    recipient: "0x0aa4000000000000000000000000000000008811",
   },
   {
     id: "marrow",
@@ -93,6 +103,7 @@ export const coins: Coin[] = [
     creator: "0xbe01…7712",
     holders: 455,
     description: "Hook fees buy the coin and burn it.",
+    recipient: "0xbe01000000000000000000000000000000007712",
   },
   {
     id: "lowtide",
@@ -105,7 +116,8 @@ export const coins: Coin[] = [
     ageSec: 900,
     creator: "0x33f0…ab90",
     holders: 42,
-    description: "Just past the decay. Starting cap was the $20k reset.",
+    description: "Just past the decay. Starting cap was the 20,000 reset.",
+    recipient: "0x33f000000000000000000000000000000000ab90",
   },
   {
     id: "paperweight",
@@ -119,6 +131,7 @@ export const coins: Coin[] = [
     creator: "0x18cc…0901",
     holders: 176,
     description: "Burn mode against the S&P wrapper.",
+    recipient: "0x18cc000000000000000000000000000000000901",
   },
 ];
 

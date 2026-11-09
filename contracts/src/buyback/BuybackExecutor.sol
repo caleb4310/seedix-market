@@ -30,6 +30,7 @@ contract BuybackExecutor {
     error MinOutRequired();
     error Nothing();
     error AboveCap();
+    error NotLocker();
     error BuybackSwapDeferred(uint256 minOutFloor);
 
     event BuybacksPausedSet(address indexed by);
@@ -46,6 +47,7 @@ contract BuybackExecutor {
     SeedixRoles public immutable roles;
     LaunchHook public hook;
     address public launcher;
+    address public locker;
     address public immutable initializer;
     Currency public immutable whype;
 
@@ -55,6 +57,9 @@ contract BuybackExecutor {
     PoolId public platformPoolId;
     mapping(Currency => Route) public whypeRoute;
     mapping(PoolId => uint256) public lastBuybackAt;
+    mapping(PoolId => uint256) public periodStart;
+    mapping(PoolId => uint256) public spentInPeriod;
+    mapping(Currency => uint256) public collected;
     uint256 public maxInPerPeriod = 50_000 ether;
 
     constructor(SeedixRoles roles_, Currency whype_, address initializer_) {
@@ -64,10 +69,12 @@ contract BuybackExecutor {
         initializer = initializer_;
     }
 
-    function wire(LaunchHook hook_, address launcher_) external {
+    function wire(LaunchHook hook_, address launcher_, address locker_) external {
         if (msg.sender != initializer || address(hook) != address(0)) revert NotInitializer();
+        if (launcher_ == address(0) || locker_ == address(0)) revert NotInitializer();
         hook = hook_;
         launcher = launcher_;
+        locker = locker_;
     }
 
     function setPlatform(PoolId id, address token) external {
@@ -114,11 +121,19 @@ contract BuybackExecutor {
         maxInPerPeriod = next;
     }
 
-    /// @notice Move ERC-20 paid to this contract (LP fees, seed remainder) into the pool's burn pots.
-    function sweepCollected(PoolId id) external {
-        (address coin, Currency pair,,,,,) = hook.config(id);
-        _sweep(id, Currency.wrap(coin));
-        _sweep(id, pair);
+    /// @dev The locker records the exact amount it just paid this contract for the platform pool.
+    function noteCollected(Currency token, uint256 amount) external {
+        if (msg.sender != locker) revert NotLocker();
+        if (!platformSet || amount == 0) revert Nothing();
+        collected[token] += amount;
+    }
+
+    /// @notice Move the recorded platform-pool balance into that pool's burn pots. The caller cannot pick a pool.
+    function sweepCollected() external {
+        if (!platformSet) revert PlatformNotSet();
+        (address coin, Currency pair,,,,,) = hook.config(platformPoolId);
+        _flush(Currency.wrap(coin));
+        _flush(pair);
     }
 
     function burnCoinSide(PoolId id) external {
@@ -131,14 +146,12 @@ contract BuybackExecutor {
         emit CoinSideBurned(id, burnCoin);
     }
 
-    /// @notice Runs the guards, records the interval, then reverts with the floor. The swap lands later.
-    ///         The timestamp write sits on the success path and is rolled back by the deferred revert.
-    function buybackCoin(PoolId id, uint256 amountIn, uint256 minOut) external returns (uint256) {
-        if (amountIn > maxInPerPeriod) revert AboveCap();
+    /// @notice Reserves the period cap, then returns the floor. The swap itself is still unwired.
+    ///         The reservation persists, so a later revert cannot reset the cap.
+    function buybackCoin(PoolId id, uint256 amountIn, uint256 minOut) external returns (uint256 effective) {
         uint256 floor = _guard(id, amountIn, _inputIsCurrency0(id, _pairOf(id)));
-        uint256 effective = TwapGuard.effectiveMin(floor, minOut);
-        lastBuybackAt[id] = block.timestamp;
-        revert BuybackSwapDeferred(effective);
+        _consume(id, amountIn);
+        effective = TwapGuard.effectiveMin(floor, minOut);
     }
 
     /// @notice WHYPE pairs guard the platform pool. Stock pairs sell the stock for WHYPE first.
@@ -171,10 +184,11 @@ contract BuybackExecutor {
     {
         (whypeFloor, platformFloor) = quotePlatform(pair, amountIn, minWhypeOut, minPlatformOut);
         if (Currency.unwrap(pair) != Currency.unwrap(whype)) {
-            lastBuybackAt[whypeRoute[pair].poolId] = block.timestamp;
+            _consume(whypeRoute[pair].poolId, amountIn);
+            _consume(platformPoolId, whypeFloor);
+        } else {
+            _consume(platformPoolId, amountIn);
         }
-        lastBuybackAt[platformPoolId] = block.timestamp;
-        revert BuybackSwapDeferred(platformFloor);
     }
 
     function _guard(PoolId id, uint256 amountIn, bool zeroForOne) internal view returns (uint256 floor) {
@@ -183,7 +197,6 @@ contract BuybackExecutor {
         (,,,,, uint40 launchTime,) = hook.config(id);
         if (launchTime == 0) revert UnknownPool();
         if (block.timestamp < uint256(launchTime) + C.TWAP_WINDOW) revert YoungPool();
-        if (lastBuybackAt[id] != 0 && block.timestamp < lastBuybackAt[id] + C.BUYBACK_INTERVAL) revert YoungPool();
         (int24 twap, int24 spot) = hook.consult(id, C.TWAP_WINDOW);
         TwapGuard.assertBand(spot, twap);
         floor = TwapGuard.minOut(amountIn, twap, zeroForOne);
@@ -204,10 +217,25 @@ contract BuybackExecutor {
         return Currency.unwrap(input) == Currency.unwrap(c0);
     }
 
-    function _sweep(PoolId id, Currency token) internal {
-        uint256 bal = IERC20(Currency.unwrap(token)).balanceOf(address(this));
-        if (bal == 0) return;
-        IERC20(Currency.unwrap(token)).forceApprove(address(hook), bal);
-        hook.depositCollected(id, token, bal);
+    /// @dev Rolling window. A new period starts after `BUYBACK_INTERVAL`. The spent sum survives the call.
+    function _consume(PoolId id, uint256 amountIn) internal {
+        if (amountIn == 0) revert Nothing();
+        if (amountIn > maxInPerPeriod) revert AboveCap();
+        uint256 start = periodStart[id];
+        if (start == 0 || block.timestamp >= start + C.BUYBACK_INTERVAL) {
+            periodStart[id] = block.timestamp;
+            spentInPeriod[id] = 0;
+        }
+        if (spentInPeriod[id] + amountIn > maxInPerPeriod) revert AboveCap();
+        spentInPeriod[id] += amountIn;
+        lastBuybackAt[id] = block.timestamp;
+    }
+
+    function _flush(Currency token) internal {
+        uint256 amount = collected[token];
+        if (amount == 0) return;
+        collected[token] = 0;
+        IERC20(Currency.unwrap(token)).forceApprove(address(hook), amount);
+        hook.depositCollected(platformPoolId, token, amount);
     }
 }

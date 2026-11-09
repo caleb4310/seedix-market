@@ -11,6 +11,7 @@ import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.so
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {LaunchHook} from "../hook/LaunchHook.sol";
+import {BuybackExecutor} from "../buyback/BuybackExecutor.sol";
 import {LaunchCurve} from "../libraries/LaunchCurve.sol";
 
 /// @notice Holds the launch position forever. LP fees are pulled to the fee recipient,
@@ -140,8 +141,8 @@ contract LiquidityLocker is IUnlockCallback {
         BalanceDelta b;
         if (farPos[id].liquidity > 0) b = _poke(key, farPos[id]);
         BalanceDelta total = a + b;
-        uint128 out0 = _takeOut(key.currency0, total.amount0(), to);
-        uint128 out1 = _takeOut(key.currency1, total.amount1(), to);
+        uint128 out0 = _takeOut(id, key.currency0, total.amount0(), to);
+        uint128 out1 = _takeOut(id, key.currency1, total.amount1(), to);
         return abi.encode(out0, out1);
     }
 
@@ -153,10 +154,14 @@ contract LiquidityLocker is IUnlockCallback {
         );
     }
 
-    function _takeOut(Currency c, int128 amt, address to) internal returns (uint128 out) {
+    function _takeOut(PoolId id, Currency c, int128 amt, address to) internal returns (uint128 out) {
         if (amt > 0) {
             out = uint128(amt);
             poolManager.take(c, to, out);
+            (,,,, bool isPlatform,,) = hook.config(id);
+            if (isPlatform && to == buybackExecutor) {
+                BuybackExecutor(buybackExecutor).noteCollected(c, out);
+            }
         } else if (amt < 0) {
             revert SeedNeedsPair();
         }

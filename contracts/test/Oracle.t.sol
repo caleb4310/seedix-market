@@ -34,11 +34,10 @@ contract OracleTest is Fixture {
         vm.expectRevert(BuybackExecutor.YoungPool.selector);
         d.executor.buybackCoin(id, 1 ether, 1);
         vm.warp(block.timestamp + C.TWAP_WINDOW);
-        try d.executor.buybackCoin(id, 1 ether, 1) returns (uint256) {
-            revert("expected deferral");
-        } catch (bytes memory data) {
-            assertEq(bytes4(data), BuybackExecutor.BuybackSwapDeferred.selector);
-        }
+        uint256 floor = d.executor.buybackCoin(id, 1 ether, 1);
+        assertGt(floor, 0);
+        assertEq(d.executor.lastBuybackAt(id), vm.getBlockTimestamp());
+        assertEq(d.executor.spentInPeriod(id), 1 ether);
         vm.prank(admin);
         d.launcher.launchPlatformToken(_params(address(whype), 0, 0, address(0)));
         vm.expectRevert(BuybackExecutor.RouteNotRegistered.selector);
@@ -117,10 +116,20 @@ contract OracleTest is Fixture {
         int24 dist = twap > spot ? twap - spot : spot - twap;
         assertLe(dist, C.BAND_TICKS, "twap follows the idle spot");
 
-        try d.executor.buybackCoin(id, 1 ether, 1) returns (uint256) {
-            revert("expected deferral");
-        } catch (bytes memory data) {
-            assertEq(bytes4(data), BuybackExecutor.BuybackSwapDeferred.selector);
-        }
+        uint256 floor = d.executor.buybackCoin(id, 1 ether, 1);
+        assertGt(floor, 0);
+        vm.expectRevert(BuybackExecutor.AboveCap.selector);
+        d.executor.buybackCoin(id, 50_000 ether, 1);
+    }
+
+    function test_periodCapSurvivesASecondCall() public {
+        vm.warp(vm.getBlockTimestamp() + C.TWAP_WINDOW);
+        d.executor.buybackCoin(id, 30_000 ether, 1);
+        vm.expectRevert(BuybackExecutor.AboveCap.selector);
+        d.executor.buybackCoin(id, 30_000 ether, 1);
+        assertEq(d.executor.spentInPeriod(id), 30_000 ether);
+        vm.warp(vm.getBlockTimestamp() + C.BUYBACK_INTERVAL);
+        d.executor.buybackCoin(id, 30_000 ether, 1);
+        assertEq(d.executor.spentInPeriod(id), 30_000 ether);
     }
 }

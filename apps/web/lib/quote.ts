@@ -7,6 +7,7 @@ export type Side = "buy" | "sell";
 export type TradeQuote = {
   hookAmt: number;
   platAmt: number;
+  lpAmt: number;
   toPool: number;
   impact: number;
   received: number;
@@ -14,6 +15,21 @@ export type TradeQuote = {
   hookUnit: "pair" | "coin";
   receiveUnit: "pair" | "coin";
 };
+
+export type Slippage =
+  | { ok: true; pct: number; warn: boolean }
+  | { ok: false; message: string };
+
+/** Reads the field as typed. It does not clamp or rewrite the number. */
+export function parseSlippage(raw: string): Slippage {
+  const text = raw.trim();
+  if (text === "") return { ok: false, message: "Enter a slippage percent." };
+  const pct = Number(text);
+  if (!Number.isFinite(pct)) return { ok: false, message: "Slippage must be a number." };
+  if (pct < 0) return { ok: false, message: "Slippage cannot be negative." };
+  if (pct > 50) return { ok: false, message: "Slippage cannot be above 50%." };
+  return { ok: true, pct, warn: pct > 5 };
+}
 
 /** Constant-price quote with a size impact, matching the hook's fee direction. */
 export function tradeQuote(input: {
@@ -27,7 +43,7 @@ export function tradeQuote(input: {
   const gross = Number.isFinite(input.amount) ? Math.max(0, input.amount) : 0;
   const hook = input.hookPips / fees.pips;
   const platform = fees.platformPips / fees.pips;
-  const slip = Math.min(0.5, Math.max(0, input.slippagePct / 100));
+  const slip = input.slippagePct / 100;
   const price = input.price > 0 ? input.price : 0;
 
   if (input.side === "buy") {
@@ -39,6 +55,7 @@ export function tradeQuote(input: {
     return {
       hookAmt,
       platAmt,
+      lpAmt: toPool * (fees.lpPips / fees.pips),
       toPool,
       impact,
       received,
@@ -58,6 +75,7 @@ export function tradeQuote(input: {
   return {
     hookAmt,
     platAmt,
+    lpAmt: toPool * (fees.lpPips / fees.pips),
     toPool,
     impact,
     received,

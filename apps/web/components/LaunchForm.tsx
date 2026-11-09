@@ -71,6 +71,7 @@ export function LaunchForm() {
   }
 
   return (
+    <div className="launch-layout">
     <form className="form" onSubmit={(e) => e.preventDefault()}>
       <div>
         <p className="kicker">New coin</p>
@@ -79,13 +80,13 @@ export function LaunchForm() {
       </div>
       <div className="grid-2">
         <Field label={`Name · ${nameBytes}/32 bytes`}>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Harbor" />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="North star" />
         </Field>
         <Field label={`Ticker · ${tickerBytes}/8 bytes`}>
           <input
             value={ticker}
             onChange={(e) => setTicker(e.target.value.toUpperCase().slice(0, 8))}
-            placeholder="HARB"
+            placeholder="NSTR"
           />
         </Field>
       </div>
@@ -164,24 +165,6 @@ export function LaunchForm() {
           </Button>
         </div>
       </details>
-      <dl className="review">
-        <div>
-          <dt>Mode</dt>
-          <dd>{modeLabel(mode)}</dd>
-        </div>
-        <div>
-          <dt>Pair</dt>
-          <dd>{pair}</dd>
-        </div>
-        <div>
-          <dt>Team</dt>
-          <dd>{team}%</dd>
-        </div>
-        <div>
-          <dt>Decay</dt>
-          <dd>80% → 1% over 10s</dd>
-        </div>
-      </dl>
       <button
         className="hold"
         type="button"
@@ -216,5 +199,32 @@ export function LaunchForm() {
         </Button>
       ) : null}
     </form>
+    <aside className="card">
+      <p className="kicker">What you will sign</p>
+      <h2 className="lede">{name.trim() || "New coin"}</h2>
+      <dl className="review stack-top">
+        <div>
+          <dt>Mode</dt>
+          <dd>{modeLabel(mode)}</dd>
+        </div>
+        <div>
+          <dt>Pair</dt>
+          <dd>{pair}</dd>
+        </div>
+        <div>
+          <dt>Team</dt>
+          <dd>{team}%</dd>
+        </div>
+        <div>
+          <dt>Decay</dt>
+          <dd>80% to 1% over 10s</dd>
+        </div>
+        <div>
+          <dt>Recipient</dt>
+          <dd>{recipient.trim() || "Connected wallet"}</dd>
+        </div>
+      </dl>
+    </aside>
+    </div>
   );
 }

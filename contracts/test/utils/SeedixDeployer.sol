@@ -77,7 +77,7 @@ contract SeedixDeployer {
         d.hook.setLauncher(address(d.launcher));
         d.hook.setLocker(address(d.locker));
         d.vault.setHook(d.hook);
-        d.executor.wire(d.hook, address(d.launcher));
+        d.executor.wire(d.hook, address(d.launcher), address(d.locker));
         d.locker.wire(d.hook, address(d.launcher), address(d.executor));
         d.distributor.wire(d.hook, address(p.poolManager), address(d.locker), address(d.vault), address(d.executor));
     }

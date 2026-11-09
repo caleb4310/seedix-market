@@ -33,8 +33,10 @@ contract DeploySimTest is Test {
         assertFalse(tl.hasRole(tl.DEFAULT_ADMIN_ROLE(), deployer));
         assertFalse(tl.hasRole(tl.PROPOSER_ROLE(), deployer));
         assertFalse(tl.hasRole(tl.EXECUTOR_ROLE(), deployer));
+        assertFalse(tl.hasRole(tl.CANCELLER_ROLE(), deployer));
         assertTrue(tl.hasRole(tl.PROPOSER_ROLE(), admin));
         assertTrue(tl.hasRole(tl.EXECUTOR_ROLE(), admin));
+        assertTrue(tl.hasRole(tl.CANCELLER_ROLE(), admin));
         assertTrue(tl.hasRole(tl.PROPOSER_ROLE(), rolesAddr));
         assertTrue(tl.hasRole(tl.PROPOSER_ROLE(), vault));
         assertEq(tl.getMinDelay(), 48 hours);

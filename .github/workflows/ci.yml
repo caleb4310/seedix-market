@@ -61,6 +61,7 @@ jobs:
           cache: npm
       - run: npm install
       - run: npm run lint -w @seedix/web
+      - run: node apps/web/scripts/check-css.mjs
       - run: npm run typecheck -w @seedix/web
       - run: npm run build -w @seedix/web
 

@@ -1,52 +1,76 @@
 "use client";
 
-import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useState } from "react";
 import { elysiumTestnet } from "@/lib/chain";
 import { Button } from "@/components/ui/Button";
 
-export function WalletButton() {
-  const { address, isConnected, chainId } = useAccount();
-  const { connect, connectors, isPending } = useConnect();
-  const { disconnect } = useDisconnect();
-  const { switchChain } = useSwitchChain();
-  const injected = connectors[0];
-
-  if (!isConnected) {
-    return (
-      <Button
-        variant="secondary"
-        type="button"
-        disabled={!injected || isPending}
-        title={injected ? "Connect an injected wallet" : "No injected wallet in this browser"}
-        onClick={() => injected && connect({ connector: injected })}
-      >
-        {isPending ? (
-          "Connecting"
-        ) : injected ? (
-          <>
-            <span className="wide">Connect wallet</span>
-            <span className="narrow">Connect</span>
-          </>
-        ) : (
-          "No wallet"
-        )}
-      </Button>
-    );
-  }
-
-  if (chainId !== elysiumTestnet.id) {
-    return (
-      <Button variant="secondary" type="button" onClick={() => switchChain({ chainId: elysiumTestnet.id })}>
-        <span className="wide">Switch to Elysium testnet</span>
-        <span className="narrow">Switch</span>
-      </Button>
-    );
-  }
-
-  const short = `${address?.slice(0, 6)}…${address?.slice(-4)}`;
+export function NoWalletHelp() {
   return (
-    <Button variant="secondary" type="button" onClick={() => disconnect()}>
-      {short}
-    </Button>
+    <div className="status" data-tone="error" role="alert">
+      <strong>No wallet in this browser</strong>
+      <p className="note">Install a browser wallet, then reload this page. Seedix connects on Elysium testnet (99801).</p>
+      <a href="https://metamask.io/download/">Install MetaMask</a>
+    </div>
+  );
+}
+
+function walletInstalled(): boolean {
+  return typeof window !== "undefined" && typeof window.ethereum !== "undefined";
+}
+
+export function WalletButton({ forceHelp = false }: { forceHelp?: boolean }) {
+  const [help, setHelp] = useState(forceHelp);
+
+  return (
+    <ConnectButton.Custom>
+      {({ account, chain, openAccountModal, openChainModal, openConnectModal, mounted }) => {
+        if (!mounted) {
+          return (
+            <Button variant="secondary" type="button" disabled>
+              <span className="wide">Connect wallet</span>
+              <span className="narrow">Connect</span>
+            </Button>
+          );
+        }
+
+        if (!account) {
+          return (
+            <div className="wallet-help">
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => {
+                  if (!walletInstalled()) {
+                    setHelp(true);
+                    return;
+                  }
+                  openConnectModal();
+                }}
+              >
+                <span className="wide">Connect wallet</span>
+                <span className="narrow">Connect</span>
+              </Button>
+              {help ? <NoWalletHelp /> : null}
+            </div>
+          );
+        }
+
+        if (chain?.unsupported || chain?.id !== elysiumTestnet.id) {
+          return (
+            <Button variant="secondary" type="button" onClick={openChainModal}>
+              <span className="wide">Switch to Elysium testnet</span>
+              <span className="narrow">Switch</span>
+            </Button>
+          );
+        }
+
+        return (
+          <Button variant="secondary" type="button" onClick={openAccountModal}>
+            {account.displayName}
+          </Button>
+        );
+      }}
+    </ConnectButton.Custom>
   );
 }
