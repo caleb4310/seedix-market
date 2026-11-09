@@ -1,0 +1,68 @@
+[
+  {
+    "type": "function",
+    "name": "launch",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      {
+        "name": "params",
+        "type": "tuple",
+        "components": [
+          { "name": "name", "type": "string" },
+          { "name": "symbol", "type": "string" },
+          { "name": "pair", "type": "address" },
+          { "name": "mode", "type": "uint8" },
+          { "name": "feeRecipient", "type": "address" },
+          { "name": "teamWallet", "type": "address" },
+          { "name": "teamBps", "type": "uint16" },
+          { "name": "startMcapInPair", "type": "uint256" }
+        ]
+      }
+    ],
+    "outputs": [
+      { "name": "coin", "type": "address" },
+      { "name": "id", "type": "bytes32" }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "CoinLaunched",
+    "inputs": [
+      { "name": "poolId", "type": "bytes32", "indexed": true },
+      { "name": "coin", "type": "address", "indexed": true },
+      { "name": "pair", "type": "address", "indexed": true },
+      { "name": "mode", "type": "uint8", "indexed": false },
+      { "name": "isPlatform", "type": "bool", "indexed": false },
+      { "name": "feeRecipient", "type": "address", "indexed": false },
+      { "name": "teamWallet", "type": "address", "indexed": false },
+      { "name": "teamAmount", "type": "uint256", "indexed": false },
+      { "name": "startMcap", "type": "uint256", "indexed": false },
+      { "name": "category", "type": "uint8", "indexed": false },
+      { "name": "pairStatus", "type": "uint8", "indexed": false }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "statusOf",
+    "stateMutability": "view",
+    "inputs": [{ "name": "pair", "type": "address" }],
+    "outputs": [{ "name": "", "type": "uint8" }]
+  },
+  {
+    "type": "function",
+    "name": "pairAllowed",
+    "stateMutability": "view",
+    "inputs": [{ "name": "pair", "type": "address" }],
+    "outputs": [{ "name": "", "type": "bool" }]
+  },
+  { "type": "error", "name": "Paused", "inputs": [] },
+  { "type": "error", "name": "BadArgs", "inputs": [] },
+  { "type": "error", "name": "PairNotAllowed", "inputs": [] },
+  { "type": "error", "name": "BadRecipient", "inputs": [] },
+  { "type": "error", "name": "RateLimited", "inputs": [] },
+  { "type": "error", "name": "UnsafePair", "inputs": [] },
+  { "type": "error", "name": "PairRefused", "inputs": [] },
+  { "type": "error", "name": "KickbackNeedsVetted", "inputs": [] },
+  { "type": "error", "name": "RouteNotReady", "inputs": [] },
+  { "type": "error", "name": "FeeOnTransfer", "inputs": [] }
+]

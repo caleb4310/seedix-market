@@ -1,0 +1,14 @@
+[
+  {
+    "type": "function",
+    "name": "pin",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "poolId", "type": "bytes32" },
+      { "name": "cid", "type": "string" }
+    ],
+    "outputs": []
+  },
+  { "type": "error", "name": "NotCreator", "inputs": [] },
+  { "type": "error", "name": "BadCid", "inputs": [] }
+]

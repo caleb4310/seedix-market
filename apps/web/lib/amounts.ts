@@ -24,11 +24,22 @@ export function formatTokenAmount(amount: bigint, decimals: number, maxFrac = 6)
   return negative ? `-${text}` : text;
 }
 
-/** Floor of amount × (1 − slippage%). The percent is the number the user typed. */
-export function minimumFromQuote(amount: bigint, slippagePct: number): bigint {
+function slippageBps(slippagePct: number): bigint {
   const bps = BigInt(Math.round(slippagePct * 100));
   if (bps < 0n || bps > 10_000n) throw new Error("Slippage is out of range.");
+  return bps;
+}
+
+/** Floor of amount × (1 − slippage%). The percent is the number the user typed. */
+export function minimumFromQuote(amount: bigint, slippagePct: number): bigint {
+  const bps = slippageBps(slippagePct);
   return (amount * (10_000n - bps)) / 10_000n;
+}
+
+/** Ceiling of amount × (1 + slippage%). Used as maxIn on an exact-out swap. */
+export function maximumFromQuote(amount: bigint, slippagePct: number): bigint {
+  const bps = slippageBps(slippagePct);
+  return (amount * (10_000n + bps) + 9_999n) / 10_000n;
 }
 
 /** The router's full range. Slippage is enforced by min-out or max-in, not by a tight price limit. */

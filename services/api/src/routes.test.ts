@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
 import { candles } from "./chart.ts";
 import { cleanSocials } from "@seedix/shared";
@@ -124,5 +127,41 @@ describe("api", () => {
     });
     assert.equal((posted.json as { website: string }).website, "https://seedix.example/coin");
     assert.equal((posted.json as { x: string }).x, "https://x.com/seedix");
+  });
+
+  it("returns a merkle proof from the manifest directory", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "seedix-claims-"));
+    const previous = process.env.KICKBACK_MANIFEST_DIR;
+    process.env.KICKBACK_MANIFEST_DIR = dir;
+    const account = "0x00000000000000000000000000000000000000ab";
+    try {
+      await writeFile(
+        path.join(dir, "round.json"),
+        JSON.stringify({
+          poolId: `0x${pool}`,
+          epoch: "1",
+          chainId: 99801,
+          distributor: "0x0000000000000000000000000000000000000001",
+          coin: "0x0000000000000000000000000000000000000002",
+          pair: "0x0000000000000000000000000000000000000003",
+          claims: [{ account, amount: "1000000000000000000" }],
+        }),
+      );
+      const db = new FakeDb();
+      const res = await handleRequest(db, "GET", `/coins/0x${pool}/claims`, new URLSearchParams(`account=${account}`));
+      assert.equal(res.status, 200);
+      const claims = (res.json as { claims: { proof: string[]; amount: string; epoch: string }[] }).claims;
+      assert.equal(claims.length, 1);
+      assert.equal(claims[0]?.epoch, "1");
+      assert.equal(claims[0]?.amount, "1000000000000000000");
+      assert.deepEqual(claims[0]?.proof, []);
+      assert.equal(db.calls.length, 0);
+      const missing = await handleRequest(db, "GET", `/coins/0x${pool}/claims`, new URLSearchParams());
+      assert.equal(missing.status, 400);
+    } finally {
+      if (previous === undefined) delete process.env.KICKBACK_MANIFEST_DIR;
+      else process.env.KICKBACK_MANIFEST_DIR = previous;
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

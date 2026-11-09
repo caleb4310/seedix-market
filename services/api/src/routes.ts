@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { elysiumTestnet, cleanSocials } from "@seedix/shared";
+import { claimsForPool } from "./claims.ts";
 import { bucketSeconds, candles, type ChartPoint } from "./chart.ts";
 
 export type Db = {
@@ -290,7 +291,7 @@ export async function handleRequest(
       },
     };
   }
-  const coinPath = path.match(/^\/coins\/0x([0-9a-fA-F]{64})(\/chart|\/holders|\/swaps|\/kickbacks)?$/);
+  const coinPath = path.match(/^\/coins\/0x([0-9a-fA-F]{64})(\/chart|\/holders|\/swaps|\/kickbacks|\/claims)?$/);
   if (!coinPath?.[1]) return { status: 404, json: { error: "not found" } };
   const id = coinPath[1];
   if (!POOL.test(id)) return { status: 400, json: { error: "bad pool" } };
@@ -327,6 +328,12 @@ export async function handleRequest(
       status: 200,
       json: { holders: res.rows.map((row) => ({ account: prefixed(String(row.account)), balance: String(row.balance) })) },
     };
+  }
+  if (tail === "/claims") {
+    const account = query.get("account") ?? "";
+    if (!/^0x[0-9a-fA-F]{40}$/.test(account)) return { status: 400, json: { error: "bad address" } };
+    const claims = await claimsForPool(`0x${id}`, account);
+    return { status: 200, json: { claims } };
   }
   if (tail === "/swaps") {
     const res = await db.query(

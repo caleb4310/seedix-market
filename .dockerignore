@@ -1,0 +1,9 @@
+.git
+**/node_modules
+**/.next
+contracts/cache
+contracts/out
+*.log
+.env
+.env.*
+!/.env.example

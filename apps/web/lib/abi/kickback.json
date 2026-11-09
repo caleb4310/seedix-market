@@ -1,0 +1,53 @@
+[
+  {
+    "type": "function",
+    "name": "claim",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "id", "type": "bytes32" },
+      { "name": "epochId", "type": "uint64" },
+      { "name": "account", "type": "address" },
+      { "name": "amount", "type": "uint256" },
+      { "name": "proof", "type": "bytes32[]" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "claimFailed",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "id", "type": "bytes32" },
+      { "name": "epochId", "type": "uint64" }
+    ],
+    "outputs": [{ "name": "amount", "type": "uint256" }]
+  },
+  {
+    "type": "function",
+    "name": "claimable",
+    "stateMutability": "view",
+    "inputs": [
+      { "name": "id", "type": "bytes32" },
+      { "name": "epochId", "type": "uint64" },
+      { "name": "account", "type": "address" }
+    ],
+    "outputs": [{ "name": "", "type": "uint256" }]
+  },
+  {
+    "type": "function",
+    "name": "nextEpoch",
+    "stateMutability": "view",
+    "inputs": [{ "name": "id", "type": "bytes32" }],
+    "outputs": [{ "name": "", "type": "uint64" }]
+  },
+  { "type": "error", "name": "BadProof", "inputs": [] },
+  { "type": "error", "name": "AlreadyClaimed", "inputs": [] },
+  { "type": "error", "name": "Nothing", "inputs": [] },
+  { "type": "error", "name": "Excluded", "inputs": [] },
+  { "type": "error", "name": "ReviewOpen", "inputs": [] },
+  { "type": "error", "name": "Sealed", "inputs": [] },
+  { "type": "error", "name": "Dust", "inputs": [] },
+  { "type": "error", "name": "Cap", "inputs": [] },
+  { "type": "error", "name": "BadEpoch", "inputs": [] },
+  { "type": "error", "name": "TransferFailed", "inputs": [] }
+]
