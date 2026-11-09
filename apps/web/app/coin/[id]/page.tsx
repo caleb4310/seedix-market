@@ -1,7 +1,5 @@
-import { notFound } from "next/navigation";
-import { TradePanel, type TradePreview } from "@/components/TradePanel";
-import { CoinBody } from "@/components/CoinBody";
-import { getCoin } from "@/lib/mock";
+import { CoinScreen } from "@/components/CoinScreen";
+import type { TradePreview } from "@/components/TradePanel";
 
 const previews = new Set(["approval", "pending", "success", "error", "nowallet"]);
 
@@ -14,17 +12,10 @@ export default async function CoinPage({
 }) {
   const { id } = await params;
   const query = await searchParams;
-  const coin = getCoin(id);
-  if (!coin) notFound();
   const side = query.side === "sell" ? "sell" : "buy";
   const preview =
     process.env.NODE_ENV !== "production" && previews.has(query.state ?? "")
       ? (query.state as TradePreview)
       : undefined;
-  return (
-    <div className="coin-layout">
-      <CoinBody coin={coin} />
-      <TradePanel coin={coin} initialSide={side} preview={preview} />
-    </div>
-  );
+  return <CoinScreen id={id} side={side} preview={preview} />;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { modeLabel, type Mode } from "@/lib/mock";
+import { modeLabel, type Mode } from "@/lib/coin";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Tabs } from "@/components/ui/Tabs";

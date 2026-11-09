@@ -1,54 +1,45 @@
 # Slither triage
 
-Accepted high and medium findings. `contracts/script/check-slither.py` fails the CI job on any high or medium that is not listed here. The id is `check path:line` from the Slither JSON. Low and informational findings stay in the log and do not fail the job. `setKeeper(address(0))` is one of those lows: the zero address revokes the keeper on purpose.
+Accepted high and medium findings. `contracts/script/check-slither.py` fails the job when a high or medium finding's `detector Contract.function` key is missing, and it also fails if this file lists a key twice. Line numbers are not part of the key. Low and informational findings stay in the log. `setKeeper(address(0))` is one of those lows: the zero address revokes the keeper on purpose. On mainnet the grant itself must go through the timelock.
 
 ## Accepted
 
-- arbitrary-send-erc20 src/hook/LaunchHook.sol:520 | The from address is the swap payer or the hook's own encoded pull, not a caller-chosen token owner.
-- arbitrary-send-erc20 src/router/SeedixRouter.sol:87 | The from address is the swap payer or the hook's own encoded pull, not a caller-chosen token owner.
-- weak-prng src/kickback/KickbackDistributor.sol:103 | block.timestamp snaps the Kickback epoch to the hour grid. It is not used as randomness.
-- divide-before-multiply src/libraries/LaunchCurve.sol:99 | Tick alignment floors to the spacing and multiplies back. The truncation is the alignment.
-- incorrect-equality src/hook/LaunchHook.sol:695 | The comparison is a zero sentinel for an unset timestamp or a zero amount, not a token balance.
-- incorrect-equality src/kickback/KickbackDistributor.sol:103 | The comparison is a zero sentinel for an unset timestamp or a zero amount, not a token balance.
-- incorrect-equality src/hook/LaunchHook.sol:591 | The comparison is a zero sentinel for an unset timestamp or a zero amount, not a token balance.
-- incorrect-equality src/hook/LaunchHook.sol:172 | The comparison is a zero sentinel for an unset timestamp or a zero amount, not a token balance.
-- incorrect-equality src/hook/LaunchHook.sol:211 | The comparison is a zero sentinel for an unset timestamp or a zero amount, not a token balance.
-- reentrancy-no-eth src/buyback/BuybackExecutor.sol:146 | Each flush zeros its own recorded balance before the hook call. The pool currencies are the platform token and WHYPE.
-- uninitialized-local src/libraries/OracleLib.sol:68 | The local is assigned on every path that reads it, or it is a memory struct filled before use. Slither misses the later assignment.
-- uninitialized-local src/hook/LaunchHook.sol:403 | The local is assigned on every path that reads it, or it is a memory struct filled before use. Slither misses the later assignment.
-- uninitialized-local src/launch/LiquidityLocker.sol:141 | The local is assigned on every path that reads it, or it is a memory struct filled before use. Slither misses the later assignment.
-- uninitialized-local src/libraries/OracleLib.sol:65 | The local is assigned on every path that reads it, or it is a memory struct filled before use. Slither misses the later assignment.
-- uninitialized-local src/libraries/OracleLib.sol:66 | The local is assigned on every path that reads it, or it is a memory struct filled before use. Slither misses the later assignment.
-- uninitialized-local src/libraries/OracleLib.sol:67 | The local is assigned on every path that reads it, or it is a memory struct filled before use. Slither misses the later assignment.
-- uninitialized-local src/hook/LaunchHook.sol:367 | The local is assigned on every path that reads it, or it is a memory struct filled before use. Slither misses the later assignment.
-- unused-return src/buyback/BuybackExecutor.sol:146 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/launch/Launcher.sol:173 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/router/SeedixRouter.sol:87 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/launch/LiquidityLocker.sol:157 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/launch/LiquidityLocker.sol:110 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/hook/LaunchHook.sol:337 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/vault/FeeVault.sol:45 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/launch/LiquidityLocker.sol:126 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/vault/FeeVault.sol:45 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/buyback/BuybackExecutor.sol:117 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/hook/LaunchHook.sol:704 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/kickback/KickbackDistributor.sol:150 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/buyback/BuybackExecutor.sol:227 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/buyback/BuybackExecutor.sol:211 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/hook/LaunchHook.sol:700 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/buyback/BuybackExecutor.sol:153 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/buyback/BuybackExecutor.sol:222 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/launch/LiquidityLocker.sol:149 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/hook/LaunchHook.sol:520 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/hook/LaunchHook.sol:556 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/kickback/KickbackDistributor.sol:166 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/kickback/KickbackDistributor.sol:103 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/buyback/BuybackExecutor.sol:237 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/buyback/BuybackExecutor.sol:153 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/launch/LiquidityLocker.sol:170 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/vault/FeeVault.sol:45 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/kickback/KickbackDistributor.sol:103 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/launch/LiquidityLocker.sol:65 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/hook/LaunchHook.sol:211 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/hook/LaunchHook.sol:337 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
-- unused-return src/hook/LaunchHook.sol:337 | The ignored value is an unused tuple field or a PoolManager delta the caller does not need.
+- arbitrary-send-erc20 LaunchHook.unlockCallback | The `from` address is the one this hook encoded into its own unlock payload. An outside caller cannot choose whose tokens move.
+- arbitrary-send-erc20 SeedixRouter._settle | The payer is the swap's `msg.sender`. The router transfers only tokens that address has approved, into the PoolManager.
+- weak-prng KickbackDistributor.fund | `block.timestamp` snaps the Kickback epoch onto the hour grid. It is not a random draw.
+- divide-before-multiply LaunchCurve._alignNearest | Dividing by the tick spacing floors onto the grid, and multiplying back is the aligned tick. The lost remainder is the point of the alignment.
+- incorrect-equality KickbackDistributor.fund | `lastEnd == 0` means this pool has never been funded, so the first window has no previous end to continue from.
+- incorrect-equality LaunchHook._mint | `amt == 0` skips an ERC-6909 mint of nothing. It is not a balance comparison.
+- incorrect-equality LaunchHook._routeHook | `baseAmt == 0` means the 1% base of this fee is empty and only the decay excess was routed.
+- incorrect-equality LaunchHook.consult | `launchTime == 0` means this pool id was never configured, so there is no oracle to read.
+- incorrect-equality LaunchHook.keyOf | The same unset-pool sentinel. `keyOf` refuses to build a PoolKey for an unknown id.
+- reentrancy-no-eth BuybackExecutor.sweepCollected | `_flush` sets that currency's recorded balance to zero before `depositCollected`. The two currencies are the platform token and its pair.
+- uninitialized-local LaunchHook.afterSwap | `unspecifiedDelta` is written on the fee path and stays at Solidity's zero when the swap is fee-exempt. Both paths return it.
+- uninitialized-local LaunchHook.beforeSwap | `specifiedDelta` is written before the return on every fee-taking branch, and the exempt branch returns a zero delta directly.
+- uninitialized-local LiquidityLocker._collect | `b` is a `BalanceDelta`. It is assigned from the far position when that position exists, and a zero delta is the correct total when it does not.
+- uninitialized-local OracleLib.consult | `beforeOrAt` and `atOrAfter` are filled inside the observation loop. The reads happen only after `foundBefore` is true.
+- unused-return BuybackExecutor._burnPair | `pots` is a tuple. This function needs `burnPair` only. The other four pots are a different budget.
+- unused-return BuybackExecutor._guard | `config` is a tuple. The guard needs `launchTime` to enforce the TWAP window. The coin, pair, and recipient are not part of that check.
+- unused-return BuybackExecutor._inputIsCurrency0 | The route check uses the coin, the pair, and `coinIsToken0`. Mode, platform flag, and recipient do not decide currency order.
+- unused-return BuybackExecutor._pairOf | Only the pair currency is the buyback input. The rest of `config` is unused here on purpose.
+- unused-return BuybackExecutor.burnCoinSide | One call reads `burnCoin` from `pots` and the next reads the coin address from `config`. Each ignored slot is a different field of that tuple.
+- unused-return BuybackExecutor.registerRoute | The route is valid when one of the two currencies is WHYPE. Launch time and the recipient are not part of that check.
+- unused-return BuybackExecutor.sweepCollected | The flush targets the platform coin and its pair. The other `config` fields would let a caller aim the sweep at a different pool, which this function does not.
+- unused-return FeeVault.claimCreator | Three separate reads: the recipient from `config`, then `creatorPair` and `creatorCoin` from `pots`. Each call uses the one field that claim needs.
+- unused-return KickbackDistributor.cancel | The refund is paid in the pair token. The coin address and the mode are not the asset being returned.
+- unused-return KickbackDistributor.claim | The claim pays the coin or the pair, whichever the leaf names. The other `config` fields are not a payment amount.
+- unused-return KickbackDistributor.fund | One read checks `launchTime` so the epoch has started. The other reads the pair currency that `debitKickback` pulls. They are different tuples.
+- unused-return LaunchHook._payout | `unlock` returns the callback bytes. The payout amount was fixed before the call, and the callback settles that amount.
+- unused-return LaunchHook._pull | Same as `_payout`: the pull amount is an argument, and `unlock` only runs the callback that collects it.
+- unused-return LaunchHook._takeUnspecified | `grossUp` returns the net and the fee. The caller already has the net. Only the fee is added to the unspecified delta.
+- unused-return LaunchHook.beforeSwap | `getSlot0` contributes its tick to the oracle. `onSwap` writes that observation. `grossUp` contributes the fee. The other return slots of those three calls are not a fee input.
+- unused-return LaunchHook.consult | The live tail of the TWAP is the tick from `getSlot0`. The sqrt price and the two fee fields are not inputs to `OracleLib.consult`.
+- unused-return LaunchHook.unlockCallback | `settle` returns the amount paid. The hook already required that amount before calling it.
+- unused-return Launcher._openPool | `initialize` returns the resulting tick. The sqrt price passed in is the curve price, and the tick is not stored again.
+- unused-return LiquidityLocker._add | `modifyLiquidity` returns the caller's delta and a protocol-fee delta. A new position's protocol-fee delta is discarded. The caller delta is what `_pay` settles.
+- unused-return LiquidityLocker._pay | `settle` returns the paid amount. `_pay` transferred that amount in the line above, so the return would only repeat it.
+- unused-return LiquidityLocker._poke | A zero liquidity change returns the position's accrued fees as the caller delta, which `_collect` pays out. The second return is the protocol-fee delta and is not the LP's fees.
+- unused-return LiquidityLocker._recipient | `config` is read for `feeRecipient` alone. That address is who receives a non-platform collect.
+- unused-return LiquidityLocker._takeOut | `config` is read for `isPlatform`, which decides whether the taken fees are noted on the executor. The coin and the pair are already the currencies being taken.
+- unused-return LiquidityLocker.seed | `unlock` returns the callback bytes. Seeding finishes inside the callback, which records the positions.
+- unused-return SeedixRouter._settle | `settle` returns the amount the router just transferred. The swap's delta already fixed that amount.

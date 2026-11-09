@@ -33,8 +33,26 @@ const lengthProps = new Set([
   "inset",
 ]);
 
+const typeProps = new Set([
+  "font-size",
+  "line-height",
+  "letter-spacing",
+  "margin",
+  "padding",
+  "gap",
+  "row-gap",
+  "column-gap",
+]);
+const fontKeywords = /\b(?:smaller|larger|xx-small|x-small|small|medium|large|x-large|xx-large|xxx-large)\b/;
+
 for (const match of withoutQueries.matchAll(/([a-z-]+)\s*:\s*([^;{}]+)/g)) {
   const prop = match[1];
+  if (typeProps.has(prop)) {
+    const raw = match[2];
+    const relative = raw.match(/\d*\.?\d+(?:%|ch|vw|vh|vmin|vmax)\b/g);
+    if (relative) problems.push(`${prop} uses ${relative.join(", ")}`);
+    if (prop === "font-size" && fontKeywords.test(raw)) problems.push(`${prop} uses a keyword size`);
+  }
   if (!lengthProps.has(prop)) continue;
   const value = match[2]
     .replace(/var\([^)]*\)/g, " ")

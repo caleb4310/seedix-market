@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { coins, modeLabel, type Mode } from "@/lib/mock";
+import { modeLabel, type Mode } from "@/lib/coin";
+import { useBoard } from "@/lib/board";
 import { Tabs } from "@/components/ui/Tabs";
 
 function age(sec: number): string {
@@ -12,13 +13,11 @@ function age(sec: number): string {
   return `${Math.floor(sec / 86400)}d`;
 }
 
-function money(n: number): string {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-}
-
 export function CoinTable() {
+  const board = useBoard();
   const [filter, setFilter] = useState<"all" | Mode>("all");
-  const rows = coins.filter((c) => filter === "all" || c.mode === filter);
+  const rows = board.coins.filter((c) => filter === "all" || c.mode === filter);
+  const showMcap = board.coins.some((c) => c.mcap !== undefined);
 
   return (
     <>
@@ -26,7 +25,11 @@ export function CoinTable() {
         <div>
           <p className="kicker">Board</p>
           <h1>Coins</h1>
-          <p className="lede">Eight live test coins. Pick one to trade, or launch your own.</p>
+          <p className="lede">
+            {board.status === "ready" && board.coins.length === 0
+              ? "No coins yet. Launch the first one."
+              : "Pick a coin to trade, or launch your own."}
+          </p>
         </div>
         <Tabs
           label="Coin mode"
@@ -46,34 +49,54 @@ export function CoinTable() {
           <span>Coin</span>
           <span className="hide-sm">Pair</span>
           <span>Mode</span>
-          <span className="num">Mcap</span>
+          {showMcap ? <span className="num">Mcap</span> : null}
           <span className="num hide-sm hide-md">Age</span>
         </div>
-        {rows.length === 0 ? (
+        {board.status === "loading" ? (
           <div className="empty">
-            <p className="kicker">Empty</p>
-            <p className="lede">No coins in this filter. Choose another mode, or launch one.</p>
+            <p className="lede">Loading coins from the testnet.</p>
           </div>
         ) : null}
-        {rows.map((coin) => (
-          <Link key={coin.id} href={`/coin/${coin.id}`} className="row">
-            <span className="coin-cell">
-              <span className="mark" data-tone={coin.ticker.length % 4}>
-                {coin.ticker.slice(0, 1)}
-              </span>
-              <span className="coin-copy">
-                <span className="name">{coin.name}</span>
-                <span className="ticker"> ${coin.ticker}</span>
-              </span>
-            </span>
-            <span className="hide-sm">{coin.pair}</span>
-            <span className="mode" data-mode={coin.mode}>
-              {modeLabel(coin.mode)}
-            </span>
-            <span className="num">{money(coin.mcap)}</span>
-            <span className="num hide-sm hide-md">{age(coin.ageSec)}</span>
-          </Link>
-        ))}
+        {board.status === "error" ? (
+          <div className="empty">
+            <p className="lede">{board.error}</p>
+          </div>
+        ) : null}
+        {board.status === "ready" && rows.length === 0 ? (
+          <div className="empty">
+            <p className="lede">
+              {board.coins.length === 0 ? "No coins yet. Launch the first one." : "No coins in this filter. Choose another mode, or launch one."}
+            </p>
+            {board.coins.length === 0 ? (
+              <p className="stack-top">
+                <Link className="btn" href="/launch">
+                  Launch
+                </Link>
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {board.status === "ready"
+          ? rows.map((coin) => (
+              <Link key={coin.id} href={`/coin/${coin.id}`} className="row">
+                <span className="coin-cell">
+                  <span className="mark" data-tone={coin.ticker.length % 4}>
+                    {coin.ticker.slice(0, 1)}
+                  </span>
+                  <span className="coin-copy">
+                    <span className="name">{coin.name}</span>
+                    <span className="ticker"> ${coin.ticker}</span>
+                  </span>
+                </span>
+                <span className="hide-sm">{coin.pair}</span>
+                <span className="mode" data-mode={coin.mode}>
+                  {modeLabel(coin.mode)}
+                </span>
+                {showMcap ? <span className="num">{coin.mcap !== undefined ? `$${coin.mcap.toLocaleString("en-US")}` : "—"}</span> : null}
+                <span className="num hide-sm hide-md">{age(coin.launchTime !== undefined ? Math.max(0, Math.floor(Date.now() / 1000) - coin.launchTime) : coin.ageSec)}</span>
+              </Link>
+            ))
+          : null}
       </div>
     </>
   );

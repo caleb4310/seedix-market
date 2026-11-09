@@ -1,24 +1,7 @@
-export type Mode = "keep" | "kickback" | "burn";
+import type { Coin } from "./coin";
 
-export type Coin = {
-  id: string;
-  name: string;
-  ticker: string;
-  pair: "WHYPE" | "wNVDAx" | "wSPYx" | "USDC";
-  mode: Mode;
-  mcap: number;
-  price: number;
-  ageSec: number;
-  creator: string;
-  holders: number;
-  description: string;
-  recipient: `0x${string}`;
-  coinIsToken0?: boolean;
-  tokenAddress?: `0x${string}`;
-  pairAddress?: `0x${string}`;
-  hooks?: `0x${string}`;
-  poolId?: `0x${string}`;
-};
+export type { Coin, Mode } from "./coin";
+export { modeLabel } from "./coin";
 
 
 export const coins: Coin[] = [
@@ -140,8 +123,3 @@ export function getCoin(id: string): Coin | undefined {
   return coins.find((c) => c.id === id);
 }
 
-export function modeLabel(mode: Mode): string {
-  if (mode === "keep") return "Keep";
-  if (mode === "kickback") return "Kick back";
-  return "Burn";
-}

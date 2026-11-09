@@ -85,6 +85,8 @@ contract BuybackExecutor {
     }
 
     /// @notice Admin can grant or revoke the keeper. The zero address revokes it.
+    ///         Mainnet must timelock the grant. This testnet build applies it immediately so the
+    ///         admin can turn buybacks on after the deploy. Revocation stays immediate there too.
     function setKeeper(address next) external {
         if (msg.sender != roles.admin()) revert NotAdmin();
         emit KeeperSet(keeper, next);
@@ -160,12 +162,13 @@ contract BuybackExecutor {
         emit CoinSideBurned(id, burnCoin);
     }
 
-    /// @notice Reserves the period cap, then returns the floor. The swap itself is still unwired.
-    ///         The reservation persists, so a later revert cannot reset the cap.
+    /// @notice Debits the burn-pair pot, then returns the floor. The swap itself is still unwired.
+    ///         The tokens sit on this contract until that swap is added, and the pot cannot be reserved again.
     function buybackCoin(PoolId id, uint256 amountIn, uint256 minOut) external returns (uint256 effective) {
         if (msg.sender != keeper || keeper == address(0)) revert NotKeeper();
         uint256 floor = _guard(id, amountIn, _inputIsCurrency0(id, _pairOf(id)));
         _consume(id, amountIn, _burnPair(id));
+        hook.debitBurnPair(id, amountIn, address(this));
         effective = TwapGuard.effectiveMin(floor, minOut);
         emit BuybackReserved(id, amountIn, effective);
     }
@@ -200,11 +203,10 @@ contract BuybackExecutor {
     {
         if (msg.sender != keeper || keeper == address(0)) revert NotKeeper();
         (whypeFloor, platformFloor) = quotePlatform(pair, amountIn, minWhypeOut, minPlatformOut);
-        if (Currency.unwrap(pair) != Currency.unwrap(whype)) {
-            _consume(whypeRoute[pair].poolId, amountIn, _burnPair(whypeRoute[pair].poolId));
-        } else {
-            _consume(platformPoolId, amountIn, _burnPair(platformPoolId));
-        }
+        // Every platform buyback, including the stock leg, shares the platform pool's interval.
+        // The route pool keeps its own coin-buyback slot.
+        _consume(platformPoolId, amountIn, hook.platformBurn(pair));
+        hook.debitPlatformBurn(pair, amountIn, address(this));
         emit BuybackReserved(platformPoolId, amountIn, platformFloor);
     }
 

@@ -108,6 +108,66 @@ export const stateViewAbi = [
   },
 ] as const;
 
+export const tokenMetaAbi = [
+  {
+    type: "function",
+    name: "name",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+  },
+  {
+    type: "function",
+    name: "symbol",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+  },
+  {
+    type: "function",
+    name: "decimals",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint8" }],
+  },
+] as const;
+
+export const launcherAbi = [
+  {
+    type: "event",
+    name: "CoinLaunched",
+    inputs: [
+      { name: "poolId", type: "bytes32", indexed: true },
+      { name: "coin", type: "address", indexed: true },
+      { name: "pair", type: "address", indexed: true },
+      { name: "mode", type: "uint8", indexed: false },
+      { name: "isPlatform", type: "bool", indexed: false },
+      { name: "feeRecipient", type: "address", indexed: false },
+      { name: "teamWallet", type: "address", indexed: false },
+      { name: "teamAmount", type: "uint256", indexed: false },
+      { name: "startMcap", type: "uint256", indexed: false },
+    ],
+  },
+] as const;
+
+export const hookConfigAbi = [
+  {
+    type: "function",
+    name: "config",
+    stateMutability: "view",
+    inputs: [{ name: "id", type: "bytes32" }],
+    outputs: [
+      { name: "coin", type: "address" },
+      { name: "pair", type: "address" },
+      { name: "coinIsToken0", type: "bool" },
+      { name: "mode", type: "uint8" },
+      { name: "isPlatform", type: "bool" },
+      { name: "launchTime", type: "uint40" },
+      { name: "feeRecipient", type: "address" },
+    ],
+  },
+] as const;
+
 export const decimalsAbi = [
   {
     type: "function",
@@ -118,21 +178,27 @@ export const decimalsAbi = [
   },
 ] as const;
 
-/**
- * Elysium testnet's explorer is Blockscout, whose transaction pages are `/tx/{hash}`.
- * Probes of `/tx/` and `/transaction/` both stopped at a Vercel checkpoint, so this follows Blockscout.
- */
+export const launcherAddress = (process.env.NEXT_PUBLIC_LAUNCHER ?? "") as `0x${string}` | "";
+export const hookAddress = (process.env.NEXT_PUBLIC_HOOK ?? "") as `0x${string}` | "";
+
+const defaultExplorerTemplate = `${elysiumTestnet.blockExplorers.default.url}/tx/{hash}`;
+
+/** `{hash}` is replaced with the transaction hash. Verify the path on the first testnet transaction. */
 export function explorerTx(hash: string): string {
-  return `${elysiumTestnet.blockExplorers.default.url}/tx/${hash}`;
+  const template = process.env.NEXT_PUBLIC_EXPLORER_TX_URL_TEMPLATE || defaultExplorerTemplate;
+  return template.replaceAll("{hash}", hash);
 }
 
 export function explainTxError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   if (/user rejected|user denied|rejected the request/i.test(msg)) return "You rejected the request in your wallet. Nothing was sent.";
+  if (/HttpRequestError|TimeoutError|RpcRequestError|failed to fetch|network request failed/i.test(msg)) {
+    return "The network request failed. Check the RPC and try again.";
+  }
   if (msg.includes("Expired")) return "The deadline passed before the transaction was mined.";
-  if (msg.includes("TooLittleReceived")) return "The pool moved past your minimum. Raise slippage or try a smaller size.";
-  if (msg.includes("TooMuchRequested")) return "The trade would cost more than your maximum. Lower the size or raise slippage.";
-  if (msg.includes("PriceLimit")) return "The price limit was rejected by the router.";
+  if (msg.includes("TooLittleReceived")) return "This trade would receive less than the quoted minimum. Raise slippage or try a smaller amount.";
+  if (msg.includes("TooMuchRequested")) return "This trade would cost more than the quoted maximum. Lower the size or raise slippage.";
+  if (msg.includes("PriceLimit")) return "The price limit stopped the trade before it filled. Try a smaller amount.";
   if (/insufficient funds|exceeds balance/i.test(msg)) return "The wallet does not have enough of this token.";
   return msg.length > 220 ? `${msg.slice(0, 220)}…` : msg;
 }
