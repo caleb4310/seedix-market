@@ -24,10 +24,9 @@ The router moves ERC-20 only. Buys of the WHYPE pair spend WHYPE, not native HYP
 
 1. Connect an injected wallet (MetaMask or Rabby) or WalletConnect.
 2. Open Launch.
-3. Enter the name, ticker, pair, and fee mode. Team supply is a whole percent from 0 to 5. The starting market cap is in the pair token.
-4. A metadata URI is shown on the form for your notes. `launch` does not take that argument, so it is not written on chain.
-5. An optional initial buy is a second transaction after the launch is mined. Slippage defaults to 1% and the deadline defaults to 10 minutes. Both can be changed on the form.
-6. Hold the launch button until it fills. The wallet asks you to sign. The page then shows the transaction as pending, with an explorer link, and confirmed after it is mined.
+3. Enter the name and ticker. Pick a listed stock or pre-IPO pair, or paste any token address. Kickback is only offered when that pair is vetted on chain. Keep and Burn work for an unvetted token.
+4. Description, website, X, and Telegram are optional. A description that is a metadata id (10 to 128 letters and numbers) is pinned with `CoinMetadata.pin` when that contract is in `deployments/99801.json`.
+5. Hold the launch button until it fills. The wallet asks you to sign `launch` with that pair and mode. The page shows the transaction as pending, with an explorer link, and confirmed after it is mined.
 
 ## Buy and sell
 
