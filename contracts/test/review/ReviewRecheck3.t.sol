@@ -65,42 +65,47 @@ contract ReviewRecheck3Test is Fixture {
         assertGt(pot, 0);
         vm.expectRevert(abi.encodeWithSelector(BuybackExecutor.ExceedsPot.selector, pot));
         d.executor.buybackCoin(id, pot + 1, 1);
-        d.executor.buybackCoin(id, pot, 1);
-        assertEq(_burnPair(id), 0);
+        uint256 supply = IERC20(coin).totalSupply();
+        d.executor.buybackCoin(id, 0.05 ether, 1);
+        assertEq(_burnPair(id), pot - 0.05 ether);
+        assertLt(IERC20(coin).totalSupply(), supply, "the bought coin is burned");
+        assertEq(IERC20(coin).balanceOf(address(d.executor)), 0);
     }
 
     /// Reserving debits the pot in the same call, so the next interval cannot reserve it again.
     function test_RC3_reserveMovesNothing() public {
         uint256 pot = _burnPair(id);
-        d.executor.buybackCoin(id, pot, 1);
-        assertEq(_burnPair(id), 0, "pot is debited");
-        assertEq(whype.balanceOf(address(d.executor)), pot, "the pair tokens move with the debit");
+        uint256 spent = 0.05 ether;
+        d.executor.buybackCoin(id, spent, 1);
+        assertEq(_burnPair(id), pot - spent, "only the swapped amount leaves the pot");
+        assertEq(whype.balanceOf(address(d.executor)), 0, "the pair tokens are swapped, not held");
+        assertEq(IERC20(coin).balanceOf(address(d.executor)), 0);
         vm.warp(vm.getBlockTimestamp() + C.BUYBACK_INTERVAL);
-        vm.expectRevert(abi.encodeWithSelector(BuybackExecutor.ExceedsPot.selector, uint256(0)));
+        vm.expectRevert(abi.encodeWithSelector(BuybackExecutor.ExceedsPot.selector, pot - spent));
         d.executor.buybackCoin(id, pot, 1);
     }
 
     function test_RC3_firstCallAndEdge() public {
         assertEq(d.executor.lastBuybackAt(id), 0);
         uint256 t0 = vm.getBlockTimestamp();
-        d.executor.buybackCoin(id, 1, 1);
+        d.executor.buybackCoin(id, 0.01 ether, 1);
         vm.warp(t0 + C.BUYBACK_INTERVAL - 1);
         vm.expectRevert(BuybackExecutor.TooSoon.selector);
-        d.executor.buybackCoin(id, 1, 1);
+        d.executor.buybackCoin(id, 0.01 ether, 1);
         vm.warp(t0 + C.BUYBACK_INTERVAL);
-        d.executor.buybackCoin(id, 1, 1);
+        d.executor.buybackCoin(id, 0.01 ether, 1);
     }
 
     /// Platform pool: buybackCoin(platId) and buybackPlatform(WHYPE) share the platform pool's interval.
     function test_RC3_platformIntervalSharedForWhypeLeg() public {
-        d.executor.buybackCoin(platId, 1, 1);
+        d.executor.buybackCoin(platId, 0.01 ether, 1);
         vm.expectRevert(BuybackExecutor.TooSoon.selector);
         d.executor.buybackPlatform(Currency.wrap(address(whype)), 1, 1, 1);
     }
 
     /// A second platform buyback in the same block reverts, and the route coin's slot stays free.
     function test_RC3_platformIntervalBypassViaStockLeg() public {
-        d.executor.buybackPlatform(Currency.wrap(address(whype)), 1, 1, 1);
+        d.executor.buybackPlatform(Currency.wrap(address(whype)), 0.01 ether, 1, 1);
         assertEq(d.executor.lastBuybackAt(platId), vm.getBlockTimestamp());
         vm.expectRevert(BuybackExecutor.TooSoon.selector);
         d.executor.buybackPlatform(Currency.wrap(coin), 1, 1, 1);
@@ -114,7 +119,7 @@ contract ReviewRecheck3Test is Fixture {
         assertLt(platBudget, routePot, "the route pot is not the platform budget");
         vm.expectRevert(abi.encodeWithSelector(BuybackExecutor.ExceedsPot.selector, platBudget));
         d.executor.buybackPlatform(Currency.wrap(coin), routePot, 1, 1);
-        d.executor.buybackCoin(id, 1, 1);
+        d.executor.buybackCoin(id, 0.01 ether, 1);
         assertEq(d.executor.lastBuybackAt(id), vm.getBlockTimestamp());
     }
 
@@ -127,9 +132,12 @@ contract ReviewRecheck3Test is Fixture {
         assertGt(platPoolPot, realBudget);
         vm.expectRevert(abi.encodeWithSelector(BuybackExecutor.ExceedsPot.selector, realBudget));
         d.executor.buybackPlatform(whypeC, platPoolPot, 1, 1);
+        uint256 supply = IERC20(plat).totalSupply();
         d.executor.buybackPlatform(whypeC, realBudget, 1, 1);
         assertEq(d.hook.platformBurn(whypeC), 0);
-        assertEq(whype.balanceOf(address(d.executor)), realBudget);
+        assertEq(whype.balanceOf(address(d.executor)), 0, "WHYPE is swapped for the platform coin");
+        assertLt(IERC20(plat).totalSupply(), supply, "the bought platform coin is burned");
+        assertEq(IERC20(plat).balanceOf(address(d.executor)), 0);
     }
 }
 

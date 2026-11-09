@@ -43,3 +43,5 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - unused-return LiquidityLocker._takeOut | `config` is read for `isPlatform`, which decides whether the taken fees are noted on the executor. The coin and the pair are already the currencies being taken.
 - unused-return LiquidityLocker.seed | `unlock` returns the callback bytes. Seeding finishes inside the callback, which records the positions.
 - unused-return SeedixRouter._settle | `settle` returns the amount the router just transferred. The swap's delta already fixed that amount.
+- unused-return BuybackExecutor._settle | `settle` returns the amount this contract just transferred into the pool. The swap delta already fixed that amount, and the coin received is checked before this call.
+- unused-return BuybackExecutor._swapAndBurn | `config` is read for the coin address that gets burned. Pair, mode, and recipient are not the burned balance.
