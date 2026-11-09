@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const widths = [375, 768, 1024, 1440];
 const themes = ["light", "dark"] as const;
-const paths = ["/", "/launch", "/coin/kiln", "/coin/harbor", "/does-not-exist"];
+const paths = ["/", "/launch", "/portfolio", "/coin/kiln", "/coin/harbor", "/does-not-exist"];
 
 for (const theme of themes) {
   for (const width of widths) {

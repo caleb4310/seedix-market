@@ -412,6 +412,21 @@ details.advanced summary { cursor: pointer; color: var(--ink-soft); min-height: 
   justify-content: space-between;
   gap: var(--space-2) var(--space-4);
 }
+.chart-block { margin-top: var(--space-4); }
+.chart-tabs { display: flex; gap: var(--space-2); }
+.chart { width: 100%; height: calc(var(--space-16) + var(--space-12)); color: var(--accent); display: block; }
+.activity { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-6); min-width: 0; }
+.activity h2 { font-size: var(--fs-title); line-height: var(--lh-title); }
+.activity-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  min-width: 0;
+  border-bottom: var(--hair) solid var(--line);
+  overflow-wrap: anywhere;
+}
 .narrow { display: none; }
 
 @media (max-width: 1023px) {

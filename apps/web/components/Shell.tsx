@@ -39,6 +39,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <Link href="/launch" data-active={path.startsWith("/launch") ? "true" : "false"}>
             Launch
           </Link>
+          <Link href="/portfolio" data-active={path.startsWith("/portfolio") ? "true" : "false"}>
+            <span className="wide">Portfolio</span>
+            <span className="narrow">You</span>
+          </Link>
         </nav>
         <div className="nav-spacer" />
         <div className="chain-pill">{elysiumTestnet.id === 99801 ? "ELYSIUM TESTNET · 99801" : `LOCAL · ${elysiumTestnet.id}`}</div>
