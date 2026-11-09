@@ -4,12 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "tsc --noEmit",
+    "lint": "tsc --noEmit && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit",
     "start": "node --experimental-strip-types src/index.ts"
   },
   "dependencies": {
-    "@seedix/shared": "*"
+    "@seedix/shared": "*",
+    "pg": "^8.13.1",
+    "viem": "^2.22.9"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10"
   }
 }
