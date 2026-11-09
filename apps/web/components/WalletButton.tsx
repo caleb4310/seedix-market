@@ -3,6 +3,7 @@
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useState } from "react";
 import { elysiumTestnet } from "@/lib/chain";
+import { useContractTx } from "@/lib/useTx";
 import { Button } from "@/components/ui/Button";
 
 export function NoWalletHelp() {
@@ -21,6 +22,7 @@ function walletInstalled(): boolean {
 
 export function WalletButton({ forceHelp = false, prominent = false }: { forceHelp?: boolean; prominent?: boolean }) {
   const [help, setHelp] = useState(forceHelp);
+  const { ensureChain } = useContractTx();
 
   return (
     <ConnectButton.Custom>
@@ -59,7 +61,14 @@ export function WalletButton({ forceHelp = false, prominent = false }: { forceHe
 
         if (chain?.unsupported || chain?.id !== elysiumTestnet.id) {
           return (
-            <Button variant="secondary" type="button" onClick={openChainModal}>
+            <Button
+              variant={prominent ? "accent" : "secondary"}
+              block={prominent}
+              type="button"
+              onClick={() => {
+                void ensureChain().catch(() => openChainModal());
+              }}
+            >
               <span className="wide">Switch to Elysium testnet</span>
               <span className="narrow">Switch</span>
             </Button>

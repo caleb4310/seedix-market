@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { apiUrl, coinFromApi, getCoins } from "./api";
 import type { Coin, Mode } from "./coin";
+import { launcherLegacyAbi } from "./abi";
 import { hookAddress, hookConfigAbi, indexerStartBlock, launcherAbi, launcherAddress, tokenMetaAbi } from "./trade";
 
 export type Board = {
@@ -43,17 +44,38 @@ export function useBoard(): Board {
       }
       setBoard({ status: "loading", coins: [] });
       try {
-        const logs = await client.getLogs({
-          address: launcherAddress,
-          event: launcherAbi[0],
-          fromBlock: indexerStartBlock,
-          toBlock: "latest",
+        const events = [launcherAbi, launcherLegacyAbi].flatMap((abi) => {
+          const event = abi.find((item) => item.type === "event" && item.name === "CoinLaunched");
+          return event && event.type === "event" ? [event] : [];
         });
+        const batches = await Promise.all(
+          events.map((event) =>
+            client
+              .getLogs({
+                address: launcherAddress,
+                event: event as never,
+                fromBlock: indexerStartBlock,
+                toBlock: "latest",
+              })
+              .catch(() => []),
+          ),
+        );
+        const logs = batches.flat() as {
+          args: {
+            poolId?: `0x${string}`;
+            coin?: `0x${string}`;
+            pair?: `0x${string}`;
+            mode?: number | bigint;
+            isPlatform?: boolean;
+            feeRecipient?: `0x${string}`;
+          };
+        }[];
         const coins: Coin[] = [];
         for (const log of logs) {
-          const poolId = log.args.poolId;
-          const token = log.args.coin;
-          const pair = log.args.pair;
+          const args = log.args;
+          const poolId = args.poolId;
+          const token = args.coin;
+          const pair = args.pair;
           if (!poolId || !token || !pair) continue;
           const [config, name, symbol, pairSymbol] = await Promise.all([
             client.readContract({ address: hookAddress, abi: hookConfigAbi, functionName: "config", args: [poolId] }),
@@ -61,21 +83,25 @@ export function useBoard(): Board {
             client.readContract({ address: token, abi: tokenMetaAbi, functionName: "symbol" }),
             client.readContract({ address: pair, abi: tokenMetaAbi, functionName: "symbol" }),
           ]);
-          const launchTime = Number(config[5]);
-          const modeN = Number(log.args.mode);
+          const configRow = config as readonly unknown[];
+          const launchTime = Number(configRow[5]);
+          const modeN = Number(args.mode);
           const mode: Mode = modeN === 1 ? "kickback" : modeN === 2 ? "burn" : "keep";
           const now = Math.floor(Date.now() / 1000);
+          const coinName = typeof name === "string" && name.length > 0 ? name : "Coin";
+          const coinSymbol = typeof symbol === "string" && symbol.length > 0 ? symbol : "COIN";
+          const pairName = typeof pairSymbol === "string" && pairSymbol.length > 0 ? pairSymbol : "PAIR";
           coins.push({
             id: poolId,
-            name: name || "Coin",
-            ticker: symbol || "COIN",
-            pair: pairSymbol || "PAIR",
+            name: coinName,
+            ticker: coinSymbol,
+            pair: pairName,
             mode,
             ageSec: Math.max(0, now - launchTime),
             launchTime,
-            description: log.args.isPlatform ? "Platform token." : `${mode} mode, paired with ${pairSymbol}.`,
-            recipient: (log.args.feeRecipient ?? token) as `0x${string}`,
-            coinIsToken0: Boolean(config[2]),
+            description: args.isPlatform ? "Platform token." : `${mode} mode, paired with ${pairName}.`,
+            recipient: (args.feeRecipient ?? token) as `0x${string}`,
+            coinIsToken0: Boolean(configRow[2]),
             tokenAddress: token,
             pairAddress: pair,
             hooks: hookAddress,

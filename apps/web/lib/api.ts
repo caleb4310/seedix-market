@@ -2,6 +2,9 @@ import type { Coin, Mode } from "./coin";
 
 export const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
 
+/** Merkle proofs. Falls back to the API URL. Empty means the claim list is not configured. */
+export const claimsUrl = (process.env.NEXT_PUBLIC_CLAIMS_URL || process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+
 export type ApiCoin = {
   poolId: string;
   coin: string;
@@ -93,9 +96,7 @@ export function coinFromApi(row: ApiCoin, hook?: `0x${string}`): Coin {
 
 async function getJson<T>(path: string): Promise<T> {
   if (!apiUrl) throw new Error("The API is not configured.");
-  const response = await fetch(`${apiUrl}${path}`, { cache: "no-store" });
-  if (!response.ok) throw new Error("The API request failed.");
-  return (await response.json()) as T;
+  return getJsonFrom(apiUrl, path);
 }
 
 export function getCoins(): Promise<{ coins: ApiCoin[] }> {
@@ -106,6 +107,20 @@ export function getChart(id: string, bucket: "5m" | "1h" | "1d" = "5m"): Promise
   const path = chartPath(id, bucket);
   if (!path) return Promise.reject(new Error("bad pool"));
   return getJson(path);
+}
+
+export type ClaimProof = { epoch: string; amount: string; proof: `0x${string}`[] };
+
+export function getClaims(id: string, account: string): Promise<{ claims: ClaimProof[] }> {
+  if (!claimsUrl) return Promise.reject(new Error("The API is not configured."));
+  if (!poolId.test(id) || !address.test(account)) return Promise.reject(new Error("bad claim"));
+  return getJsonFrom(claimsUrl, `/coins/${id}/claims?account=${account}`);
+}
+
+async function getJsonFrom<T>(base: string, path: string): Promise<T> {
+  const response = await fetch(`${base}${path}`, { cache: "no-store" });
+  if (!response.ok) throw new Error("The API request failed.");
+  return (await response.json()) as T;
 }
 
 export function getKickbacks(id: string): Promise<{ payouts: KickbackRow[] }> {

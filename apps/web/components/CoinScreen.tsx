@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { ClaimPanel } from "@/components/ClaimPanel";
 import { CoinBody } from "@/components/CoinBody";
-import { TradePanel, type TradePreview } from "@/components/TradePanel";
+import { TradePanel } from "@/components/TradePanel";
 import type { Side } from "@/lib/quote";
 import { useBoard } from "@/lib/board";
 
-export function CoinScreen({ id, side, preview }: { id: string; side: Side; preview?: TradePreview }) {
+export function CoinScreen({ id, side }: { id: string; side: Side }) {
   const board = useBoard();
   const coin = board.coins.find((item) => item.id === id || item.tokenAddress?.toLowerCase() === id.toLowerCase());
 
@@ -41,7 +42,10 @@ export function CoinScreen({ id, side, preview }: { id: string; side: Side; prev
   return (
     <div className="coin-layout">
       <CoinBody coin={coin} />
-      <TradePanel coin={coin} initialSide={side} preview={preview} />
+      <div>
+        <TradePanel coin={coin} initialSide={side} />
+        <ClaimPanel coin={coin} />
+      </div>
     </div>
   );
 }

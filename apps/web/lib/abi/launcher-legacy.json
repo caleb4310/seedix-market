@@ -1,0 +1,17 @@
+[
+  {
+    "type": "event",
+    "name": "CoinLaunched",
+    "inputs": [
+      { "name": "poolId", "type": "bytes32", "indexed": true },
+      { "name": "coin", "type": "address", "indexed": true },
+      { "name": "pair", "type": "address", "indexed": true },
+      { "name": "mode", "type": "uint8", "indexed": false },
+      { "name": "isPlatform", "type": "bool", "indexed": false },
+      { "name": "feeRecipient", "type": "address", "indexed": false },
+      { "name": "teamWallet", "type": "address", "indexed": false },
+      { "name": "teamAmount", "type": "uint256", "indexed": false },
+      { "name": "startMcap", "type": "uint256", "indexed": false }
+    ]
+  }
+]

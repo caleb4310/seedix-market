@@ -1,16 +1,28 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useReadContract } from "wagmi";
+import { isAddress } from "viem";
 import { cleanSocials } from "@seedix/shared";
+import { launcherAbi, metadataAbi } from "@/lib/abi";
+import { elysiumTestnet } from "@/lib/chain";
 import { modeLabel, type Mode } from "@/lib/coin";
+import { coinMetadataAddress, feeWallet, sameAddress } from "@/lib/deployment";
+import { buildLaunchParams } from "@/lib/launch";
+import { launchedCoin, tokenDecimals } from "@/lib/onchain";
+import { parseTokenAmount } from "@/lib/amounts";
+import { DEAD } from "@/lib/protocol";
 import { loadPairs, type ListedPair, type PairCategory } from "@/lib/registry";
+import { launcherAddress } from "@/lib/trade";
+import { useContractTx } from "@/lib/useTx";
 import { LaunchPreview } from "@/components/LaunchPreview";
 import type { CoinFace } from "@/components/CoinFace";
+import { TxStatus } from "@/components/TxStatus";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Tabs } from "@/components/ui/Tabs";
-import { useToast } from "@/components/ui/Toast";
+import { WalletButton } from "@/components/WalletButton";
 
 const modes: { id: Mode; body: string }[] = [
   { id: "keep", body: "You claim both sides of the hook fee." },
@@ -23,6 +35,8 @@ const sources: { id: PairCategory | "any"; label: string }[] = [
   { id: "preipo", label: "Pre-IPO" },
   { id: "any", label: "Any coin" },
 ];
+
+const CID = /^[0-9A-Za-z]{10,128}$/;
 
 function byteLen(value: string): number {
   return new TextEncoder().encode(value).length;
@@ -45,14 +59,16 @@ export function LaunchForm() {
   const [xHandle, setXHandle] = useState("");
   const [telegram, setTelegram] = useState("");
   const [holding, setHolding] = useState(0);
-  const [done, setDone] = useState(false);
   const [image, setImage] = useState<string | null>(null);
   const [openPreview, setOpenPreview] = useState(true);
+  const [poolId, setPoolId] = useState<string | null>(null);
+  const [note, setNote] = useState("");
   const frame = useRef(0);
   const start = useRef(0);
+  const sending = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const toast = useToast();
-  const { isConnected } = useAccount();
+  const tx = useContractTx();
+  const { address, chainId } = useAccount();
 
   useEffect(() => {
     let cancel = false;
@@ -71,15 +87,31 @@ export function LaunchForm() {
   const listed = pairs.filter((pair) => (source === "any" ? false : pair.category === source));
   const selected = listed.find((pair) => pair.address === pairId) ?? listed[0];
   const unverified = source === "any";
-  const vetted = !unverified && selected?.status === 1;
+  const addressOk = isAddress(pasted.trim());
+  const pairAddress = (unverified ? (addressOk ? pasted.trim() : "") : selected?.address ?? "") as `0x${string}` | "";
+  const statusOf = useReadContract({
+    address: launcherAddress || undefined,
+    abi: launcherAbi,
+    functionName: "statusOf",
+    args: pairAddress ? [pairAddress] : undefined,
+    query: { enabled: Boolean(launcherAddress && pairAddress) },
+  });
+  const pairAllowed = useReadContract({
+    address: launcherAddress || undefined,
+    abi: launcherAbi,
+    functionName: "pairAllowed",
+    args: pairAddress ? [pairAddress] : undefined,
+    query: { enabled: Boolean(launcherAddress && pairAddress && statusOf.isError) },
+  });
+  const chainVetted = statusOf.data !== undefined ? Number(statusOf.data) === 1 : Boolean(pairAllowed.data);
+  const vetted = (!unverified && selected?.status === 1) || chainVetted;
   const socials = cleanSocials({ description, website, x: xHandle, telegram });
   const nameBytes = byteLen(name.trim());
   const tickerBytes = byteLen(ticker.trim());
-  const addressOk = /^0x[0-9a-fA-F]{40}$/.test(pasted.trim());
   const pairOk = unverified ? addressOk : Boolean(selected);
-  const teamOk = team >= 0 && team <= 5;
+  const teamOk = Number.isInteger(team) && team >= 0 && team <= 5;
   const ready =
-    isConnected &&
+    Boolean(address) &&
     name.trim().length > 0 &&
     nameBytes <= 32 &&
     ticker.trim().length > 0 &&
@@ -88,10 +120,11 @@ export function LaunchForm() {
     mcap >= 1000 &&
     pairOk &&
     (!unverified || ack) &&
-    (mode !== "kickback" || vetted);
+    (mode !== "kickback" || vetted) &&
+    Boolean(launcherAddress);
 
   const pairSymbol = unverified ? "" : selected?.symbol ?? "";
-  const blockReason = !isConnected
+  const blockReason = !address
     ? "Connect your wallet"
     : name.trim().length === 0
       ? "Add a name"
@@ -136,30 +169,121 @@ export function LaunchForm() {
     [name, ticker, image, pairSymbol, selected, unverified, mode, mcap, socials],
   );
 
+  const busy = tx.state.status === "awaiting_signature" || tx.state.status === "pending";
+
   function press() {
-    if (done || !ready) return;
+    if (busy || !ready) return;
     start.current = performance.now();
     const step = (t: number) => {
       const next = Math.min(1, (t - start.current) / 900);
       setHolding(next);
       if (next >= 1) {
-        setDone(true);
-        toast("Ready to sign. The wallet transaction is wired separately.");
-      } else frame.current = requestAnimationFrame(step);
+        setHolding(1);
+        void launch();
+        return;
+      }
+      frame.current = requestAnimationFrame(step);
     };
+    cancelAnimationFrame(frame.current);
     frame.current = requestAnimationFrame(step);
   }
   function release() {
     cancelAnimationFrame(frame.current);
-    if (!done) setHolding(0);
+    if (!busy && tx.state.status !== "confirmed") setHolding(0);
   }
-  function reset() {
-    cancelAnimationFrame(frame.current);
-    setDone(false);
-    setHolding(0);
+
+  async function launch() {
+    if (sending.current) return;
+    sending.current = true;
+    try {
+      await runLaunch();
+    } finally {
+      sending.current = false;
+    }
+  }
+
+  async function runLaunch() {
+    if (!address || !pairAddress || !launcherAddress) {
+      setNote("Connect a wallet to launch.");
+      setHolding(0);
+      return;
+    }
+    const feeRecipient = (recipient.trim() || address) as `0x${string}`;
+    if (!isAddress(feeRecipient) || sameAddress(feeRecipient, feeWallet) || sameAddress(feeRecipient, DEAD)) {
+      setNote("The fee recipient cannot be the fee wallet or the dead address.");
+      setHolding(0);
+      return;
+    }
+    setNote("");
+    setPoolId(null);
+    let decimals = 18;
+    try {
+      decimals = await tokenDecimals(pairAddress);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Could not read the pair decimals.");
+      setHolding(0);
+      return;
+    }
+    let startMcapInPair: bigint;
+    try {
+      startMcapInPair = parseTokenAmount(String(mcap), decimals);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Enter a starting market cap.");
+      setHolding(0);
+      return;
+    }
+    let params;
+    try {
+      params = buildLaunchParams({
+        name,
+        symbol: ticker,
+        pair: pairAddress,
+        mode,
+        feeRecipient,
+        teamPercent: team,
+        connected: address,
+        startMcapInPair,
+      });
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Check the launch form.");
+      setHolding(0);
+      return;
+    }
+    const receipt = await tx.send([
+      {
+        action: "Launch",
+        address: launcherAddress,
+        abi: launcherAbi,
+        functionName: "launch",
+        args: [params],
+      },
+    ]);
+    if (!receipt) {
+      setHolding(0);
+      return;
+    }
+    const launched = launchedCoin(receipt);
+    if (!launched) {
+      setNote("The launch was mined, but the coin address was not in the receipt.");
+      return;
+    }
+    setPoolId(launched.poolId);
+    const cid = (socials.description ?? "").trim();
+    if (coinMetadataAddress && CID.test(cid)) {
+      await tx.send([
+        {
+          action: "Pin metadata",
+          address: coinMetadataAddress,
+          abi: metadataAbi,
+          functionName: "pin",
+          args: [launched.poolId, cid],
+        },
+      ]);
+    }
   }
 
   const preview = <LaunchPreview face={face} />;
+  const status = note && tx.state.status === "idle" ? { status: "failed" as const, message: note } : tx.state;
 
   return (
     <div className="launch-layout">
@@ -299,9 +423,9 @@ export function LaunchForm() {
         <button
           className="hold"
           type="button"
-          data-done={done}
+          data-done={tx.state.status === "confirmed"}
           aria-describedby="hold-help"
-          disabled={!ready && !done}
+          disabled={(!ready && tx.state.status !== "confirmed") || busy}
           onPointerDown={press}
           onPointerUp={release}
           onPointerLeave={release}
@@ -317,15 +441,17 @@ export function LaunchForm() {
           }}
         >
           <span className="hold-fill" style={{ width: `${holding * 100}%` }} />
-          <span className="hold-label">{done ? "Ready to sign" : ready ? "Hold to launch" : blockReason}</span>
+          <span className="hold-label">{busy ? "Confirm in your wallet" : ready ? "Hold to launch" : blockReason}</span>
         </button>
-        <p id="hold-help" className="note">
-          Hold the button, or hold Enter or Space. Signing stays with the wallet flow.
-        </p>
-        {done ? (
-          <Button variant="ghost" type="button" onClick={reset}>
-            Reset
-          </Button>
+        <p id="hold-help" className="note">Hold the button, or hold Enter or Space, until it fills. That sends the launch.</p>
+        {chainId !== undefined && address && chainId !== elysiumTestnet.id ? <WalletButton /> : null}
+        <TxStatus state={status} />
+        {poolId ? (
+          <p className="stack-top">
+            <Link className="text-link" href={`/coin/${poolId}`}>
+              Open the new coin
+            </Link>
+          </p>
         ) : null}
       </form>
       <aside className="preview-side">{preview}</aside>

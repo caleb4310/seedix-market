@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatTokenAmount, minimumFromQuote, parseTokenAmount } from "./amounts.ts";
+import { formatTokenAmount, maximumFromQuote, minimumFromQuote, parseTokenAmount } from "./amounts.ts";
 
 test("18 decimal amounts stay exact", () => {
   const parsed = parseTokenAmount("1.5", 18);
@@ -20,8 +20,11 @@ test("a leading dot is half a token", () => {
   assert.equal(parseTokenAmount(".5", 6), 500_000n);
 });
 
-test("minimum received uses the typed slippage", () => {
+test("minimum received and maximum spent use the typed slippage", () => {
   const quote = parseTokenAmount("1000", 18);
   assert.equal(minimumFromQuote(quote, 1), parseTokenAmount("990", 18));
   assert.equal(minimumFromQuote(quote, 5), parseTokenAmount("950", 18));
+  assert.equal(maximumFromQuote(quote, 1), parseTokenAmount("1010", 18));
+  assert.equal(maximumFromQuote(quote, 5), parseTokenAmount("1050", 18));
+  assert.equal(maximumFromQuote(1n, 1), 2n);
 });
