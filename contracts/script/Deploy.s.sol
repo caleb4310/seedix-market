@@ -194,20 +194,24 @@ contract DeploySeedix is Script {
         console2.log("planned whype total", TESTNET_MIN_ROUTE_DEPTH * seeded.length);
         console2.log("mainnet min route depth", C.MAINNET_MIN_ROUTE_DEPTH);
         RouteSeeder seeder = new RouteSeeder();
-        // A shortfall against the position is pulled from the deployer. Leftovers are swept back.
-        IERC20(whype).approve(address(seeder), type(uint256).max);
+        // A shortfall is pulled from the deployer, capped at one depth. Cleared after the loop.
+        IERC20(whype).approve(address(seeder), TESTNET_MIN_ROUTE_DEPTH);
         PoolKey[] memory stockRoutes = new PoolKey[](5);
         uint256 whypeSpent;
         for (uint256 i; i < seeded.length; ++i) {
             // The pair token funds both sides of the range, so it keeps a 4x buffer. WHYPE is one
             // side: send exactly one depth. Anything the position does not take returns here.
-            MockXStock(seeded[i]).approve(address(seeder), type(uint256).max);
+            MockXStock(seeded[i]).approve(address(seeder), TESTNET_MIN_ROUTE_DEPTH * 4);
             MockXStock(seeded[i]).transfer(address(seeder), TESTNET_MIN_ROUTE_DEPTH * 4);
             IERC20(whype).transfer(address(seeder), TESTNET_MIN_ROUTE_DEPTH);
             (PoolKey memory key, uint256 spent) = seeder.seed(manager, whype, seeded[i], TESTNET_MIN_ROUTE_DEPTH);
             whypeSpent += spent;
             console2.log("seeded", seeded[i], spent);
             if (i < 5) stockRoutes[i] = key;
+        }
+        IERC20(whype).approve(address(seeder), 0);
+        for (uint256 i; i < seeded.length; ++i) {
+            MockXStock(seeded[i]).approve(address(seeder), 0);
         }
         console2.log("whype seed total", whypeSpent);
         if (whypeSpent > SEED_BUDGET) revert SeedBudget(whypeSpent, SEED_BUDGET);

@@ -152,6 +152,7 @@ contract DeploySimTest is Test {
 
         assertEq(beforeBal - IERC20(whype).balanceOf(deployer), 1.05 ether);
         assertEq(IERC20(whype).balanceOf(script.routeSeeder()), 0);
+        assertEq(IERC20(whype).allowance(deployer, script.routeSeeder()), 0);
         assertTrue(script.routeSeeder() != address(0));
     }
 }

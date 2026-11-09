@@ -113,7 +113,6 @@ contract RouteSeeder is IUnlockCallback {
 
     function _sweep(address token) internal {
         uint256 bal = IERC20(token).balanceOf(address(this));
-        if (bal == 0) return;
-        IERC20(token).safeTransfer(payer, bal);
+        if (bal > 0) IERC20(token).safeTransfer(payer, bal);
     }
 }
