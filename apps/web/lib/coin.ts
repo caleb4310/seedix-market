@@ -23,6 +23,10 @@ export type Coin = {
   website?: string | null;
   x?: string | null;
   telegram?: string | null;
+  image?: string | null;
+  pairLogo?: string | null;
+  pairTest?: boolean;
+  mcapUsd?: number | null;
 };
 
 export function modeLabel(mode: Mode): string {
