@@ -87,7 +87,7 @@ On Anvil, Permit2 is not at the canonical address, so the script deploys a stand
 
 A production build lists coins from `Launcher` `CoinLaunched` logs. Set `NEXT_PUBLIC_LAUNCHER` and `NEXT_PUBLIC_HOOK` (and the router, quoter, and state view) or the board is empty: "No coins yet. Launch the first one." Mock coins in `apps/web/lib/mock.ts` load only in `next dev`, and only when `NEXT_PUBLIC_LAUNCHER` is empty.
 
-`NEXT_PUBLIC_EXPLORER_TX_URL_TEMPLATE` is the transaction link, with `{hash}` replaced by the hash. The default is `https://testnet.elysium.kinetiq.xyz/tx/{hash}`. Check that path by hand on the first testnet transaction before relying on it. Kinetiq's docs have also used `/transaction/{hash}`.
+`NEXT_PUBLIC_EXPLORER_TX_URL_TEMPLATE` is the transaction link, with `{hash}` replaced by the hash. The live default is `https://explorer-elysium-testnet.t.conduit.xyz/tx/{hash}`. Addresses and the indexer start block (`26803633`, the block of deploy tx `0xe8f763ae…c6cb73`) are in `deployments/99801.json`.
 
 ```bash
 npm install

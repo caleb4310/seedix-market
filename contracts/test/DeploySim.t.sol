@@ -41,4 +41,21 @@ contract DeploySimTest is Test {
         assertTrue(tl.hasRole(tl.PROPOSER_ROLE(), vault));
         assertEq(tl.getMinDelay(), 48 hours);
     }
+
+    function test_adminKeepsRolesWhenAdminIsDeployer() public {
+        uint256 pk = 0xA11CE;
+        address deployer = vm.addr(pk);
+        vm.chainId(31337);
+        vm.deal(deployer, 100 ether);
+
+        DeploySeedix script = new DeploySeedix();
+        script.deploy(pk, deployer, deployer);
+
+        (,, address timelock,,,,,,,) = script.last();
+        TimelockController tl = TimelockController(payable(timelock));
+        assertTrue(tl.hasRole(tl.PROPOSER_ROLE(), deployer), "admin keeps proposer");
+        assertTrue(tl.hasRole(tl.EXECUTOR_ROLE(), deployer), "admin keeps executor");
+        assertTrue(tl.hasRole(tl.CANCELLER_ROLE(), deployer), "admin keeps canceller");
+        assertFalse(tl.hasRole(tl.DEFAULT_ADMIN_ROLE(), deployer), "default admin is still renounced");
+    }
 }
