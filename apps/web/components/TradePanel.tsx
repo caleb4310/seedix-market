@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { useAccount, useChainId, useReadContract, useReadContracts, useSimulateContract, useSwitchChain, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { hookPips, fees } from "@/lib/tokens";
-import { modeLabel, type Coin } from "@/lib/mock";
+import type { Coin } from "@/lib/coin";
 import { elysiumTestnet } from "@/lib/chain";
-import { formatTokenAmount, minimumFromQuote, parseTokenAmount, sqrtPriceLimit } from "@/lib/amounts";
+import { extremeSqrtPriceLimit, formatTokenAmount, minimumFromQuote, parseTokenAmount } from "@/lib/amounts";
+import { coinAge } from "@/lib/coin";
+import { modeLabel } from "@/lib/coin";
 import { DEFAULT_SLIPPAGE_PCT, formatAmount, parseSlippage, type Side } from "@/lib/quote";
 import {
   decimalsAbi,
@@ -16,8 +18,6 @@ import {
   quoterAddress,
   routerAbi,
   routerAddress,
-  stateViewAbi,
-  stateViewAddress,
 } from "@/lib/trade";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -45,7 +45,7 @@ export function TradePanel({
   const [side, setSide] = useState<Side>(initialSide);
   const [amount, setAmount] = useState(initialSide === "sell" ? "1000" : "100");
   const [slippage, setSlippage] = useState(String(DEFAULT_SLIPPAGE_PCT));
-  const [now, setNow] = useState(coin.ageSec);
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   const [confirmed, setConfirmed] = useState(false);
   const [hash, setHash] = useState<`0x${string}` | undefined>();
   const [phase, setPhase] = useState<"idle" | "approve" | "swap" | "error">("idle");
@@ -58,7 +58,7 @@ export function TradePanel({
   const receipt = useWaitForTransactionReceipt({ hash });
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow((n) => n + 1), 1000);
+    const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
     return () => window.clearInterval(id);
   }, []);
 
@@ -69,7 +69,8 @@ export function TradePanel({
     setErrorText("");
   }, [side, amount, slippage, coin.id]);
 
-  const elapsed = now;
+  const [opened] = useState(() => Math.floor(Date.now() / 1000));
+  const elapsed = coin.launchTime !== undefined ? coinAge(coin, now) : coin.ageSec + Math.max(0, now - opened);
   const hook = hookPips(elapsed);
   const decaying = hook > fees.endPips;
   const left = Math.max(0, fees.decaySeconds - elapsed);
@@ -101,6 +102,7 @@ export function TradePanel({
     address: quoterAddress || undefined,
     abi: quoterAbi,
     functionName: "quoteExactInputSingle",
+    account: address ?? "0x0000000000000000000000000000000000000001",
     args:
       poolReady && quoterAddress && spendAmount && spendAmount <= 2n ** 128n - 1n
         ? [
@@ -118,20 +120,14 @@ export function TradePanel({
             },
           ]
         : undefined,
-    query: { enabled: Boolean(poolReady && quoterAddress && spendAmount) },
-  });
-  const slot0 = useReadContract({
-    address: stateViewAddress || undefined,
-    abi: stateViewAbi,
-    functionName: "getSlot0",
-    args: coin.poolId ? [coin.poolId] : undefined,
-    query: { enabled: Boolean(stateViewAddress && coin.poolId) },
+    query: { enabled: Boolean(poolReady && quoterAddress && spendAmount), refetchInterval: 12_000 },
   });
   const amountOut = quoted.data?.result?.[0];
   const minOut =
     amountOut !== undefined && slip.ok ? minimumFromQuote(amountOut, slip.pct) : undefined;
-  const sqrtLimit =
-    slot0.data && slip.ok ? sqrtPriceLimit(slot0.data[0], zeroForOne, slip.pct) : undefined;
+  const sqrtLimit = slip.ok ? extremeSqrtPriceLimit(zeroForOne) : undefined;
+  const quoteAge = quoted.dataUpdatedAt > 0 ? Math.max(0, now - Math.floor(quoted.dataUpdatedAt / 1000)) : null;
+  const quoteStale = quoteAge !== null && quoteAge >= 12;
   const onNetwork = isConnected && chainId === elysiumTestnet.id;
   const allowance = useReadContract({
     address: spendToken,
@@ -151,7 +147,25 @@ export function TradePanel({
       setErrorText("This coin is mock data. The router is not deployed on Elysium testnet, so no transaction was sent.");
       return;
     }
-    if (!spendAmount || spendDecimals === undefined || !minOut || !sqrtLimit || !coin.tokenAddress || !coin.pairAddress || !coin.hooks) {
+    if (!spendAmount || spendDecimals === undefined || !coin.tokenAddress || !coin.pairAddress || !coin.hooks) {
+      setPhase("error");
+      setErrorText("Quote unavailable. Nothing was sent.");
+      return;
+    }
+    let nextMin = minOut;
+    let nextLimit = sqrtLimit;
+    if (kind === "swap") {
+      const fresh = await quoted.refetch();
+      const out = fresh.data?.result?.[0];
+      if (out === undefined || !slip.ok) {
+        setPhase("error");
+        setErrorText("Quote unavailable. Nothing was sent.");
+        return;
+      }
+      nextMin = minimumFromQuote(out, slip.pct);
+      nextLimit = extremeSqrtPriceLimit(zeroForOne);
+    }
+    if (nextMin === undefined || nextLimit === undefined) {
       setPhase("error");
       setErrorText("Quote unavailable. Nothing was sent.");
       return;
@@ -182,9 +196,9 @@ export function TradePanel({
                 },
                 zeroForOne,
                 -spendAmount,
-                minOut,
+                nextMin,
                 BigInt(Math.floor(Date.now() / 1000) + 20 * 60),
-                sqrtLimit,
+                nextLimit,
               ],
               chainId: elysiumTestnet.id,
             });
@@ -196,13 +210,24 @@ export function TradePanel({
     }
   }
 
+  useEffect(() => {
+    if (phase === "approve" && hash && receipt.data?.transactionHash === hash && receipt.data.status === "success") {
+      void allowance.refetch();
+      setPhase("idle");
+      setHash(undefined);
+    }
+  }, [phase, receipt.data, allowance]);
+
   const allowanceLow =
     allowance.data !== undefined && spendAmount !== undefined && allowance.data < spendAmount;
-  const reverted = Boolean(hash) && (receipt.data?.status === "reverted" || receipt.isError);
-  const showApproval = preview === "approval" || (phase === "approve" && !receipt.isSuccess) || (ready && onNetwork && allowanceLow && phase === "idle");
+  const receiptError = receipt.error instanceof Error ? receipt.error.message : "";
+  const minedRevert = receipt.data?.status === "reverted" || /reverted/i.test(receiptError);
+  const rpcError = Boolean(hash) && receipt.isError && !minedRevert;
+  const needsApproval = onNetwork && spendAmount !== undefined && (allowance.data === undefined || allowanceLow);
   const showPending = preview === "pending" || (Boolean(hash) && receipt.isLoading);
-  const showSuccess = preview === "success" || (Boolean(hash) && receipt.isSuccess && receipt.data?.status === "success" && phase === "swap");
-  const showReverted = Boolean(hash) && reverted && preview !== "success" && preview !== "pending";
+  const showApproval = preview === "approval" || (ready && needsApproval && phase !== "swap" && !showPending);
+  const showSuccess = preview === "success" || (Boolean(hash) && receipt.data?.status === "success" && phase === "swap");
+  const showReverted = Boolean(hash) && minedRevert && preview !== "success" && preview !== "pending";
   const showError = preview === "error" || phase === "error";
   const shownHash = preview === "pending" || preview === "success" ? EXAMPLE_HASH : hash;
 
@@ -248,7 +273,9 @@ export function TradePanel({
       {!quoteReady && preview !== "approval" ? (
         <p className={poolReady && quoterAddress ? "field-error" : "note"}>
           {poolReady && quoterAddress
-            ? "Quote unavailable. Signing stays off until the on-chain quote succeeds."
+            ? quoted.error
+              ? "Quote unavailable. The quoter did not return a price, so nothing will be signed."
+              : "Quote unavailable. Signing stays off until the on-chain quote succeeds."
             : "This coin is not on the testnet router yet. Signing stays off."}
         </p>
       ) : null}
@@ -271,12 +298,12 @@ export function TradePanel({
         </div>
         <div>
           <dt>Price limit</dt>
-          <dd>{sqrtLimit ? "From the quote and your slippage" : "—"}</dd>
+          <dd>{sqrtLimit ? "Full range. Your slippage is the minimum received." : "—"}</dd>
         </div>
         <div>
           <dt>Platform 1%</dt>
           <dd>
-            {side === "sell" ? "Taken from the received pair token" : `${formatAmount(gross * 0.01)} ${coin.pair}`}
+            {side === "sell" ? "From the output" : `${formatAmount(gross * 0.01)} ${coin.pair}`}
           </dd>
         </div>
         <div>
@@ -329,6 +356,20 @@ export function TradePanel({
         </div>
       ) : null}
 
+      {quoteAge !== null ? (
+        <p className={quoteStale ? "field-warn" : "note"}>
+          {quoteStale ? `Quote is ${quoteAge}s old. Signing refreshes it.` : `Quote updated ${quoteAge}s ago.`}
+        </p>
+      ) : null}
+
+      {rpcError ? (
+        <div className="status" data-tone="error" role="alert">
+          <strong>Network error</strong>
+          <p className="note">The RPC did not return a receipt. The transaction may still be pending. Check the explorer before trying again.</p>
+          {hash ? <a className="text-link" href={explorerTx(hash)}>{hash.slice(0, 10)}…{hash.slice(-6)}</a> : null}
+        </div>
+      ) : null}
+
       {showReverted && hash ? (
         <div className="status" data-tone="error" role="alert">
           <strong>Reverted</strong>
@@ -366,7 +407,7 @@ export function TradePanel({
           variant="accent"
           block
           type="button"
-          disabled={!ready || isPending || showPending || showApproval}
+          disabled={!ready || isPending || showPending || showApproval || needsApproval}
           onClick={() => submit("swap")}
         >
           {needsConfirm && !confirmed ? `Confirm ${pct(hook)} fee` : isPending ? "Waiting for wallet" : `Sign ${side}`}
@@ -374,54 +415,5 @@ export function TradePanel({
       )}
       <p className="note">Includes slippage protection and a 20-minute expiry. Nothing is marked confirmed until the chain returns a hash.</p>
     </Card>
-  );
-}
-
-export function Claims({ coin }: { coin: Coin }) {
-  const { address, isConnected } = useAccount();
-  const eligible = isConnected && address?.toLowerCase() === coin.recipient.toLowerCase();
-  const pots =
-    coin.mode === "keep"
-      ? [
-          ["Creator pair", `12.40 ${coin.pair}`, "Claim"],
-          ["Creator coin", `0 ${coin.ticker}`, "Claim"],
-        ]
-      : coin.mode === "kickback"
-        ? [
-            ["Kickback round", "In review", "After review"],
-            ["Creator coin", `1.02 ${coin.ticker}`, "Claim"],
-          ]
-        : [
-            ["Burn pair", `6.55 ${coin.pair}`, "Queued"],
-            ["Burn coin", `440 ${coin.ticker}`, "Burn"],
-          ];
-  return (
-    <section className="claims">
-      <p className="kicker">Fee recipient</p>
-      <p className="note">
-        {eligible
-          ? "This wallet can claim the creator pots."
-          : "Claim buttons show only for the fee-recipient wallet. Burn pots are not a claim. Kickback pays holders after the review hour."}
-      </p>
-      {pots.map(([label, amount, action]) => (
-        <div className="claim" key={label}>
-          <div>
-            <strong>{label}</strong>
-            <div className="ticker">{amount}</div>
-          </div>
-          {action === "Burn" ? (
-            <Button variant="secondary" type="button">
-              Burn
-            </Button>
-          ) : eligible && action === "Claim" ? (
-            <Button variant="secondary" type="button">
-              Claim
-            </Button>
-          ) : (
-            <span className="ticker">{action === "Claim" ? "Recipient only" : action}</span>
-          )}
-        </div>
-      ))}
-    </section>
   );
 }

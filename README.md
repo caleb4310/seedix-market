@@ -52,7 +52,7 @@ forge test
 
 Roles:
 
-- **Admin** comes from `ADMIN`, or from the deployer address when `ADMIN` is unset. The deploy key hands admin, guardian, timelock proposer, and timelock executor to that wallet, then renounces them. Admin queues the 48-hour fee-wallet change and the one-time platform-token launch. It cannot move pots.
+- **Admin** comes from `ADMIN`, or from the deployer address when `ADMIN` is unset. The deploy key hands admin, guardian, timelock proposer, and timelock executor to that wallet, then renounces them. Admin queues the 48-hour fee-wallet change and the one-time platform-token launch. It cannot move pots. On this testnet, `setKeeper` is an immediate admin call so buybacks can be turned on after deploy. Mainnet must send that grant through the timelock. Revoking the keeper stays immediate.
 - **Guardian** is a separate role in `SeedixRoles`. Deploy assigns it to the same admin address, so pause and Kickback cancel are immediate. `queueSetGuardian` moves it later through the timelock, without a new deployment.
 
 ## Deploy dry-run
@@ -60,8 +60,9 @@ Roles:
 The script deploys a local v4 stack (PoolManager, PositionManager, StateView, V4Quoter, and `SeedixRouter`), five mock xStocks, and the Seedix contracts. It does not deploy Universal Router. `SeedixRouter` is the minimal router; Universal Router is GPL-3.0 and is left unmodified for a later testnet install.
 
 ```bash
-# terminal 1
-anvil --chain-id 99801 --port 8545
+# terminal 1. Anvil's default chain id is 31337. Do not pass --chain-id 99801:
+# that id expects canonical WHYPE, USDC, and Permit2 code, and the script reverts MissingCode.
+anvil --port 8545
 
 # terminal 2, from contracts/. Simulation only: no --broadcast.
 # Set PRIVATE_KEY to the Anvil account printed at startup. Do not point this at a public RPC.
@@ -84,7 +85,9 @@ On Anvil, Permit2 is not at the canonical address, so the script deploys a stand
 
 ## Web
 
-The pages render from mock coins in `apps/web/lib/mock.ts`. No indexer and no wallet are required to click through Home, Launch, and a coin.
+A production build lists coins from `Launcher` `CoinLaunched` logs. Set `NEXT_PUBLIC_LAUNCHER` and `NEXT_PUBLIC_HOOK` (and the router, quoter, and state view) or the board is empty: "No coins yet. Launch the first one." Mock coins in `apps/web/lib/mock.ts` load only in `next dev`, and only when `NEXT_PUBLIC_LAUNCHER` is empty.
+
+`NEXT_PUBLIC_EXPLORER_TX_URL_TEMPLATE` is the transaction link, with `{hash}` replaced by the hash. The default is `https://testnet.elysium.kinetiq.xyz/tx/{hash}`. Check that path by hand on the first testnet transaction before relying on it. Kinetiq's docs have also used `/transaction/{hash}`.
 
 ```bash
 npm install

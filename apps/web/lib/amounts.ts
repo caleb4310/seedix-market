@@ -6,11 +6,12 @@ export function parseTokenAmount(value: string, decimals: number): bigint {
     throw new Error("Token decimals are unavailable.");
   }
   const trimmed = value.trim();
-  if (!/^\d+(\.\d+)?$/.test(trimmed)) throw new Error("Enter a token amount.");
+  if (!/^(?:\d+\.?\d*|\.\d+)$/.test(trimmed)) throw new Error("Enter a token amount.");
   const [whole, frac = ""] = trimmed.split(".");
   if (frac.length > decimals) throw new Error("Too many decimal places for this token.");
   const digits = frac.padEnd(decimals, "0");
-  return BigInt(whole) * 10n ** BigInt(decimals) + BigInt(digits || "0");
+  const wholePart = whole.length > 0 ? BigInt(whole) : 0n;
+  return wholePart * 10n ** BigInt(decimals) + BigInt(digits || "0");
 }
 
 export function formatTokenAmount(amount: bigint, decimals: number, maxFrac = 6): string {
@@ -30,13 +31,7 @@ export function minimumFromQuote(amount: bigint, slippagePct: number): bigint {
   return (amount * (10_000n - bps)) / 10_000n;
 }
 
-/** A price limit around the current sqrt price, worse by the user's slippage. */
-export function sqrtPriceLimit(sqrtPriceX96: bigint, zeroForOne: boolean, slippagePct: number): bigint {
-  const bps = BigInt(Math.round(slippagePct * 100));
-  let limit = zeroForOne
-    ? (sqrtPriceX96 * (10_000n - bps)) / 10_000n
-    : (sqrtPriceX96 * (10_000n + bps)) / 10_000n;
-  if (limit <= MIN_SQRT_PRICE) limit = MIN_SQRT_PRICE + 1n;
-  if (limit >= MAX_SQRT_PRICE) limit = MAX_SQRT_PRICE - 1n;
-  return limit;
+/** The router's full range. Slippage is enforced by min-out or max-in, not by a tight price limit. */
+export function extremeSqrtPriceLimit(zeroForOne: boolean): bigint {
+  return zeroForOne ? MIN_SQRT_PRICE + 1n : MAX_SQRT_PRICE - 1n;
 }

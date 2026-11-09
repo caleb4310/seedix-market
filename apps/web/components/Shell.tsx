@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { elysiumTestnet } from "@/lib/chain";
 import { WalletButton } from "./WalletButton";
 import { Button } from "@/components/ui/Button";
 
@@ -40,9 +41,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </Link>
         </nav>
         <div className="nav-spacer" />
-        <div className="chain-pill">ELYSIUM TESTNET · 99801</div>
-        <Button variant="ghost" type="button" className="theme-toggle" onClick={toggle} aria-pressed={theme === "dark"} aria-label={theme === "light" ? "Switch to dark" : "Switch to light"}>
-          Aa
+        <div className="chain-pill">{elysiumTestnet.id === 99801 ? "ELYSIUM TESTNET · 99801" : `LOCAL · ${elysiumTestnet.id}`}</div>
+        <Button variant="ghost" type="button" className="theme-toggle" onClick={toggle} aria-pressed={theme === "dark"} aria-label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}>
+          {theme === "light" ? (
+            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+              <path d="M10.2 2.4a6.2 6.2 0 1 0 5.4 9.2A5.2 5.2 0 0 1 10.2 2.4Z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+            </svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+              <path d="M9 2.2v1.3M9 14.5v1.3M2.2 9h1.3M14.5 9h1.3M4.2 4.2l.9.9M12.9 12.9l.9.9M13.8 4.2l-.9.9M5.1 12.9l-.9.9" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              <circle cx="9" cy="9" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+            </svg>
+          )}
         </Button>
         <WalletButton />
       </header>
