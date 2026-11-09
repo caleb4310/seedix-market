@@ -40,9 +40,10 @@ async function tokenList(db: Db, chainId: number, filePath?: string): Promise<{ 
   );
   const byAddress = new Map<string, Record<string, unknown>>();
   for (const row of res.rows) {
-    const address = prefixed(row.address).toLowerCase();
-    byAddress.set(address, {
-      address: prefixed(row.address),
+    const address = prefixed(row.address);
+    if (!address) continue;
+    byAddress.set(address.toLowerCase(), {
+      address,
       status: Number(row.status),
       category: categoryName(Number(row.category)),
       logo: null,
