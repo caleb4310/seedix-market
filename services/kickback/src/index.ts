@@ -4,7 +4,9 @@ import { elysiumTestnet } from "@seedix/shared";
  * Hourly publisher. Epochs are timestamp windows, never block ranges.
  * The publisher key can only fund and post roots. It cannot cancel.
  * Excluded from every manifest: pool manager, hook, locker, executor,
- * distributor, vault, the zero address, and the dead address.
+ * distributor, vault, the zero address, the dead address, the coin's team
+ * wallet, and any contract that the timelock has not allowlisted.
+ * The keeper pushes the posted leaves in batches. Dust rolls forward.
  */
 export const kickbackConfig = {
   chainId: elysiumTestnet.id,
@@ -12,6 +14,13 @@ export const kickbackConfig = {
   epochSeconds: 60 * 60,
   databaseUrl: process.env.DATABASE_URL ?? "",
 };
+
+/** Matches KickbackDistributor. The keeper repeats push until the round is sealed. */
+export const autoPush = {
+  maxBatch: 32,
+  dustWei: 1_000_000n,
+  gasCapBps: 200,
+} as const;
 
 export const excludedRoles = [
   "poolManager",
@@ -22,6 +31,8 @@ export const excludedRoles = [
   "vault",
   "zero",
   "dead",
+  "teamWallet",
+  "unallowlistedContract",
 ] as const;
 
 /**

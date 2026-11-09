@@ -100,6 +100,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
 
     IPoolManager public immutable poolManager;
     address public immutable buybackExecutor;
+    /// @notice Kickback distributor. Immutable, so auto-push ships with a new hook on the next deploy.
     address public immutable kickbackDistributor;
     address public immutable feeVault;
     address public immutable initializer;
@@ -436,6 +437,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
         _closeMove();
     }
 
+    /// @notice Moves the kickback pot to the distributor. The keeper pushes that balance to holders.
     function debitKickback(PoolId id, uint256 amount, address to) external {
         if (msg.sender != kickbackDistributor) revert NotDistributor();
         _openMove();

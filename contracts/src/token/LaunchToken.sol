@@ -20,6 +20,9 @@ contract LaunchToken {
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
 
+    /// @notice Receives the launch team allocation. Always excluded from Kickback, even if allowlisted.
+    address public teamWallet;
+
     bool private _initialized;
 
     event Transfer(address indexed from, address indexed to, uint256 amount);
@@ -45,6 +48,7 @@ contract LaunchToken {
         _initialized = true;
         name = name_;
         symbol = symbol_;
+        teamWallet = teamTo;
         _mint(liquidityTo, liquidityAmt);
         if (teamAmt > 0) _mint(teamTo, teamAmt);
     }

@@ -52,7 +52,8 @@ forge test
 
 Roles:
 
-- **Admin** comes from `ADMIN`, or from the deployer address when `ADMIN` is unset. The deploy key hands admin, guardian, timelock proposer, and timelock executor to that wallet, then renounces them. Admin queues the 48-hour fee-wallet change and the one-time platform-token launch. It cannot move pots. On this testnet, `setKeeper` is an immediate admin call so buybacks can be turned on after deploy. Mainnet must send that grant through the timelock. Revoking the keeper stays immediate.
+- **Admin** comes from `ADMIN`, or from the deployer address when `ADMIN` is unset. The deploy key hands admin, guardian, timelock proposer, and timelock executor to that wallet, then renounces them. When `ADMIN` is the deployer address, those three timelock roles are kept and only the timelock default admin is renounced. Admin queues the 48-hour fee-wallet change and the one-time platform-token launch. It cannot move pots. On this testnet, `setKeeper` is an immediate admin call so buybacks and Kickback pushes can be turned on after deploy. Mainnet must send that grant through the timelock. Revoking the keeper stays immediate.
+- **Keeper** comes from `KEEPER`. Deploy grants that address the buyback keeper and the Kickback keeper, then burns the deploy-time grant. An empty `KEEPER` grants nobody. The deployer cannot call the grant afterwards.
 - **Guardian** is a separate role in `SeedixRoles`. Deploy assigns it to the same admin address, so pause and Kickback cancel are immediate. `queueSetGuardian` moves it later through the timelock, without a new deployment.
 
 ## Deploy dry-run
@@ -71,17 +72,45 @@ PRIVATE_KEY=$ANVIL_ACCOUNT_0 forge script script/Deploy.s.sol --rpc-url http://1
 
 The script reverts if `block.chainid` is anything other than 99801 or 31337. Add `--broadcast` only when the RPC is local Anvil and you want the deployment kept.
 
-Dry-run against Elysium testnet. This does not broadcast. `ADMIN` is the wallet that receives the roles. `PRIVATE_KEY` is only the deployer key used for the simulation.
+Dry-run against Elysium testnet. This does not broadcast. `ADMIN` is the wallet that receives the roles. `PRIVATE_KEY` is only the deployer key used for the simulation. `KEEPER` receives both keeper roles.
 
 ```bash
 cd contracts
-ADMIN=0xYourAdminAddress PRIVATE_KEY=0xDeployerSimulationKey \
-  forge script script/Deploy.s.sol --rpc-url https://testnet-rpc.elysium.kinetiq.xyz
+ADMIN=0xYourAdminAddress \
+KICKBACK_PUBLISHER=0xYourPublisherAddress \
+KEEPER=0xYourKeeperAddress \
+PRIVATE_KEY=0xDeployerSimulationKey \
+forge script script/Deploy.s.sol --rpc-url https://testnet-rpc.elysium.kinetiq.xyz
 ```
 
 Do not pass `--broadcast`. Mainnet (99901) is not this script.
 
 On Anvil, Permit2 is not at the canonical address, so the script deploys a stand-in and points PositionManager at it. On 99801 the real Permit2 is reused.
+
+## Redeploy Kickback auto-push
+
+`LaunchHook.kickbackDistributor` is immutable. The deployment recorded in [`deployments/99801.json`](deployments/99801.json) (hook `0x11250C2cD56d4E37a3f8390570A99703848768cC`, distributor `0xDc5312c71313C01569865FFC30Bd3ba15a4B22Db`) cannot be upgraded in place. Auto-push needs a new protocol deploy on chain 99801. This repository does not broadcast that deploy.
+
+From `contracts/`, simulation only:
+
+```bash
+ADMIN=0xYourAdminAddress \
+KICKBACK_PUBLISHER=0xYourPublisherAddress \
+KEEPER=0xYourKeeperAddress \
+PRIVATE_KEY=0xDeployerSimulationKey \
+forge script script/Deploy.s.sol --rpc-url https://testnet-rpc.elysium.kinetiq.xyz
+```
+
+| Variable | Required | What it does |
+|---|---|---|
+| `PRIVATE_KEY` | yes | Deployer key used for the simulation. Do not commit it |
+| `ADMIN` | no | Admin, guardian, and timelock proposer, executor, and canceller. Defaults to the deployer address. If it equals the deployer, those three timelock roles are kept and the timelock default admin is still renounced |
+| `KICKBACK_PUBLISHER` | no | The only key that can fund a Kickback round and post its root. Defaults to `ADMIN` |
+| `KEEPER` | no | Buyback keeper and Kickback keeper. Empty means no keeper is granted and the deploy-time grant is burned |
+
+Chain id must be 99801. The script reverts on every other chain except local Anvil (31337). Do not add `--broadcast` against the public RPC. Do not point `PRIVATE_KEY` at a key you use anywhere else.
+
+After a later broadcast that you run yourself, copy the logged addresses into `deployments/99801.json`, `services/shared/src/index.ts`, and the `NEXT_PUBLIC_*` / service variables in `.env`. Until that happens the committed addresses are the previous deployment.
 
 ## Web
 
@@ -121,6 +150,6 @@ Backups: `infra/backup/nightly-pg-dump.sh` dumps only the `launchpad` database t
 
 ## What is real this week, and what is a skeleton
 
-Real: fee math, pot accounting, 6909 debits, oracle cadence, launch and seed, creator and wallet claims, Kickback fund / root / claim / cancel, coin `burn()`, timelocked fee wallet, guardian pause.
+Real: fee math, pot accounting, 6909 debits, oracle cadence, launch and seed, creator and wallet claims, Kickback fund / root / claim / cancel, Kickback auto-push, coin `burn()`, timelocked fee wallet, guardian pause.
 
-Skeleton: buyback swaps (a keeper reserves the pot, then `BuybackReserved`; the swap is still unwired), Kickback sweep, indexer, API, and the keeper service. The web trade card quotes with V4Quoter when `NEXT_PUBLIC_ROUTER`, `NEXT_PUBLIC_QUOTER`, and `NEXT_PUBLIC_STATE_VIEW` are set, and refuses to sign without that quote.
+Skeleton: indexer, API, and the off-chain keeper service. The web trade card quotes with V4Quoter when `NEXT_PUBLIC_ROUTER`, `NEXT_PUBLIC_QUOTER`, and `NEXT_PUBLIC_STATE_VIEW` are set, and refuses to sign without that quote.
