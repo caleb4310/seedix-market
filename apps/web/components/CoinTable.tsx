@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { modeLabel, type Mode } from "@/lib/coin";
+import type { PairCategory } from "@/lib/registry";
 import { useBoard } from "@/lib/board";
 import { Tabs } from "@/components/ui/Tabs";
 
@@ -16,7 +17,10 @@ function age(sec: number): string {
 export function CoinTable() {
   const board = useBoard();
   const [filter, setFilter] = useState<"all" | Mode>("all");
-  const rows = board.coins.filter((c) => filter === "all" || c.mode === filter);
+  const [category, setCategory] = useState<"all" | PairCategory>("all");
+  const rows = board.coins.filter(
+    (c) => (category === "all" || c.category === category) && (filter === "all" || c.mode === filter),
+  );
   const showMcap = board.coins.some((c) => c.mcap !== undefined);
 
   return (
@@ -31,6 +35,19 @@ export function CoinTable() {
               : "Pick a coin to trade, or launch your own."}
           </p>
         </div>
+        <div className="filter-col">
+        <Tabs
+          label="Pair category"
+          size="sm"
+          value={category}
+          onChange={setCategory}
+          options={[
+            { id: "all", label: "All" },
+            { id: "stock", label: "Stocks" },
+            { id: "preipo", label: "Pre-IPO" },
+            { id: "crypto", label: "Crypto" },
+          ]}
+        />
         <Tabs
           label="Coin mode"
           size="sm"
@@ -43,6 +60,7 @@ export function CoinTable() {
             { id: "burn", label: modeLabel("burn") },
           ]}
         />
+        </div>
       </div>
       <div className="board">
         <div className="head">
@@ -65,7 +83,11 @@ export function CoinTable() {
         {board.status === "ready" && rows.length === 0 ? (
           <div className="empty">
             <p className="lede">
-              {board.coins.length === 0 ? "No coins yet. Launch the first one." : "No coins in this filter. Choose another mode, or launch one."}
+              {category === "preipo"
+                ? "No pre-IPO tokens on Elysium yet."
+                : board.coins.length === 0
+                  ? "No coins yet. Launch the first one."
+                  : "No coins in this filter. Choose another mode, or launch one."}
             </p>
             {board.coins.length === 0 ? (
               <p className="stack-top">
@@ -78,8 +100,8 @@ export function CoinTable() {
         ) : null}
         {board.status === "ready"
           ? rows.map((coin) => (
-              <Link key={coin.id} href={`/coin/${coin.id}`} className="row">
-                <span className="coin-cell">
+              <div key={coin.id} className="row">
+                <Link className="coin-cell" href={`/coin/${coin.id}`}>
                   <span className="mark" data-tone={coin.ticker.length % 4}>
                     {coin.ticker.slice(0, 1)}
                   </span>
@@ -87,14 +109,19 @@ export function CoinTable() {
                     <span className="name">{coin.name}</span>
                     <span className="ticker"> ${coin.ticker}</span>
                   </span>
+                </Link>
+                <span className="hide-sm preview-links">
+                  {coin.pair}
+                  {coin.x ? <a className="icon-link" href={coin.x} target="_blank" rel="noopener noreferrer nofollow">X</a> : null}
+                  {coin.telegram ? <a className="icon-link" href={coin.telegram} target="_blank" rel="noopener noreferrer nofollow">Tg</a> : null}
+                  {coin.website ? <a className="icon-link" href={coin.website} target="_blank" rel="noopener noreferrer nofollow">Web</a> : null}
                 </span>
-                <span className="hide-sm">{coin.pair}</span>
                 <span className="mode" data-mode={coin.mode}>
                   {modeLabel(coin.mode)}
                 </span>
                 {showMcap ? <span className="num">{coin.mcap !== undefined ? `$${coin.mcap.toLocaleString("en-US")}` : "—"}</span> : null}
                 <span className="num hide-sm hide-md">{age(coin.launchTime !== undefined ? Math.max(0, Math.floor(Date.now() / 1000) - coin.launchTime) : coin.ageSec)}</span>
-              </Link>
+              </div>
             ))
           : null}
       </div>

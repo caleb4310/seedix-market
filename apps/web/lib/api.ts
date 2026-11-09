@@ -14,6 +14,11 @@ export type ApiCoin = {
   launchTime: number;
   price: string | null;
   holders: number;
+  category?: "crypto" | "stock" | "preipo";
+  description?: string | null;
+  website?: string | null;
+  x?: string | null;
+  telegram?: string | null;
 };
 
 export type Candle = { t: number; open: string; high: string; low: string; close: string; volume: string };
@@ -69,7 +74,13 @@ export function coinFromApi(row: ApiCoin, hook?: `0x${string}`): Coin {
     mode: row.mode,
     ageSec: Math.max(0, now - row.launchTime),
     launchTime: row.launchTime,
-    description: `${row.mode === "kickback" ? "Kick back" : row.mode === "burn" ? "Burn" : "Keep"} mode, paired with ${row.pairSymbol || "the pair token"}.`,
+    description:
+      row.description ||
+      `${row.mode === "kickback" ? "Kick back" : row.mode === "burn" ? "Burn" : "Keep"} mode, paired with ${row.pairSymbol || "the pair token"}.`,
+    category: row.category,
+    website: row.website ?? null,
+    x: row.x ?? null,
+    telegram: row.telegram ?? null,
     recipient: row.feeRecipient as `0x${string}`,
     price: price !== undefined && Number.isFinite(price) ? price : undefined,
     holders: row.holders,

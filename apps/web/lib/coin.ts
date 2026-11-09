@@ -19,6 +19,10 @@ export type Coin = {
   pairAddress?: `0x${string}`;
   hooks?: `0x${string}`;
   poolId?: `0x${string}`;
+  category?: "crypto" | "stock" | "preipo";
+  website?: string | null;
+  x?: string | null;
+  telegram?: string | null;
 };
 
 export function modeLabel(mode: Mode): string {

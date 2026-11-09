@@ -42,6 +42,23 @@ export function CoinBody({ coin }: { coin: Coin }) {
         <p className="lede">
           {coin.description} {decaying ? "The decay is still running." : "The hook fee has settled at 1%."}
         </p>
+        <p className="preview-links">
+          {coin.x ? (
+            <a className="icon-link" href={coin.x} target="_blank" rel="noopener noreferrer nofollow">
+              X
+            </a>
+          ) : null}
+          {coin.telegram ? (
+            <a className="icon-link" href={coin.telegram} target="_blank" rel="noopener noreferrer nofollow">
+              Tg
+            </a>
+          ) : null}
+          {coin.website ? (
+            <a className="icon-link" href={coin.website} target="_blank" rel="noopener noreferrer nofollow">
+              Web
+            </a>
+          ) : null}
+        </p>
         <div className="statline">
           {coin.price !== undefined ? (
             <div>
