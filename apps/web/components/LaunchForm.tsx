@@ -380,13 +380,6 @@ export function LaunchForm() {
           <p className="lede">Nothing touches the chain until you launch. Four things are permanent: the name, the ticker, the backing, and where the fees go.</p>
         </div>
         <section className="permanent">
-          <header className="permanent-head">
-            <span>Permanent</span>
-            <span className="permanent-rule" />
-            <span>4 things</span>
-            <span className="permanent-split" aria-hidden="true" />
-            <span>Never changeable</span>
-          </header>
           <Field label="Name" hint={`${nameBytes}/32`}>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="North star" />
           </Field>

@@ -94,6 +94,7 @@ export function CoinTable() {
   }
 
   const needle = query.trim().toLowerCase();
+  const feeMode = kick && !burners ? "kick" : burners && !kick ? "burn" : "all";
   const rows = board.coins
     .filter((coin) => kind === "all" || coin.category === kind)
     .filter((coin) => {
@@ -108,42 +109,44 @@ export function CoinTable() {
       );
     })
     .filter((coin) => {
-      if (!kick && !burners) return true;
-      if (kick && coin.mode === "kickback") return true;
-      if (burners && coin.mode === "burn") return true;
-      return false;
+      if (feeMode === "kick") return coin.mode === "kickback";
+      if (feeMode === "burn") return coin.mode === "burn";
+      return true;
     })
     .sort((a, b) => (sort === "mcap" ? (b.mcap ?? 0) - (a.mcap ?? 0) : (b.launchTime ?? 0) - (a.launchTime ?? 0)));
-
-  const kickCount = rows.filter((coin) => coin.mode === "kickback").length;
-  const burnCount = rows.filter((coin) => coin.mode === "burn").length;
 
   return (
     <>
       <div className="filter-bar">
         <div className="filter-scroll">
-        <div className="seg" role="tablist" aria-label="Backing category">
+        <label className="filter-select">
+          <select aria-label="Backing category" value={kind} onChange={(event) => write({ kind: kindOf(event.target.value) })}>
+            <option value="all">All</option>
+            <option value="stock">Stocks</option>
+            <option value="preipo">Pre-IPO</option>
+            <option value="crypto">Any token</option>
+          </select>
+        </label>
+        <div className="seg" role="tablist" aria-label="Fee mode">
           {(
             [
-              ["all", "Everything"],
-              ["stock", "Stocks"],
-              ["preipo", "Pre-IPO"],
-              ["crypto", "Crypto"],
+              ["all", "All"],
+              ["kick", "Kickback"],
+              ["burn", "Burners"],
             ] as const
           ).map(([id, label]) => (
-            <button key={id} type="button" role="tab" aria-selected={kind === id} data-on={kind === id} onClick={() => write({ kind: id })}>
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={feeMode === id}
+              data-on={feeMode === id}
+              onClick={() => write({ kick: id === "kick", burn: id === "burn" })}
+            >
               {label}
             </button>
           ))}
         </div>
-        <button type="button" className="switch" role="switch" aria-checked={kick} data-on={kick} onClick={() => write({ kick: !kick })}>
-          <span className="switch-knob" aria-hidden="true" />
-          Kickback
-        </button>
-        <button type="button" className="switch" role="switch" aria-checked={burners} data-on={burners} onClick={() => write({ burn: !burners })}>
-          <span className="switch-knob" aria-hidden="true" />
-          Burners
-        </button>
         <div className="seg" role="tablist" aria-label="Sort coins">
           <button type="button" role="tab" aria-selected={sort === "mcap"} data-on={sort === "mcap"} onClick={() => write({ sort: "mcap" })}>
             Market cap
@@ -161,9 +164,6 @@ export function CoinTable() {
             placeholder="Search coins"
             aria-label="Search ticker, name or pair"
           />
-          <p className="count-line">
-            {rows.length} coins · {kickCount} Kickback · {burnCount} Burners
-          </p>
         </div>
       </div>
       <div className="stats-strip" aria-label="Market stats">
@@ -240,12 +240,13 @@ function WallCard({ coin, pairs, hypeUsd }: { coin: Coin; pairs: ListedPair[]; h
   const backing = listedBacking(coin, pairs);
   const usd = coin.mcap !== undefined && hypeUsd != null ? coin.mcap * hypeUsd : coin.mcapUsd;
   const letter = (coin.ticker || coin.name).trim().slice(0, 1).toUpperCase();
+  const [broken, setBroken] = useState(false);
   const image = logoSrc(coin.image);
   const ago = age(coin.launchTime !== undefined ? Math.max(0, Math.floor(Date.now() / 1000) - coin.launchTime) : coin.ageSec);
   return (
     <Link className="wall-card" href={`/coin/${coin.id}`}>
       <span className="wall-art">
-        {image ? <img src={image} alt="" /> : <span className="stripes">{letter}</span>}
+        {image && !broken ? <img src={image} alt="" onError={() => setBroken(true)} /> : <span className="stripes">{letter}</span>}
         {coin.mode === "kickback" ? <span className="flag" data-mode="kickback">Kickback</span> : null}
         {coin.mode === "burn" ? <span className="flag" data-mode="burn">Burn</span> : null}
       </span>
