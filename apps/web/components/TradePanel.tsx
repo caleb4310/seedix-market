@@ -295,7 +295,7 @@ export function TradePanel({ coin, initialSide = "buy" }: { coin: Coin; initialS
         <WalletButton />
       ) : (
         <Button variant="accent" block type="button" disabled={!ready || busy} onClick={() => void submit()}>
-          {needsConfirm && !confirmed ? `Confirm ${pct(hook)} fee` : preparing ? "Checking the transaction" : tx.state.status === "awaiting_signature" ? "Confirm in your wallet" : tx.state.status === "pending" ? "Waiting for confirmation" : `Sign ${side}`}
+          {needsConfirm && !confirmed ? `Confirm ${pct(hook)} fee` : preparing ? "Checking the transaction" : tx.state.status === "awaiting_signature" ? "Confirm in your wallet" : tx.state.status === "pending" ? "Waiting for confirmation" : side === "buy" ? "Trade" : "Sell"}
         </Button>
       )}
       <p className="note">

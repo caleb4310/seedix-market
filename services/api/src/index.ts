@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import pg from "pg";
 import { elysiumTestnet } from "@seedix/shared";
-import { readLogo, saveLogo } from "./logos.ts";
+import { publicLogoUrl, readLogo, saveLogo } from "./logos.ts";
 import { handleRequest } from "./routes.ts";
 
 export const apiConfig = {
@@ -50,7 +50,7 @@ export async function main(): Promise<void> {
               res.end(JSON.stringify({ error: "png, jpeg, or webp under 512kb" }));
               return;
             }
-            const payload = JSON.stringify({ url: `/logos/${saved.file}` });
+            const payload = JSON.stringify({ url: publicLogoUrl(saved.file) });
             res.writeHead(201, { "content-type": "application/json; charset=utf-8" });
             res.end(payload);
           })

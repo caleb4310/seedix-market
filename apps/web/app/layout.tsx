@@ -5,7 +5,7 @@ import { tokenCss } from "@/lib/tokens";
 import { Providers } from "@/components/Providers";
 import { Shell } from "@/components/Shell";
 
-const sans = Instrument_Sans({ subsets: ["latin"], variable: "--font-sans" });
+const sans = Instrument_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-sans" });
 const mono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-mono" });
 
 export const metadata: Metadata = {

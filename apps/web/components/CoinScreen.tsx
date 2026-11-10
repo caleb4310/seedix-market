@@ -53,12 +53,9 @@ export function CoinScreen({ id, side }: { id: string; side: Side }) {
   const coin = listed ?? live;
   if (coin) {
     return (
-      <div className="coin-layout">
-        <CoinBody coin={coin} />
-        <div>
-          <TradePanel coin={coin} initialSide={side} />
-          <ClaimPanel coin={coin} />
-        </div>
+      <div className="coin-page">
+        <CoinBody coin={coin} trade={<TradePanel coin={coin} initialSide={side} />} />
+        {coin.mode === "kickback" ? <ClaimPanel coin={coin} /> : null}
       </div>
     );
   }

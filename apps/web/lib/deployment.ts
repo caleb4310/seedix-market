@@ -64,3 +64,9 @@ export function explorerTx(hash: string): string {
 export function explorerOrigin(): string {
   return (process.env.NEXT_PUBLIC_EXPLORER_TX_URL_TEMPLATE || file.explorerTxTemplate).replace(/\/tx\/\{hash\}$/, "");
 }
+
+export function explorerAddress(address: string): string {
+  return `${explorerOrigin()}/address/${address}`;
+}
+
+export const executorAddress = envAddress("NEXT_PUBLIC_EXECUTOR", file.contracts.buybackExecutor);

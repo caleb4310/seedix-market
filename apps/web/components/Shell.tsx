@@ -36,8 +36,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <Link href="/" data-active={path === "/" ? "true" : "false"}>
             Coins
           </Link>
-          <Link href="/launch" data-active={path.startsWith("/launch") ? "true" : "false"}>
-            Launch
+          <Link href="/launch" className="btn nav-launch" data-active={path.startsWith("/launch") ? "true" : "false"}>
+            <span className="wide">Launch a coin</span>
+            <span className="narrow">Launch</span>
           </Link>
           <Link href="/portfolio" data-active={path.startsWith("/portfolio") ? "true" : "false"}>
             <span className="wide">Portfolio</span>

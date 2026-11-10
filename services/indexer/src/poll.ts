@@ -214,7 +214,7 @@ export async function pollOnce(client: PublicClient, store: Store, cfg: IndexerC
       sources.push(pull(client, tokens.slice(i, i + 20), eventAbi.Transfer, "Transfer", range.from, range.to));
     }
     const logs = (await Promise.all(sources)).flat();
-    await ingest(txStore, cfg.chainId, logs, readers(client, cfg.hook, cfg.kickbackDistributor));
+    await ingest(txStore, cfg.chainId, logs, readers(client, cfg.hook, cfg.kickbackDistributor), cfg.launcher);
     const launched = logs
       .filter((log) => log.eventName === "CoinLaunched")
       .map((log) => String(log.args.coin) as Hex);

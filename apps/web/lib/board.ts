@@ -117,6 +117,7 @@ export function useBoard(): Board {
             isPlatform?: boolean;
             feeRecipient?: `0x${string}`;
             startMcap?: bigint | number;
+            backing?: `0x${string}`;
           };
         }[];
         const coins: Coin[] = [];
@@ -141,6 +142,8 @@ export function useBoard(): Board {
           const coinName = typeof name === "string" && name.length > 0 ? name : "Coin";
           const coinSymbol = typeof symbol === "string" && symbol.length > 0 ? symbol : "COIN";
           const pairName = typeof pairSymbol === "string" && pairSymbol.length > 0 ? pairSymbol : "PAIR";
+          const rawBacking = args.backing;
+          const backing = rawBacking && !/^0x0{40}$/i.test(rawBacking) ? rawBacking : null;
           coins.push({
             id: poolId,
             name: coinName,
@@ -156,6 +159,7 @@ export function useBoard(): Board {
             coinIsToken0: Boolean(configRow[2]),
             tokenAddress: token,
             pairAddress: pair,
+            backing,
             hooks: hookAddress,
             poolId,
           });

@@ -13,6 +13,8 @@ export type Coin = {
   mcap?: number;
   volume?: number;
   backing?: string | null;
+  backingSymbol?: string | null;
+  backingLogo?: string | null;
   startMcap?: number;
   pairDecimals?: number;
   pairUsd?: number | null;
