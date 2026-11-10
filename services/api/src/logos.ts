@@ -1,9 +1,45 @@
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const MAX_BYTES = 512 * 1024;
 
 const links = new Map<string, string>();
+let indexLoaded = false;
+
+function indexPath(): string {
+  return path.join(logoDir(), "index.json");
+}
+
+function remember(poolId: string, url: string): boolean {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(poolId)) return false;
+  const stored = storedLogo(url);
+  if (!stored) return false;
+  links.set(poolId.toLowerCase(), stored);
+  return true;
+}
+
+/** The pool-to-logo map used to live only in memory, so a restart showed the letter fallback. */
+export function loadLogoIndex(): void {
+  if (indexLoaded) return;
+  indexLoaded = true;
+  try {
+    const parsed = JSON.parse(readFileSync(indexPath(), "utf8")) as Record<string, unknown>;
+    for (const [id, url] of Object.entries(parsed)) {
+      if (typeof url === "string") remember(id, url);
+    }
+  } catch {
+    /* first boot, or a directory that is not writable yet */
+  }
+}
+
+function persistIndex(): void {
+  const dir = logoDir();
+  mkdirSync(dir, { recursive: true });
+  const body: Record<string, string> = {};
+  for (const [id, url] of links) body[id] = url;
+  writeFileSync(indexPath(), JSON.stringify(body));
+}
 
 /** Canonical URL the browser can load through the `/api/` proxy. */
 export function publicLogoUrl(file: string): string {
@@ -23,13 +59,13 @@ export function loadableLogo(url: string | null): string | null {
 }
 
 export function attachLogo(poolId: string, url: string): void {
-  if (!/^0x[0-9a-fA-F]{64}$/.test(poolId)) return;
-  const stored = storedLogo(url);
-  if (!stored) return;
-  links.set(poolId.toLowerCase(), stored);
+  loadLogoIndex();
+  if (!remember(poolId, url)) return;
+  persistIndex();
 }
 
 export function logoFor(poolId: string): string | null {
+  loadLogoIndex();
   return loadableLogo(links.get(poolId.toLowerCase()) ?? null);
 }
 
