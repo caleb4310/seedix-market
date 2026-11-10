@@ -6,9 +6,12 @@
  * Run from the repo root:
  *   node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON services/strip-types-boot.mjs
  */
+import { register } from "node:module";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+
+register(new URL("../apps/web/scripts/resolve-ts.mjs", import.meta.url).href);
 
 delete process.env.DATABASE_URL;
 delete process.env.KEEPER_PRIVATE_KEY;
