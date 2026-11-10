@@ -37,9 +37,9 @@ contract DeploySeedix is Script {
     error MissingCode(address target);
     error SeedBudget(uint256 total, uint256 cap);
 
-    /// @dev One tick spacing of WHYPE. 0.5 WHYPE per pool across the curated set exceeds the
-    ///      1.5 HYPE seed cap (8 pools would be 4 HYPE). 99801 uses 0.15. Mainnet default is
-    ///      `SeedixConstants.MAINNET_MIN_ROUTE_DEPTH` (10_000 WHYPE), set by the timelock there.
+    /// @dev One tick spacing of WHYPE. Seven pools at 0.15 is 1.05 WHYPE, under the 1.5 cap.
+    ///      Each pool is funded with that amount once. Leftover tokens return to the deployer.
+    ///      Mainnet default is `SeedixConstants.MAINNET_MIN_ROUTE_DEPTH` (10_000 WHYPE).
     uint256 internal constant TESTNET_MIN_ROUTE_DEPTH = 0.15 ether;
     uint256 internal constant SEED_BUDGET = 1.5 ether;
 
@@ -57,6 +57,8 @@ contract DeploySeedix is Script {
     }
 
     Result public last;
+    /// @dev The helper that seeded the routes. Leftover tokens are swept back to the deployer.
+    address public routeSeeder;
 
     address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     /// @dev `new {salt}` in a Forge script is CREATE2 from the Arachnid deployer, not the EOA.
@@ -192,15 +194,24 @@ contract DeploySeedix is Script {
         console2.log("planned whype total", TESTNET_MIN_ROUTE_DEPTH * seeded.length);
         console2.log("mainnet min route depth", C.MAINNET_MIN_ROUTE_DEPTH);
         RouteSeeder seeder = new RouteSeeder();
+        // A shortfall is pulled from the deployer, capped at one depth. Cleared after the loop.
+        IERC20(whype).approve(address(seeder), TESTNET_MIN_ROUTE_DEPTH);
         PoolKey[] memory stockRoutes = new PoolKey[](5);
         uint256 whypeSpent;
         for (uint256 i; i < seeded.length; ++i) {
+            // The pair token funds both sides of the range, so it keeps a 4x buffer. WHYPE is one
+            // side: send exactly one depth. Anything the position does not take returns here.
+            MockXStock(seeded[i]).approve(address(seeder), TESTNET_MIN_ROUTE_DEPTH * 4);
             MockXStock(seeded[i]).transfer(address(seeder), TESTNET_MIN_ROUTE_DEPTH * 4);
-            IERC20(whype).transfer(address(seeder), TESTNET_MIN_ROUTE_DEPTH * 4);
+            IERC20(whype).transfer(address(seeder), TESTNET_MIN_ROUTE_DEPTH);
             (PoolKey memory key, uint256 spent) = seeder.seed(manager, whype, seeded[i], TESTNET_MIN_ROUTE_DEPTH);
             whypeSpent += spent;
             console2.log("seeded", seeded[i], spent);
             if (i < 5) stockRoutes[i] = key;
+        }
+        IERC20(whype).approve(address(seeder), 0);
+        for (uint256 i; i < seeded.length; ++i) {
+            MockXStock(seeded[i]).approve(address(seeder), 0);
         }
         console2.log("whype seed total", whypeSpent);
         if (whypeSpent > SEED_BUDGET) revert SeedBudget(whypeSpent, SEED_BUDGET);
@@ -211,6 +222,7 @@ contract DeploySeedix is Script {
         console2.log("preipo unregistered", openai);
 
         vm.stopBroadcast();
+        routeSeeder = address(seeder);
 
         last = Result({
             deployer: deployer,
