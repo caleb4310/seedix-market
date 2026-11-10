@@ -27,6 +27,7 @@ export type CoinRow = {
   pairDecimals: number;
   category?: number;
   pairStatus?: number;
+  launcher?: Hex | null;
   description?: string | null;
   website?: string | null;
   xUrl?: string | null;
@@ -184,9 +185,9 @@ export class PgStore implements Store {
       `INSERT INTO coins (
          pool_id, chain_id, coin, pair, name, symbol, pair_symbol, mode, is_platform,
          fee_recipient, team_wallet, team_amount, start_mcap, launch_time,
-         coin_is_token0, coin_decimals, pair_decimals, launch_block, category, pair_status
+         coin_is_token0, coin_decimals, pair_decimals, launch_block, category, pair_status, launcher
        ) VALUES (
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,to_timestamp($14),$15,$16,$17,$18,$19,$20
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,to_timestamp($14),$15,$16,$17,$18,$19,$20,$21
        )
        ON CONFLICT (pool_id) DO UPDATE SET
          name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE coins.name END,
@@ -197,6 +198,7 @@ export class PgStore implements Store {
          pair_decimals = EXCLUDED.pair_decimals,
          category = EXCLUDED.category,
          pair_status = EXCLUDED.pair_status,
+         launcher = COALESCE(EXCLUDED.launcher, coins.launcher),
          team_wallet = COALESCE(EXCLUDED.team_wallet, coins.team_wallet)`,
       [
         toBuffer(row.poolId),
@@ -219,6 +221,7 @@ export class PgStore implements Store {
         row.launchBlock.toString(),
         row.category ?? 0,
         row.pairStatus ?? 0,
+        row.launcher ? toBuffer(row.launcher) : null,
       ],
     );
   }

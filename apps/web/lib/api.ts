@@ -1,4 +1,5 @@
 import { marketCapFromRaw, marketCapUsd } from "./amounts";
+import { logoSrc } from "./logoUrl";
 import type { Coin, Mode } from "./coin";
 
 export const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
@@ -28,6 +29,8 @@ export type ApiCoin = {
   volume24h?: string;
   image?: string | null;
   backing?: string | null;
+  backingSymbol?: string | null;
+  backingLogo?: string | null;
   pairDecimals?: number;
   coinIsToken0?: boolean;
   pairUsd?: number | null;
@@ -105,8 +108,10 @@ export function coinFromApi(row: ApiCoin, hook?: `0x${string}`): Coin {
     pairUsd: row.pairUsd ?? null,
     mcapUsd: marketCapUsd(mcap, row.pairUsd),
     coinIsToken0: row.coinIsToken0,
-    image: row.image ?? null,
+    image: logoSrc(row.image),
     backing: row.backing ?? null,
+    backingSymbol: row.backingSymbol ?? null,
+    backingLogo: logoSrc(row.backingLogo),
     volume: row.volume24h ? Number(row.volume24h) : 0,
     holders: row.holders,
     tokenAddress: row.coin as `0x${string}`,

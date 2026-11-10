@@ -19,5 +19,5 @@
     "paths": { "@/*": ["./*"] }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "lib/amounts.test.ts", "lib/api.test.ts", "lib/claims.test.ts", "lib/launched.test.ts", "lib/launchSuccess.test.ts", "lib/priceLabel.test.ts", "lib/registry.test.ts", "lib/tx.test.ts", "lib/wallet.test.ts", "scripts", "e2e-fork"]
+  "exclude": ["node_modules", "lib/amounts.test.ts", "lib/api.test.ts", "lib/backing.test.ts", "lib/claims.test.ts", "lib/launched.test.ts", "lib/launchSuccess.test.ts", "lib/logoUrl.test.ts", "lib/priceLabel.test.ts", "lib/registry.test.ts", "lib/startCap.test.ts", "lib/tx.test.ts", "lib/wallet.test.ts", "scripts", "e2e-fork"]
 }

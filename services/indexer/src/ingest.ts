@@ -54,7 +54,7 @@ function asNumber(value: unknown): number {
   throw new Error("expected number");
 }
 
-export async function ingest(store: Store, chainId: number, logs: RawLog[], readers: Readers): Promise<void> {
+export async function ingest(store: Store, chainId: number, logs: RawLog[], readers: Readers, launcher?: Hex): Promise<void> {
   const ordered = [...logs].sort((a, b) => {
     if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1;
     return a.logIndex - b.logIndex;
@@ -91,6 +91,7 @@ export async function ingest(store: Store, chainId: number, logs: RawLog[], read
         coinIsToken0: meta.coinIsToken0,
         coinDecimals: meta.coinDecimals,
         pairDecimals: meta.pairDecimals,
+        launcher: launcher ?? null,
         category: typeof log.args.category === "number" || typeof log.args.category === "bigint" ? asNumber(log.args.category) : 0,
         pairStatus:
           typeof log.args.pairStatus === "number" || typeof log.args.pairStatus === "bigint"

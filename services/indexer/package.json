@@ -7,7 +7,8 @@
     "lint": "tsc --noEmit && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit",
-    "start": "node --experimental-strip-types src/index.ts"
+    "start": "node --experimental-strip-types src/index.ts",
+    "retire": "node --experimental-strip-types src/retire.ts"
   },
   "dependencies": {
     "@seedix/shared": "*",

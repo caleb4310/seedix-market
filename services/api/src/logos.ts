@@ -5,14 +5,32 @@ const MAX_BYTES = 512 * 1024;
 
 const links = new Map<string, string>();
 
+/** Canonical URL the browser can load through the `/api/` proxy. */
+export function publicLogoUrl(file: string): string {
+  return `/api/logos/${file}`;
+}
+
+function storedLogo(url: string): string | null {
+  if (url.startsWith("/api/logos/") || url.startsWith("/logos/")) return url;
+  return null;
+}
+
+export function loadableLogo(url: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith("/logos/")) return `/api${url}`;
+  if (url.startsWith("/api/logos/")) return url;
+  return null;
+}
+
 export function attachLogo(poolId: string, url: string): void {
   if (!/^0x[0-9a-fA-F]{64}$/.test(poolId)) return;
-  if (!url.startsWith("/logos/")) return;
-  links.set(poolId.toLowerCase(), url);
+  const stored = storedLogo(url);
+  if (!stored) return;
+  links.set(poolId.toLowerCase(), stored);
 }
 
 export function logoFor(poolId: string): string | null {
-  return links.get(poolId.toLowerCase()) ?? null;
+  return loadableLogo(links.get(poolId.toLowerCase()) ?? null);
 }
 
 export function logoDir(): string {

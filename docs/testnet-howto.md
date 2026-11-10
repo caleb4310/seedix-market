@@ -27,7 +27,8 @@ The router moves ERC-20 only. Buys of the WHYPE pair spend WHYPE, not native HYP
 3. Enter the name and ticker. The coin always trades against HYPE. Pick a stock, a pre-IPO token, or paste a contract: that token is the backing asset, not the pool pair. Kickback is only offered when that backing token is vetted on chain. Keep works for an unvetted backing token. Burn hides the picker and has no backing token; fees buy the coin back and burn it.
 4. Description, website, X, and Telegram are optional. A description that is a metadata id (10 to 128 letters and numbers) is pinned with `CoinMetadata.pin` when that contract is in `deployments/99801.json`.
 5. Hold the launch button until it fills. The wallet asks you to sign `launch`. After it is mined, a confirmation opens and the page moves to the new coin. The form resets.
-6. Dollar amounts use the API's CoinGecko `hyperliquid` quote, cached for about 60 seconds. If that feed is down, the last price is kept and then the UI falls back to HYPE. The footer names the source.
+6. The starting market cap is about $2,500. That is 34 WHYPE at the $74.6 HYPE quote used to pick the default (`Launcher.startMcap`). The launch sends that WHYPE amount as `startMcapInPair`. The timelock can change it with `setStartMcap`. The launch page and the preview show the cap in USD only. If the CoinGecko quote is down, they say "USD price unavailable" and do not print a token amount.
+7. Other dollar amounts use the API's CoinGecko `hyperliquid` quote, cached for about 60 seconds. If that feed is down, the last price is kept and then those other figures fall back to HYPE. The footer names the source. Logos are served at `/api/logos/` and at `/logos/` (nginx proxies `/logos/` to the API).
 
 ## Buy and sell
 

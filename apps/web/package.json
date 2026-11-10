@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit && node scripts/check-css.mjs && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs --test lib/amounts.test.ts lib/api.test.ts lib/claims.test.ts lib/launched.test.ts lib/launchSuccess.test.ts lib/priceLabel.test.ts lib/registry.test.ts lib/tx.test.ts lib/wallet.test.ts",
+    "lint": "tsc --noEmit && node scripts/check-css.mjs && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts.mjs --test lib/amounts.test.ts lib/api.test.ts lib/backing.test.ts lib/claims.test.ts lib/launched.test.ts lib/launchSuccess.test.ts lib/logoUrl.test.ts lib/priceLabel.test.ts lib/registry.test.ts lib/startCap.test.ts lib/tx.test.ts lib/wallet.test.ts",
     "test:e2e:fork": "node --experimental-strip-types scripts/e2e-fork.ts",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit"

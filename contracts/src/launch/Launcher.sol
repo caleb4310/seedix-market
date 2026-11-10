@@ -103,6 +103,7 @@ contract Launcher {
     event LaunchesUnpaused();
     event PairAllowed(address indexed pair, bool allowed);
     event PairClassified(address indexed pair, uint8 status, uint8 category);
+    event StartMcapSet(uint256 next);
 
     SeedixRoles public immutable roles;
     IPoolManager public immutable poolManager;
@@ -118,6 +119,9 @@ contract Launcher {
     mapping(PoolId => address) public creatorOf;
     mapping(address => uint8) public statusOf;
     mapping(address => uint8) public categoryOf;
+    /// @notice Default starting market cap, in WHYPE wei. A launch still uses
+    ///         `startMcapInPair`. 34 WHYPE is about $2,500 at $74.6 per HYPE.
+    uint256 public startMcap = 34 ether;
     uint256 public maxLaunchesPerHour;
     uint256 public windowStart;
     uint256 public launchesInWindow;
@@ -264,6 +268,14 @@ contract Launcher {
             revert NotTimelock();
         }
         maxLaunchesPerHour = next;
+    }
+
+    /// @notice Timelock sets the default starting market cap in WHYPE wei.
+    function setStartMcap(uint256 next) external {
+        if (msg.sender != address(roles.timelock())) revert NotTimelock();
+        if (next < 1) revert BadArgs();
+        startMcap = next;
+        emit StartMcapSet(next);
     }
 
     struct Built {

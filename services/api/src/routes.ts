@@ -106,15 +106,23 @@ function categoryName(value: number): (typeof CATEGORY)[number] {
   return CATEGORY[value] ?? "crypto";
 }
 
-function tokenUsd(filePath?: string): Map<string, number> {
-  const map = new Map<string, number>();
+type OverlayToken = { symbol?: string; name?: string; logo?: string | null; usd?: number };
+
+function tokenOverlay(filePath?: string): Map<string, OverlayToken> {
+  const map = new Map<string, OverlayToken>();
   const overlayPath = filePath ?? fileURLToPath(new URL("../token-list.json", import.meta.url));
   try {
-    const parsed = JSON.parse(readFileSync(overlayPath, "utf8")) as { tokens?: Array<{ address?: string; usd?: number }> };
+    const parsed = JSON.parse(readFileSync(overlayPath, "utf8")) as {
+      tokens?: Array<{ address?: string; usd?: number; symbol?: string; name?: string; logo?: string }>;
+    };
     for (const token of parsed.tokens ?? []) {
-      if (typeof token.address === "string" && typeof token.usd === "number" && Number.isFinite(token.usd)) {
-        map.set(token.address.toLowerCase(), token.usd);
-      }
+      if (typeof token.address !== "string") continue;
+      map.set(token.address.toLowerCase(), {
+        symbol: typeof token.symbol === "string" ? token.symbol : undefined,
+        name: typeof token.name === "string" ? token.name : undefined,
+        logo: typeof token.logo === "string" ? token.logo : null,
+        usd: typeof token.usd === "number" && Number.isFinite(token.usd) ? token.usd : undefined,
+      });
     }
   } catch {
     return map;
@@ -130,8 +138,11 @@ function liveMarketCap(row: CoinRow): string | null {
   return marketCapFromSpot(row.price, supply, pairDecimals);
 }
 
-function coinJson(row: CoinRow, usd: Map<string, number>) {
+function coinJson(row: CoinRow, overlay: Map<string, OverlayToken>) {
   const pair = prefixed(row.pair);
+  const backing = prefixed(row.backing);
+  const extra = backing ? overlay.get(backing.toLowerCase()) : undefined;
+  const backingSymbol = extra?.symbol && !/^whype$/i.test(extra.symbol) ? extra.symbol : null;
   return {
     poolId: prefixed(row.pool_id),
     coin: prefixed(row.coin),
@@ -152,7 +163,9 @@ function coinJson(row: CoinRow, usd: Map<string, number>) {
     backing: prefixed(row.backing),
     volume24h: row.volume_24h ?? "0",
     image: logoFor(prefixed(row.pool_id) ?? ""),
-    pairUsd: pair ? (usd.get(pair.toLowerCase()) ?? null) : null,
+    backingSymbol,
+    backingLogo: extra?.logo ?? null,
+    pairUsd: pair ? (overlay.get(pair.toLowerCase())?.usd ?? null) : null,
     category: categoryName(Number(row.category ?? 0)),
     pairDecimals: Number(row.pair_decimals ?? 18),
     pairStatus: Number(row.pair_status ?? 0),
@@ -271,8 +284,8 @@ export async function handleRequest(
       `${coinSelect} WHERE ${filters.join(" AND ")} ORDER BY ${order} LIMIT $${params.length}`,
       params,
     );
-    const usd = tokenUsd(extras.tokenListPath);
-    return { status: 200, json: { coins: res.rows.map((row) => coinJson(row, usd)) } };
+    const overlay = tokenOverlay(extras.tokenListPath);
+    return { status: 200, json: { coins: res.rows.map((row) => coinJson(row, overlay)) } };
   }
   if (path === "/pairs") {
     const filters = ["chain_id = $1"];
@@ -393,7 +406,7 @@ export async function handleRequest(
     const res = await db.query<CoinRow>(`${coinSelect} WHERE c.chain_id = $1 AND c.pool_id = $2`, [chainId, pool]);
     const row = res.rows[0];
     if (!row) return { status: 404, json: { error: "not found" } };
-    return { status: 200, json: coinJson(row, tokenUsd(extras.tokenListPath)) };
+    return { status: 200, json: coinJson(row, tokenOverlay(extras.tokenListPath)) };
   }
   if (tail === "/chart") {
     const bucket = bucketSeconds(query.get("bucket") ?? "5m");

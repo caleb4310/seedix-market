@@ -60,6 +60,7 @@ export class MemoryStore implements Store {
       symbol: row.symbol || prev?.symbol || "",
       pairSymbol: row.pairSymbol || prev?.pairSymbol || "",
       teamWallet: row.teamWallet ?? prev?.teamWallet ?? null,
+      launcher: row.launcher ?? prev?.launcher ?? null,
     });
   }
 
