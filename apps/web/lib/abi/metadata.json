@@ -9,6 +9,13 @@
     ],
     "outputs": []
   },
+  {
+    "type": "function",
+    "name": "cidOf",
+    "stateMutability": "view",
+    "inputs": [{ "name": "poolId", "type": "bytes32" }],
+    "outputs": [{ "name": "", "type": "string" }]
+  },
   { "type": "error", "name": "NotCreator", "inputs": [] },
   { "type": "error", "name": "BadCid", "inputs": [] }
 ]

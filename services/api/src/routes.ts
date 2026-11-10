@@ -100,7 +100,24 @@ function categoryName(value: number): (typeof CATEGORY)[number] {
   return CATEGORY[value] ?? "crypto";
 }
 
-function coinJson(row: CoinRow) {
+function tokenUsd(filePath?: string): Map<string, number> {
+  const map = new Map<string, number>();
+  const overlayPath = filePath ?? fileURLToPath(new URL("../token-list.json", import.meta.url));
+  try {
+    const parsed = JSON.parse(readFileSync(overlayPath, "utf8")) as { tokens?: Array<{ address?: string; usd?: number }> };
+    for (const token of parsed.tokens ?? []) {
+      if (typeof token.address === "string" && typeof token.usd === "number" && Number.isFinite(token.usd)) {
+        map.set(token.address.toLowerCase(), token.usd);
+      }
+    }
+  } catch {
+    return map;
+  }
+  return map;
+}
+
+function coinJson(row: CoinRow, usd: Map<string, number>) {
+  const pair = prefixed(row.pair);
   return {
     poolId: prefixed(row.pool_id),
     coin: prefixed(row.coin),
@@ -116,6 +133,7 @@ function coinJson(row: CoinRow) {
     price: row.price,
     holders: Number(row.holders),
     startMcap: row.start_mcap,
+    pairUsd: pair ? (usd.get(pair.toLowerCase()) ?? null) : null,
     category: categoryName(Number(row.category ?? 0)),
     pairDecimals: Number(row.pair_decimals ?? 18),
     pairStatus: Number(row.pair_status ?? 0),
@@ -180,7 +198,8 @@ export async function handleRequest(
       `${coinSelect} WHERE ${filters.join(" AND ")} ORDER BY ${order} LIMIT $${params.length}`,
       params,
     );
-    return { status: 200, json: { coins: res.rows.map(coinJson) } };
+    const usd = tokenUsd(extras.tokenListPath);
+    return { status: 200, json: { coins: res.rows.map((row) => coinJson(row, usd)) } };
   }
   if (path === "/pairs") {
     const filters = ["chain_id = $1"];
@@ -301,7 +320,7 @@ export async function handleRequest(
     const res = await db.query<CoinRow>(`${coinSelect} WHERE c.chain_id = $1 AND c.pool_id = $2`, [chainId, pool]);
     const row = res.rows[0];
     if (!row) return { status: 404, json: { error: "not found" } };
-    return { status: 200, json: coinJson(row) };
+    return { status: 200, json: coinJson(row, tokenUsd(extras.tokenListPath)) };
   }
   if (tail === "/chart") {
     const bucket = bucketSeconds(query.get("bucket") ?? "5m");

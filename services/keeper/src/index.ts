@@ -135,8 +135,10 @@ export async function main(): Promise<void> {
   const distributor = envAddress("KICKBACK_DISTRIBUTOR", deployment99801.kickbackDistributor);
   const pollMs = Number(process.env.KEEPER_POLL_MS ?? 60_000);
   const manifestDir = process.env.KICKBACK_MANIFEST_DIR ?? "";
-  const maxFeeCap = BigInt(process.env.KEEPER_MAX_FEE_GWEI ?? "100") * 1_000_000_000n;
-  const maxGas = BigInt(process.env.KEEPER_MAX_GAS ?? 12_000_000);
+  const maxFeeGwei = process.env.KEEPER_MAX_FEE_GWEI && process.env.KEEPER_MAX_FEE_GWEI.length > 0 ? process.env.KEEPER_MAX_FEE_GWEI : "100";
+  const maxGasRaw = process.env.KEEPER_MAX_GAS && process.env.KEEPER_MAX_GAS.length > 0 ? process.env.KEEPER_MAX_GAS : "12000000";
+  const maxFeeCap = BigInt(maxFeeGwei) * 1_000_000_000n;
+  const maxGas = BigInt(maxGasRaw);
   const publicClient = createPublicClient({ chain, transport: http(rpc) });
   const wallet = createWalletClient({ account, chain, transport: http(rpc) });
   console.log(`keeper ${account.address} on chain ${chain.id}`);

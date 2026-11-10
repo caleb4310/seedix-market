@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAccount, useReadContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract } from "wagmi";
 import { isAddress } from "viem";
 import { cleanSocials } from "@seedix/shared";
-import { launcherAbi, metadataAbi } from "@/lib/abi";
+import { erc20Abi, launcherAbi, metadataAbi } from "@/lib/abi";
 import { elysiumTestnet } from "@/lib/chain";
 import { modeLabel, type Mode } from "@/lib/coin";
 import { coinMetadataAddress, feeWallet, sameAddress } from "@/lib/deployment";
@@ -13,7 +13,7 @@ import { buildLaunchParams } from "@/lib/launch";
 import { launchedCoin, tokenDecimals } from "@/lib/onchain";
 import { parseTokenAmount } from "@/lib/amounts";
 import { DEAD } from "@/lib/protocol";
-import { loadPairs, type ListedPair, type PairCategory } from "@/lib/registry";
+import { loadPairs, pairTabLabel, withChainSymbols, type ListedPair, type PairCategory } from "@/lib/registry";
 import { launcherAddress } from "@/lib/trade";
 import { useContractTx } from "@/lib/useTx";
 import { LaunchPreview } from "@/components/LaunchPreview";
@@ -69,10 +69,18 @@ export function LaunchForm() {
   const fileRef = useRef<HTMLInputElement>(null);
   const tx = useContractTx();
   const { address, chainId } = useAccount();
+  const client = usePublicClient({ chainId: elysiumTestnet.id });
 
   useEffect(() => {
     let cancel = false;
     loadPairs()
+      .then((rows) =>
+        withChainSymbols(rows, async (token) => {
+          if (!client) return "";
+          const symbol = await client.readContract({ address: token, abi: erc20Abi, functionName: "symbol" });
+          return typeof symbol === "string" ? symbol : "";
+        }),
+      )
       .then((rows) => {
         if (!cancel) setPairs(rows);
       })
@@ -82,7 +90,7 @@ export function LaunchForm() {
     return () => {
       cancel = true;
     };
-  }, []);
+  }, [client]);
 
   const listed = pairs.filter((pair) => (source === "any" ? false : pair.category === source));
   const selected = listed.find((pair) => pair.address === pairId) ?? listed[0];
@@ -268,6 +276,9 @@ export function LaunchForm() {
       return;
     }
     setPoolId(launched.poolId);
+    // The image input is a local preview (`blob:`). It is not uploaded and it is not pinned.
+    // CoinMetadata accepts a CID of letters and digits only, which is what a raw CIDv0 or CIDv1
+    // looks like. This form never sends `ipfs://`. A description that is itself that CID is pinned.
     const cid = (socials.description ?? "").trim();
     if (coinMetadataAddress && CID.test(cid)) {
       await tx.send([
@@ -347,7 +358,7 @@ export function LaunchForm() {
                 size="sm"
                 value={selected?.address ?? ""}
                 onChange={setPairId}
-                options={listed.map((pair) => ({ id: pair.address, label: pair.symbol }))}
+                options={listed.map((pair) => ({ id: pair.address, label: pairTabLabel(pair) }))}
               />
             </div>
           )}

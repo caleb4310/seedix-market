@@ -29,6 +29,32 @@ function categoryOf(value: string | undefined): PairCategory {
   return "crypto";
 }
 
+/** A listed pair with no token-list symbol takes `symbol()` from the chain. */
+export async function withChainSymbols(
+  pairs: ListedPair[],
+  readSymbol: (address: `0x${string}`) => Promise<string>,
+): Promise<ListedPair[]> {
+  return Promise.all(
+    pairs.map(async (pair) => {
+      if (pair.symbol.trim()) return pair;
+      try {
+        const symbol = (await readSymbol(pair.address)).trim();
+        if (!symbol) return pair;
+        return { ...pair, symbol, name: pair.name.trim() || symbol };
+      } catch {
+        return pair;
+      }
+    }),
+  );
+}
+
+/** Tab text for a pair. A missing symbol still leaves a short address, never an empty label. */
+export function pairTabLabel(pair: Pick<ListedPair, "symbol" | "address">): string {
+  const symbol = pair.symbol.trim();
+  if (symbol) return symbol;
+  return `${pair.address.slice(0, 6)}…${pair.address.slice(-4)}`;
+}
+
 export async function loadPairs(): Promise<ListedPair[]> {
   const root = apiUrl || "";
   const [pairRes, listRes] = await Promise.all([

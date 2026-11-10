@@ -7,9 +7,13 @@ import { migrate } from "./migrate.ts";
 import { pollOnce, publicClient, type IndexerConfig } from "./poll.ts";
 import { PgStore } from "./store.ts";
 
-function envAddress(name: string, fallback: string): Hex {
+function envValue(name: string, fallback: string): string {
   const raw = process.env[name];
-  const value = raw && raw.length > 0 ? raw : fallback;
+  return raw && raw.length > 0 ? raw : fallback;
+}
+
+function envAddress(name: string, fallback: string): Hex {
+  const value = envValue(name, fallback);
   if (!isAddress(value)) throw new Error(`${name} is not an address`);
   return value;
 }
@@ -21,9 +25,9 @@ export const indexerConfig: IndexerConfig & { databaseUrl: string; pollMs: numbe
   rpcUrl: process.env.RPC_URL && process.env.RPC_URL.length > 0 ? process.env.RPC_URL : elysiumTestnet.rpcUrls[0],
   v4Core: pins.v4Core,
   databaseUrl: process.env.DATABASE_URL ?? "",
-  pollMs: Number(process.env.INDEXER_POLL_MS ?? 12_000),
-  confirmations: BigInt(process.env.INDEXER_CONFIRMATIONS ?? 12),
-  startBlock: BigInt(process.env.INDEXER_START_BLOCK ?? deployment.startBlock),
+  pollMs: Number(envValue("INDEXER_POLL_MS", "12000")),
+  confirmations: BigInt(envValue("INDEXER_CONFIRMATIONS", "12")),
+  startBlock: BigInt(envValue("INDEXER_START_BLOCK", String(deployment.startBlock))),
   launcher: envAddress("LAUNCHER_ADDRESS", deployment.launcher),
   hook: envAddress("HOOK_ADDRESS", deployment.hook),
   poolManager: envAddress("POOL_MANAGER_ADDRESS", deployment.poolManager),
@@ -32,7 +36,9 @@ export const indexerConfig: IndexerConfig & { databaseUrl: string; pollMs: numbe
   metadata:
     process.env.METADATA_ADDRESS && isAddress(process.env.METADATA_ADDRESS)
       ? (process.env.METADATA_ADDRESS as Hex)
-      : undefined,
+      : isAddress(deployment.metadata)
+        ? (deployment.metadata as Hex)
+        : undefined,
 };
 
 export async function main(): Promise<void> {

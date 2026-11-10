@@ -1,3 +1,4 @@
+import { marketCapFromRaw, marketCapUsd } from "./amounts";
 import type { Coin, Mode } from "./coin";
 
 export const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
@@ -22,6 +23,9 @@ export type ApiCoin = {
   website?: string | null;
   x?: string | null;
   telegram?: string | null;
+  startMcap?: string;
+  pairDecimals?: number;
+  pairUsd?: number | null;
 };
 
 export type Candle = { t: number; open: string; high: string; low: string; close: string; volume: string };
@@ -69,6 +73,7 @@ export function portfolioPath(account: string): string | null {
 export function coinFromApi(row: ApiCoin, hook?: `0x${string}`): Coin {
   const now = Math.floor(Date.now() / 1000);
   const price = row.price === null ? undefined : Number(row.price);
+  const mcap = row.startMcap ? marketCapFromRaw(row.startMcap, row.pairDecimals ?? 18) : undefined;
   return {
     id: row.poolId,
     name: row.name || "Coin",
@@ -86,6 +91,8 @@ export function coinFromApi(row: ApiCoin, hook?: `0x${string}`): Coin {
     telegram: row.telegram ?? null,
     recipient: row.feeRecipient as `0x${string}`,
     price: price !== undefined && Number.isFinite(price) ? price : undefined,
+    mcap,
+    mcapUsd: marketCapUsd(mcap, row.pairUsd),
     holders: row.holders,
     tokenAddress: row.coin as `0x${string}`,
     pairAddress: row.pair as `0x${string}`,

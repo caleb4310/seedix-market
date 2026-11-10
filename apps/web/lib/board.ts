@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
+import { marketCapFromRaw } from "./amounts";
 import { apiUrl, coinFromApi, getCoins } from "./api";
 import type { Coin, Mode } from "./coin";
-import { launcherLegacyAbi } from "./abi";
+import { decimalsAbi, launcherLegacyAbi } from "./abi";
 import { hookAddress, hookConfigAbi, indexerStartBlock, launcherAbi, launcherAddress, tokenMetaAbi } from "./trade";
 
 export type Board = {
@@ -68,6 +69,7 @@ export function useBoard(): Board {
             mode?: number | bigint;
             isPlatform?: boolean;
             feeRecipient?: `0x${string}`;
+            startMcap?: bigint | number;
           };
         }[];
         const coins: Coin[] = [];
@@ -77,11 +79,12 @@ export function useBoard(): Board {
           const token = args.coin;
           const pair = args.pair;
           if (!poolId || !token || !pair) continue;
-          const [config, name, symbol, pairSymbol] = await Promise.all([
+          const [config, name, symbol, pairSymbol, pairDecimals] = await Promise.all([
             client.readContract({ address: hookAddress, abi: hookConfigAbi, functionName: "config", args: [poolId] }),
             client.readContract({ address: token, abi: tokenMetaAbi, functionName: "name" }),
             client.readContract({ address: token, abi: tokenMetaAbi, functionName: "symbol" }),
             client.readContract({ address: pair, abi: tokenMetaAbi, functionName: "symbol" }),
+            client.readContract({ address: pair, abi: decimalsAbi, functionName: "decimals" }).catch(() => 18),
           ]);
           const configRow = config as readonly unknown[];
           const launchTime = Number(configRow[5]);
@@ -101,6 +104,7 @@ export function useBoard(): Board {
             launchTime,
             description: args.isPlatform ? "Platform token." : `${mode} mode, paired with ${pairName}.`,
             recipient: (args.feeRecipient ?? token) as `0x${string}`,
+            mcap: args.startMcap === undefined ? undefined : marketCapFromRaw(BigInt(args.startMcap), Number(pairDecimals)),
             coinIsToken0: Boolean(configRow[2]),
             tokenAddress: token,
             pairAddress: pair,
