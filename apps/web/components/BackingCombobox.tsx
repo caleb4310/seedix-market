@@ -44,44 +44,63 @@ export function BackingCombobox({
 
   if (pairs.length === 0) return <p className="note">{empty}</p>;
 
+  const label = selected ? `${selected.symbol} — ${selected.name}` : pairs[0]?.category === "preipo" ? "Pick a pre-IPO" : "Pick a stock";
   return (
     <div className="combo" ref={box}>
-      <input
-        className="combo-input"
-        role="combobox"
+      <button
+        type="button"
+        className="combo-button"
         aria-expanded={open}
         aria-controls={listId}
-        aria-autocomplete="list"
         aria-label="Backing token"
-        placeholder={selected ? `${selected.symbol} — ${selected.name}` : "Search a backing token"}
-        value={open ? query : selected ? `${selected.symbol} — ${selected.name}` : ""}
-        onFocus={() => {
-          setOpen(true);
+        onClick={() => {
+          setOpen((value) => !value);
           setQuery("");
           setActive(0);
         }}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          setOpen(true);
-          setActive(0);
-        }}
         onKeyDown={(event) => {
-          if (event.key === "ArrowDown") {
+          if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             setOpen(true);
-            setActive((index) => Math.min(shown.length - 1, index + 1));
-          } else if (event.key === "ArrowUp") {
-            event.preventDefault();
-            setActive((index) => Math.max(0, index - 1));
-          } else if (event.key === "Enter" && open && shown[active]) {
-            event.preventDefault();
-            choose(shown[active]);
           } else if (event.key === "Escape") {
             setOpen(false);
           }
         }}
-      />
+      >
+        <span>{label}</span>
+        <span className="caret" aria-hidden="true" />
+      </button>
       {open ? (
+        <div className="combo-pop">
+          <input
+            className="combo-input"
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-label="Search backing tokens"
+            placeholder="Search symbol or name"
+            value={query}
+            autoFocus
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setActive(0);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setActive((index) => Math.min(shown.length - 1, index + 1));
+              } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setActive((index) => Math.max(0, index - 1));
+              } else if (event.key === "Enter" && shown[active]) {
+                event.preventDefault();
+                choose(shown[active]);
+              } else if (event.key === "Escape") {
+                setOpen(false);
+              }
+            }}
+          />
         <ul className="combo-list" id={listId} role="listbox">
           {shown.length === 0 ? <li className="combo-empty">No matching token</li> : null}
           {shown.map((pair, index) => (
@@ -106,6 +125,7 @@ export function BackingCombobox({
             </li>
           ))}
         </ul>
+        </div>
       ) : null}
     </div>
   );

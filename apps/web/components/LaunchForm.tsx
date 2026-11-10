@@ -390,11 +390,15 @@ export function LaunchForm() {
           </Field>
           <div className="pair-row">
             <Field label={`Ticker · ${tickerBytes}/8 bytes`}>
-              <input
-                value={ticker}
-                onChange={(e) => setTicker(e.target.value.toUpperCase().slice(0, 8))}
-                placeholder="NSTR"
-              />
+              <span className="ticker-field">
+                <span className="ticker-prefix" aria-hidden="true">$</span>
+                <input
+                  value={ticker}
+                  onChange={(e) => setTicker(e.target.value.toUpperCase().replace(/^\$/, "").slice(0, 8))}
+                  placeholder="NSTR"
+                  aria-label="Ticker"
+                />
+              </span>
             </Field>
             <div>
               <span className="lbl">Paired with</span>
@@ -478,9 +482,8 @@ export function LaunchForm() {
               ) : null}
             </div>
           )}
-        </section>
-        <div>
-          <span className="lbl">Trading fees</span>
+          <div>
+            <span className="lbl">Trading fees</span>
           <div className="fee-grid" role="radiogroup" aria-label="Fee mode">
             {modes.map((item) => {
               const blocked = item.id === "kickback" && !vetted && (Boolean(selected) || unverified);
@@ -505,6 +508,7 @@ export function LaunchForm() {
             })}
           </div>
         </div>
+        </section>
         <section className="poster">
           <span className="lbl">The poster</span>
           <input

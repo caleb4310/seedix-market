@@ -24,4 +24,6 @@ test("compact dollars stay short", () => {
   assert.equal(formatUsdCompact(185_000), "$185K");
   assert.equal(formatUsdCompact(1_500_000), "$1.5M");
   assert.equal(formatUsdCompact(12), "$12.00");
+  assert.equal(formatUsdCompact(0.00004), "<$0.0001");
+  assert.equal(formatUsdCompact(0.034), "$0.034");
 });

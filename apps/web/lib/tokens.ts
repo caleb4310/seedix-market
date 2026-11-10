@@ -51,6 +51,8 @@ export const light = {
   badgeBurnInk: "#fff7f2",
   toastBg: "#161513",
   toastInk: "#f3f1ec",
+  pillOn: "#e4e0d6",
+  pillOnInk: "#161513",
 } as const;
 
 export const dark = {
@@ -79,6 +81,8 @@ export const dark = {
   badgeBurnInk: "#fff7f2",
   toastBg: "#f3f1ec",
   toastInk: "#161513",
+  pillOn: "#3a362f",
+  pillOnInk: "#f3f1ec",
 } as const;
 
 function vars(theme: { [K in keyof typeof light]: string }): string {
@@ -108,6 +112,8 @@ function vars(theme: { [K in keyof typeof light]: string }): string {
     `--badge-burn-ink: ${theme.badgeBurnInk}`,
     `--toast-bg: ${theme.toastBg}`,
     `--toast-ink: ${theme.toastInk}`,
+    `--pill-on: ${theme.pillOn}`,
+    `--pill-on-ink: ${theme.pillOnInk}`,
   ].join(";");
 }
 

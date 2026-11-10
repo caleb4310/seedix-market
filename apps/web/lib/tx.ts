@@ -120,37 +120,54 @@ function revertName(err: unknown): string | undefined {
   for (const item of causes(err)) {
     if (item instanceof ContractFunctionRevertedError) {
       const name = item.data?.errorName;
-      if (name && name !== "Error" && name !== "Panic") return name;
-      if (typeof item.reason === "string" && item.reason.length > 0 && revertCopy[item.reason]) return item.reason;
+      if (name && name !== "Error" && name !== "Panic" && revertCopy[name]) return name;
+      if (typeof item.reason === "string" && revertCopy[item.reason]) return item.reason;
     }
     const data = (item as { data?: { errorName?: string } }).data;
-    if (data?.errorName && data.errorName !== "Error" && data.errorName !== "Panic") return data.errorName;
-  }
-  const text = errorText(err);
-  for (const name of Object.keys(revertCopy)) {
-    if (text.includes(name)) return name;
+    if (data?.errorName && revertCopy[data.errorName]) return data.errorName;
   }
   return undefined;
+}
+
+/** First 4 bytes of revert data. Matched exactly, never as a substring of the ABI dump. */
+function revertSelector(err: unknown): string | undefined {
+  for (const item of causes(err)) {
+    const data = (item as { data?: unknown }).data;
+    if (typeof data === "string" && /^0x[0-9a-fA-F]{8}/.test(data)) return data.slice(0, 10).toLowerCase();
+  }
+  return undefined;
+}
+
+function briefText(err: unknown): string {
+  const first = causes(err)[0] as { shortMessage?: string; message?: string } | undefined;
+  return [first?.shortMessage, first?.message].filter(Boolean).join("\n");
 }
 
 export function explainTxError(err: unknown): string {
   if (isUserRejection(err)) return "You rejected the request in your wallet. Nothing was sent.";
   const decoded = messageForRevert(revertName(err));
   if (decoded) return decoded;
-  const text = errorText(err);
-  if (/chain mismatch|wrong network|wrong chain|not configured for chain|does not match the target chain/i.test(text)) {
+  const selector = revertSelector(err);
+  if (selector === "0x4b3eeb24") return revertCopy.PriceLimit;
+  if (selector === "0x7c9c6e8f" || selector === "0x9e4d7cc7") {
+    return "The swap price bound does not match this pool. Refresh the page and try again.";
+  }
+  if (selector === "0x7a5ed734") return "This pool does not have enough liquidity for that size.";
+  const brief = briefText(err);
+  if (/chain mismatch|wrong network|wrong chain|not configured for chain|does not match the target chain/i.test(brief)) {
     return `The wallet is on the wrong network. Switch to Elysium testnet (${elysiumTestnet.id}).`;
   }
-  if (/insufficient funds for gas|intrinsic gas too low|gas required exceeds|out of gas|max fee per gas less than block base fee/i.test(text)) {
-    return "The wallet does not have enough HYPE to pay for gas.";
+  if (/insufficient funds for gas \* price \+ value|exceeds the balance of the account/i.test(brief)) {
+    return "The wallet does not have enough HYPE to cover this transaction and its gas.";
   }
-  if (/exceeds balance|insufficient balance|transfer amount exceeds balance|ERC20: transfer amount exceeds balance/i.test(text)) {
+  if (/insufficient allowance/i.test(brief)) return "The router is not approved for this amount.";
+  if (/transfer amount exceeds balance|insufficient balance/i.test(brief)) {
     return "The wallet does not have enough of this token.";
   }
-  if (/HttpRequestError|TimeoutError|RpcRequestError|failed to fetch|network request failed|Invalid parameters were provided to the RPC/i.test(text)) {
+  if (/HttpRequestError|TimeoutError|RpcRequestError|failed to fetch|network request failed|Invalid parameters were provided to the RPC/i.test(brief)) {
     return "The network request failed. Check the RPC and try again.";
   }
-  const line = text.split("\n").find((item) => item.trim().length > 0) ?? "The transaction failed.";
+  const line = brief.split("\n").find((item) => item.trim().length > 0) ?? "The transaction failed.";
   return line.length > 220 ? `${line.slice(0, 220)}…` : line;
 }
 
