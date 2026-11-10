@@ -170,4 +170,11 @@ test("error mapping decodes custom errors and wallet failures", async () => {
   assert.equal(calls, 3);
   assert.match(explainTxError(new Error("ERC20: transfer amount exceeds balance")), /enough of this token/);
   assert.match(explainTxError(new Error("chain mismatch")), /wrong network/);
+  const blank = new Error('The contract function "swap" reverted with the following reason:\n');
+  assert.match(explainTxError(blank), /did not go through/);
+  assert.equal(isRetryableTxError(blank), true);
+  const named = new Error('The contract function "swap" reverted with the following reason:\nTooLittleReceived');
+  assert.match(explainTxError(named), /quoted minimum/);
+  assert.equal(isRetryableTxError(named), false);
+  assert.match(explainTxError({ data: { errorName: "NotEnoughLiquidity" }, shortMessage: "reverted" }), /enough liquidity/);
 });
