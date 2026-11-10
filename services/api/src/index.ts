@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import pg from "pg";
 import { elysiumTestnet } from "@seedix/shared";
+import { readLogo, saveLogo } from "./logos.ts";
 import { handleRequest } from "./routes.ts";
 
 export const apiConfig = {
@@ -18,9 +19,47 @@ export async function main(): Promise<void> {
   const pool = new pg.Pool({ connectionString: apiConfig.databaseUrl });
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    const pathname = url.pathname.replace(/^\/api(?=\/|$)/, "") || "/";
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    if (req.method === "GET" && pathname.startsWith("/logos/")) {
+      const file = pathname.slice("/logos/".length);
+      readLogo(file)
+        .then((logo) => {
+          if (!logo) {
+            res.writeHead(404, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ error: "not found" }));
+            return;
+          }
+          res.writeHead(200, { "content-type": logo.type, "cache-control": "public, max-age=86400" });
+          res.end(logo.bytes);
+        })
+        .catch(() => {
+          res.writeHead(500, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ error: "unavailable" }));
+        });
+      return;
+    }
     req.on("end", () => {
+      if (req.method === "POST" && pathname === "/logos") {
+        const body = Buffer.concat(chunks);
+        saveLogo(body)
+          .then((saved) => {
+            if (!saved) {
+              res.writeHead(415, { "content-type": "application/json; charset=utf-8" });
+              res.end(JSON.stringify({ error: "png, jpeg, or webp under 512kb" }));
+              return;
+            }
+            const payload = JSON.stringify({ url: `/logos/${saved.file}` });
+            res.writeHead(201, { "content-type": "application/json; charset=utf-8" });
+            res.end(payload);
+          })
+          .catch(() => {
+            res.writeHead(500, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ error: "unavailable" }));
+          });
+        return;
+      }
       let parsed: unknown;
       if (chunks.length > 0) {
         try {

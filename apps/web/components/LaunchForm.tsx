@@ -7,6 +7,7 @@ import { useAccount, usePublicClient, useReadContract } from "wagmi";
 import { isAddress } from "viem";
 import { cleanSocials } from "@seedix/shared";
 import { erc20Abi, launcherAbi, metadataAbi } from "@/lib/abi";
+import { apiUrl } from "@/lib/api";
 import { elysiumTestnet } from "@/lib/chain";
 import { modeLabel, type Mode } from "@/lib/coin";
 import { coinMetadataAddress, feeWallet, sameAddress } from "@/lib/deployment";
@@ -324,7 +325,19 @@ export function LaunchForm() {
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (!file) return;
-              setImage(URL.createObjectURL(file));
+              if (!apiUrl) {
+                setImage(URL.createObjectURL(file));
+                return;
+              }
+              void file.arrayBuffer().then(async (buf) => {
+                const response = await fetch(`${apiUrl}/logos`, { method: "POST", body: buf });
+                if (!response.ok) {
+                  setNote("Use a PNG, JPEG, or WEBP under 512kb.");
+                  return;
+                }
+                const body = (await response.json()) as { url?: string };
+                if (body.url) setImage(`${apiUrl}${body.url}`);
+              });
             }}
           />
           <button className="file-btn" type="button" onClick={() => fileRef.current?.click()}>
