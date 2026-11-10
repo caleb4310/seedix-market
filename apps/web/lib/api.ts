@@ -25,6 +25,9 @@ export type ApiCoin = {
   telegram?: string | null;
   startMcap?: string;
   marketCap?: string | null;
+  volume24h?: string;
+  image?: string | null;
+  backing?: string | null;
   pairDecimals?: number;
   coinIsToken0?: boolean;
   pairUsd?: number | null;
@@ -102,6 +105,9 @@ export function coinFromApi(row: ApiCoin, hook?: `0x${string}`): Coin {
     pairUsd: row.pairUsd ?? null,
     mcapUsd: marketCapUsd(mcap, row.pairUsd),
     coinIsToken0: row.coinIsToken0,
+    image: row.image ?? null,
+    backing: row.backing ?? null,
+    volume: row.volume24h ? Number(row.volume24h) : 0,
     holders: row.holders,
     tokenAddress: row.coin as `0x${string}`,
     pairAddress: row.pair as `0x${string}`,

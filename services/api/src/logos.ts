@@ -3,6 +3,18 @@ import path from "node:path";
 
 const MAX_BYTES = 512 * 1024;
 
+const links = new Map<string, string>();
+
+export function attachLogo(poolId: string, url: string): void {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(poolId)) return;
+  if (!url.startsWith("/logos/")) return;
+  links.set(poolId.toLowerCase(), url);
+}
+
+export function logoFor(poolId: string): string | null {
+  return links.get(poolId.toLowerCase()) ?? null;
+}
+
 export function logoDir(): string {
   return process.env.LOGOS_DIR && process.env.LOGOS_DIR.length > 0 ? process.env.LOGOS_DIR : "/tmp/seedix-logos";
 }

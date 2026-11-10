@@ -12,6 +12,7 @@ import { elysiumTestnet } from "@/lib/chain";
 import { modeLabel, type Mode } from "@/lib/coin";
 import { coinMetadataAddress, feeWallet, sameAddress } from "@/lib/deployment";
 import { buildLaunchParams } from "@/lib/launch";
+import { launchSuccess } from "@/lib/launchSuccess";
 import { launchedCoin, tokenDecimals } from "@/lib/onchain";
 import { parseTokenAmount } from "@/lib/amounts";
 import { DEAD } from "@/lib/protocol";
@@ -206,6 +207,23 @@ export function LaunchForm() {
     if (!busy && tx.state.status !== "confirmed") setHolding(0);
   }
 
+  function resetLaunch() {
+    setName("");
+    setTicker("");
+    setPasted("");
+    setAck(false);
+    setMode("keep");
+    setTeam(0);
+    setMcap(20000);
+    setDescription("");
+    setWebsite("");
+    setXHandle("");
+    setTelegram("");
+    setImage(null);
+    setHolding(0);
+    setNote("");
+  }
+
   async function launch() {
     if (sending.current) return;
     sending.current = true;
@@ -274,7 +292,21 @@ export function LaunchForm() {
       return;
     }
     setPoolId(launched.poolId);
-    window.setTimeout(() => router.push(`/coin/${launched.poolId}`), 900);
+    const success = launchSuccess(launched.poolId);
+    if (apiUrl && image?.startsWith(`${apiUrl}/logos/`)) {
+      const url = image.slice(apiUrl.length);
+      void fetch(`${apiUrl}/logos/attach`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ poolId: launched.poolId, url }),
+      });
+    }
+    if (success) {
+      window.setTimeout(() => {
+        resetLaunch();
+        router.push(success.href);
+      }, 900);
+    }
     // The image input is a local preview (`blob:`). It is not uploaded and it is not pinned.
     // CoinMetadata accepts a CID of letters and digits only, which is what a raw CIDv0 or CIDv1
     // looks like. This form never sends `ipfs://`. A description that is itself that CID is pinned.
@@ -474,13 +506,15 @@ export function LaunchForm() {
         <p id="hold-help" className="note">Hold the button, or hold Enter or Space, until it fills. That sends the launch.</p>
         {chainId !== undefined && address && chainId !== elysiumTestnet.id ? <WalletButton /> : null}
         <TxStatus state={status} />
-        {poolId ? (
-          <p className="stack-top">
-            Your coin is live against HYPE.
-            <Link className="text-link" href={`/coin/${poolId}`}>
+        {launchSuccess(poolId) ? (
+          <div className="launch-success" role="dialog" aria-label="Coin launched">
+            <p className="kicker">Launched</p>
+            <h2>Your coin is live</h2>
+            <p className="lede">It trades against HYPE. Opening the coin page.</p>
+            <Link className="btn" href={launchSuccess(poolId)!.href}>
               Open the new coin
             </Link>
-          </p>
+          </div>
         ) : null}
       </form>
       <aside className="preview-side">{preview}</aside>

@@ -10,19 +10,21 @@ function tiny(value: number): { kind: "plain" | "sub"; text: string; zeros?: num
   return { kind: "sub", text: digits, zeros: match[1].length };
 }
 
-/** Pair-token price. A dollar sign is used only when the pair has a USD quote. */
+/** USD first when the feed is up. The HYPE amount is the secondary figure, or the only figure when the quote is missing. */
 export function Price({ value, symbol, usd }: { value: number; symbol: string; usd?: number | null }) {
   const label = priceLabel(symbol, usd);
   const quoted = label.dollar && usd != null ? value * usd : null;
   const shown = tiny(quoted ?? value);
   const unit = label.dollar ? "$" : "";
-  const suffix = label.suffix;
+  const suffix = label.dollar ? "" : label.suffix;
+  const secondary = label.dollar ? ` · ${value.toPrecision(4)} ${symbol.trim()}` : "";
   if (shown.kind === "sub") {
     return (
       <>
         {unit}0.0<sub>{shown.zeros}</sub>
         {shown.text}
         {suffix}
+        {secondary ? <span className="ghost">{secondary}</span> : null}
       </>
     );
   }
@@ -31,6 +33,7 @@ export function Price({ value, symbol, usd }: { value: number; symbol: string; u
       {unit}
       {shown.text}
       {suffix}
+      {secondary ? <span className="ghost">{secondary}</span> : null}
     </>
   );
 }

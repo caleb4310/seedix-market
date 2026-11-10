@@ -1,6 +1,11 @@
-/** A dollar prefix only when the pair has a real USD quote. Otherwise the pair symbol. */
+/**
+ * USD is the primary figure when the CoinGecko quote exists.
+ * The HYPE amount stays as the secondary suffix. With no quote, the figure is HYPE and there is no dollar sign.
+ */
 export function priceLabel(symbol: string, usd?: number | null): { dollar: boolean; suffix: string } {
-  if (usd != null && Number.isFinite(usd) && usd > 0) return { dollar: true, suffix: "" };
   const name = symbol.trim();
+  if (usd != null && Number.isFinite(usd) && usd > 0) {
+    return { dollar: true, suffix: name ? ` · ${name}` : "" };
+  }
   return { dollar: false, suffix: name ? ` ${name}` : "" };
 }

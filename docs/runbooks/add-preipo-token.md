@@ -1,6 +1,6 @@
 # Add a pre-IPO pair
 
-No contract change, no rebuild, and no redeploy. The token shows up when the timelock lists it and a route pool exists. The web reads the registry from the API at runtime.
+No contract change, no rebuild, and no redeploy. The token shows up when the timelock lists it and a WHYPE route exists. The token is a backing asset. Launch pools stay coin/WHYPE. The web reads the backing registry from the API at runtime.
 
 Do this on a fork or a local Anvil first. Mainnet (chain 99901) stays empty until every check below is true.
 

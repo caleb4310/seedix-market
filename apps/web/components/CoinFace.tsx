@@ -117,14 +117,15 @@ export function SocialLinks({
 export function MarketCap({ amount, symbol, usd }: { amount?: number; symbol: string; usd?: number | null }) {
   if (amount === undefined || !Number.isFinite(amount)) return <span className="ghost">Market cap</span>;
   const unit = symbol.trim();
-  const usdText = usd !== null && usd !== undefined && Number.isFinite(usd) ? ` · $${usd.toLocaleString("en-US")}` : "";
-  return (
-    <span className="num">
-      {amount.toLocaleString("en-US")}
-      {unit ? ` ${unit}` : ""}
-      {usdText}
-    </span>
-  );
+  const hype = `${amount.toLocaleString("en-US")}${unit ? ` ${unit}` : ""}`;
+  if (usd != null && Number.isFinite(usd)) {
+    return (
+      <span className="num">
+        ${usd.toLocaleString("en-US", { maximumFractionDigits: 0 })} <span className="ghost">{hype}</span>
+      </span>
+    );
+  }
+  return <span className="num">{hype}</span>;
 }
 
 export function CoinLine({ face }: { face: CoinFace }) {

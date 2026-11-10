@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { elysiumTestnet, cleanSocials, LAUNCH_SUPPLY, marketCapFromSpot } from "@seedix/shared";
+import { attachLogo, logoFor } from "./logos.ts";
 import { claimsForPool } from "./claims.ts";
 import { bucketSeconds, candles, type ChartPoint } from "./chart.ts";
 
@@ -91,6 +92,7 @@ type CoinRow = {
   coin_is_token0?: boolean;
   supply?: string;
   backing?: string | null;
+  volume_24h?: string;
   pair_status?: number | string;
   description?: string | null;
   website?: string | null;
@@ -148,6 +150,8 @@ function coinJson(row: CoinRow, usd: Map<string, number>) {
     marketCap: liveMarketCap(row),
     coinIsToken0: Boolean(row.coin_is_token0),
     backing: prefixed(row.backing),
+    volume24h: row.volume_24h ?? "0",
+    image: logoFor(prefixed(row.pool_id) ?? ""),
     pairUsd: pair ? (usd.get(pair.toLowerCase()) ?? null) : null,
     category: categoryName(Number(row.category ?? 0)),
     pairDecimals: Number(row.pair_decimals ?? 18),
@@ -165,6 +169,7 @@ const coinSelect = `SELECT encode(c.pool_id, 'hex') AS pool_id, encode(c.coin, '
   encode(c.team_wallet, 'hex') AS team_wallet, encode(c.backing, 'hex') AS backing, extract(epoch from c.launch_time) AS launch_time, c.start_mcap::text AS start_mcap,
   (SELECT s.price::text FROM swaps s WHERE s.pool_id = c.pool_id ORDER BY s.block_time DESC, s.log_index DESC LIMIT 1) AS price,
   (SELECT COALESCE(SUM(h.balance), 0)::text FROM holders h WHERE h.pool_id = c.pool_id) AS supply,
+  (SELECT COALESCE(SUM(s.amount_in), 0)::text FROM swaps s WHERE s.pool_id = c.pool_id AND s.block_time > now() - interval '1 day') AS volume_24h,
   (SELECT count(*) FROM holders h WHERE h.pool_id = c.pool_id AND h.balance > 0) AS holders
   FROM coins c`;
 
@@ -203,6 +208,13 @@ export async function handleRequest(
   extras: RequestExtras = {},
 ): Promise<{ status: number; json: unknown }> {
   const path = pathname.replace(/^\/api(?=\/|$)/, "") || "/";
+  if (method === "POST" && path === "/logos/attach") {
+    const record = extras.body && typeof extras.body === "object" ? (extras.body as Record<string, unknown>) : {};
+    const poolId = typeof record.poolId === "string" ? record.poolId : "";
+    const url = typeof record.url === "string" ? record.url : "";
+    attachLogo(poolId, url);
+    return { status: 200, json: { ok: true } };
+  }
   if (method === "POST" && path === "/metadata") {
     const record = extras.body && typeof extras.body === "object" ? (extras.body as Record<string, unknown>) : {};
     return { status: 200, json: cleanSocials(record) };
