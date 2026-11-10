@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatTokenAmount, maximumFromQuote, minimumFromQuote, parseTokenAmount } from "./amounts.ts";
+import { formatTokenAmount, marketCapFromRaw, marketCapUsd, maximumFromQuote, minimumFromQuote, parseTokenAmount } from "./amounts.ts";
 
 test("18 decimal amounts stay exact", () => {
   const parsed = parseTokenAmount("1.5", 18);
@@ -18,6 +18,15 @@ test("6 decimal amounts are not scaled to 18", () => {
 test("a leading dot is half a token", () => {
   assert.equal(parseTokenAmount(".5", 18), 500_000_000_000_000_000n);
   assert.equal(parseTokenAmount(".5", 6), 500_000n);
+});
+
+test("a starting cap is pair units, with a USD estimate only when the pair has one", () => {
+  const whype = marketCapFromRaw(20_000n * 10n ** 18n, 18);
+  assert.equal(whype, 20_000);
+  assert.equal(marketCapUsd(whype, 2), 40_000);
+  assert.equal(marketCapUsd(whype, null), null);
+  assert.equal(marketCapFromRaw(1_000n * 10n ** 6n, 6), 1_000);
+  assert.equal(marketCapFromRaw("nope", 18), undefined);
 });
 
 test("minimum received and maximum spent use the typed slippage", () => {

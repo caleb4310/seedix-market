@@ -27,3 +27,24 @@ Compose reads `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` from that env file and pass
 `NEXT_PUBLIC_API_URL` is passed the same way. The default is `/api`, which nginx proxies to the API container.
 
 Changing the project id, or the API URL, means running `build web` again and recreating the web container. `docker compose up -d` without a rebuild keeps the old bundle.
+
+## Indexer and keeper
+
+Pass the same env file on every Compose command. The indexer and keeper services interpolate these names from it, so a separate override file is not required. An empty value leaves the process on the address compiled into `deployments/99801.json`.
+
+```
+LAUNCHER_ADDRESS=
+HOOK_ADDRESS=
+POOL_MANAGER_ADDRESS=
+BUYBACK_EXECUTOR=
+KICKBACK_DISTRIBUTOR=
+METADATA_ADDRESS=
+INDEXER_START_BLOCK=
+INDEXER_POLL_MS=12000
+INDEXER_CONFIRMATIONS=12
+RPC_URL=https://testnet-rpc.elysium.kinetiq.xyz
+```
+
+`METADATA_ADDRESS` is CoinMetadata. The indexer reads it from the env file when set, and otherwise from `contracts.coinMetadata` in `deployments/99801.json`.
+
+Recreate the containers after an address change. The indexer and keeper are not baked into an image, so `docker compose --env-file /etc/seedix/app.env -f infra/docker-compose.yml up -d` is enough. The web image still needs `build web` when a `NEXT_PUBLIC_*` value changes, including `NEXT_PUBLIC_LAUNCHER`, `NEXT_PUBLIC_HOOK`, `NEXT_PUBLIC_ROUTER`, `NEXT_PUBLIC_QUOTER`, and `NEXT_PUBLIC_STATE_VIEW`. Those five are compiled into the source deployment and are not Compose build args. A new broadcast that changes them means updating the source and rebuilding the web image.

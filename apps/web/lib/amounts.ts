@@ -14,6 +14,22 @@ export function parseTokenAmount(value: string, decimals: number): bigint {
   return wholePart * 10n ** BigInt(decimals) + BigInt(digits || "0");
 }
 
+/** Human pair-token units for a raw `startMcap`. Undefined when the raw value is not an integer. */
+export function marketCapFromRaw(raw: bigint | string, decimals: number): number | undefined {
+  if (typeof raw === "string" && !/^\d+$/.test(raw)) return undefined;
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) return undefined;
+  const value = typeof raw === "bigint" ? raw : BigInt(raw);
+  const text = formatTokenAmount(value, decimals, 4);
+  const amount = Number(text);
+  return Number.isFinite(amount) ? amount : undefined;
+}
+
+/** Pair units times a token-list USD price. Null when either side is missing. */
+export function marketCapUsd(amount: number | undefined, pairUsd: number | null | undefined): number | null {
+  if (amount === undefined || pairUsd == null || !Number.isFinite(pairUsd)) return null;
+  return amount * pairUsd;
+}
+
 export function formatTokenAmount(amount: bigint, decimals: number, maxFrac = 6): string {
   const negative = amount < 0n;
   const value = negative ? -amount : amount;

@@ -74,6 +74,28 @@ describe("api", () => {
     assert.equal(db.calls.length, 0);
   });
 
+  it("returns the raw start cap and a token-list USD price", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "seedix-list-"));
+    const pair = `0x${"33".repeat(20)}`;
+    await writeFile(
+      path.join(dir, "token-list.json"),
+      JSON.stringify({ tokens: [{ address: pair, symbol: "WHYPE", usd: 1.5 }] }),
+    );
+    try {
+      const db = new FakeDb();
+      const res = await handleRequest(db, "GET", `/coins/0x${pool}`, new URLSearchParams(), {
+        tokenListPath: path.join(dir, "token-list.json"),
+      });
+      assert.equal(res.status, 200);
+      const body = res.json as { startMcap: string; pairUsd: number; pairDecimals: number };
+      assert.equal(body.startMcap, "10");
+      assert.equal(body.pairUsd, 1.5);
+      assert.equal(body.pairDecimals, 18);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("returns a coin and a chart from bound queries", async () => {
     const db = new FakeDb();
     const one = await handleRequest(db, "GET", `/coins/0x${pool}`, new URLSearchParams());

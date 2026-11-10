@@ -1,3 +1,58 @@
 {
-  "tokens": []
+  "tokens": [
+    {
+      "address": "0xCD57F65c2B0e5881CFC2E609F7CD53b746E1F234",
+      "symbol": "WHYPE",
+      "name": "Wrapped HYPE",
+      "category": "crypto"
+    },
+    {
+      "address": "0x7D29d8047B905000459c0E80c34a26CeedcB47b2",
+      "symbol": "USDC",
+      "name": "USD Coin",
+      "category": "crypto"
+    },
+    {
+      "address": "0x314CBAf340A02188B06A08b3458499c6d0d24189",
+      "symbol": "wNVDAx",
+      "name": "TEST Wrapped NVIDIA xStock",
+      "category": "stock"
+    },
+    {
+      "address": "0x65E1445D212eC4990Fb21AFDbc3A6a43C1F31382",
+      "symbol": "wSPYx",
+      "name": "TEST Wrapped S&P 500 xStock",
+      "category": "stock"
+    },
+    {
+      "address": "0x64BA6D058B301CBb54B7De170CFeD3fcbAe60f50",
+      "symbol": "wQQQx",
+      "name": "TEST Wrapped Nasdaq-100 xStock",
+      "category": "stock"
+    },
+    {
+      "address": "0x40F2350Bfd5886b97ee1ffbFfd026b0c9FFDd95e",
+      "symbol": "wMUx",
+      "name": "TEST Wrapped Micron xStock",
+      "category": "stock"
+    },
+    {
+      "address": "0x3CC24d1B074B21303B54b05403d457b37D677eDb",
+      "symbol": "wSKHYx",
+      "name": "TEST Wrapped SK hynix xStock",
+      "category": "stock"
+    },
+    {
+      "address": "0x56BBa52292e67a761D2423079aC35051e583d7F6",
+      "symbol": "wSPACEx",
+      "name": "TEST Wrapped SpaceX",
+      "category": "preipo"
+    },
+    {
+      "address": "0x9fB75eD6C4aA5a1B72459E0C50584cC1230ed06B",
+      "symbol": "wOPENAIx",
+      "name": "TEST Wrapped OpenAI",
+      "category": "preipo"
+    }
+  ]
 }
