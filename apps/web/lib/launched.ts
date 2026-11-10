@@ -164,8 +164,10 @@ export async function readLaunchedCoin(client: PublicClient, id: string): Promis
         .then((logs) => logs[0])
         .catch(() => undefined)
     : undefined;
-  const args = (start as { args?: { startMcap?: bigint; category?: number } } | undefined)?.args;
+  const args = (start as { args?: { startMcap?: bigint; category?: number; backing?: Address } } | undefined)?.args;
   const category = categoryOf(Number(args?.category ?? 0));
+  const backing = args?.backing && !zero.test(args.backing) ? args.backing : null;
+  const backingSymbol = backing ? (await readString(client, backing, "symbol")) || null : null;
   void metadataCid;
 
   const built = coinFromLaunch(id, {
@@ -187,5 +189,6 @@ export async function readLaunchedCoin(client: PublicClient, id: string): Promis
     poolLive: sqrtPriceX96 !== null,
     category,
   });
-  return built;
+  if (!built) return null;
+  return { ...built, backing, backingSymbol: backingSymbol && !/^whype$/i.test(backingSymbol) ? backingSymbol : null, category };
 }

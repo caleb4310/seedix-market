@@ -182,7 +182,7 @@ const coinSelect = `SELECT encode(c.pool_id, 'hex') AS pool_id, encode(c.coin, '
   encode(c.team_wallet, 'hex') AS team_wallet, encode(c.backing, 'hex') AS backing, extract(epoch from c.launch_time) AS launch_time, c.start_mcap::text AS start_mcap,
   (SELECT s.price::text FROM swaps s WHERE s.pool_id = c.pool_id ORDER BY s.block_time DESC, s.log_index DESC LIMIT 1) AS price,
   (SELECT COALESCE(SUM(h.balance), 0)::text FROM holders h WHERE h.pool_id = c.pool_id) AS supply,
-  (SELECT COALESCE(SUM(s.amount_in), 0)::text FROM swaps s WHERE s.pool_id = c.pool_id AND s.block_time > now() - interval '1 day') AS volume_24h,
+  (SELECT COALESCE(SUM(s.amount_in), 0)::text FROM swaps s WHERE s.pool_id = c.pool_id AND s.block_time > now() - interval '1 day' AND ((c.coin_is_token0 AND NOT s.zero_for_one) OR (NOT c.coin_is_token0 AND s.zero_for_one))) AS volume_24h,
   (SELECT count(*) FROM holders h WHERE h.pool_id = c.pool_id AND h.balance > 0) AS holders
   FROM coins c`;
 
@@ -250,7 +250,7 @@ export async function handleRequest(
       [chainId],
     );
     const volume = await db.query<{ n: string }>(
-      `SELECT COALESCE(SUM(amount_in), 0)::text AS n FROM swaps WHERE chain_id = $1 AND block_time > now() - interval '1 day'`,
+      `SELECT COALESCE(SUM(s.amount_in), 0)::text AS n FROM swaps s JOIN coins c ON c.pool_id = s.pool_id WHERE s.chain_id = $1 AND s.block_time > now() - interval '1 day' AND ((c.coin_is_token0 AND NOT s.zero_for_one) OR (NOT c.coin_is_token0 AND s.zero_for_one))`,
       [chainId],
     );
     const num = (rows: { n: string }[]) => rows[0]?.n ?? "0";

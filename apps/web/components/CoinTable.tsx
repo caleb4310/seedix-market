@@ -15,9 +15,9 @@ import { formatUsdCompact } from "@/lib/startCap";
 type Kind = "all" | PairCategory;
 
 function money(raw: string | undefined, hypeUsd: number | null): string {
-  if (!raw || !/^\d+$/.test(raw)) return hypeUsd == null ? "—" : "$0";
+  if (!raw || !/^\d+$/.test(raw)) return "—";
   const hype = Number(BigInt(raw) / 10n ** 15n) / 1000;
-  if (hypeUsd == null) return `${hype.toLocaleString("en-US", { maximumFractionDigits: 2 })} HYPE`;
+  if (!(hypeUsd != null && hypeUsd > 0)) return hype === 0 ? "0 HYPE" : `${hype.toLocaleString("en-US", { maximumFractionDigits: 4 })} HYPE`;
   return formatUsdCompact(hype * hypeUsd);
 }
 
@@ -151,16 +151,18 @@ export function CoinTable() {
             New
           </button>
         </div>
-        <input
-          className="coin-search"
-          value={query}
-          onChange={(event) => write({ q: event.target.value })}
-          placeholder="Search ticker, name or pair"
-          aria-label="Search ticker, name or pair"
-        />
-        <p className="count-line">
-          {rows.length} coins · {kickCount} Kickback · {burnCount} Burners
-        </p>
+        <div className="search-count">
+          <input
+            className="coin-search"
+            value={query}
+            onChange={(event) => write({ q: event.target.value })}
+            placeholder="Search ticker, name or pair"
+            aria-label="Search ticker, name or pair"
+          />
+          <p className="count-line">
+            {rows.length} coins · {kickCount} Kickback · {burnCount} Burners
+          </p>
+        </div>
       </div>
       <div className="stats-strip" aria-label="Market stats">
         <div className="stat-card">

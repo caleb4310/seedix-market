@@ -23,7 +23,9 @@ export function formatUsdCompact(usd: number): string {
     return `$${thousands >= 100 ? thousands.toFixed(0) : thousands.toFixed(1)}K`;
   }
   if (usd >= 1) return `$${usd.toFixed(usd >= 100 ? 0 : 2)}`;
-  return `$${usd.toFixed(4)}`;
+  if (usd > 0 && usd < 0.0001) return "<$0.0001";
+  if (usd > 0) return `$${usd.toPrecision(2)}`;
+  return "$0";
 }
 
 /** Launch and preview caps are USD only. A missing quote is a label, not a token amount. */
