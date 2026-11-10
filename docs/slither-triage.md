@@ -66,5 +66,6 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - unused-return BuybackExecutor._guardExternal | `getSlot0` contributes the live tick to the external TWAP. The sqrt price and the two fee fields are not inputs to that consult.
 - unused-return RouteDepth.whypeInNextSpacing | `getSlot0` contributes the sqrt price and the tick. The two fee fields are not part of the depth.
 - unused-return RouteSeeder._pay | `settle` returns the amount this contract just transferred. The liquidity delta already fixed that amount.
+- unused-return BuybackExecutor.convertAccrued | `pots` and `config` are tuples. Conversion needs the mode pot, the mode, and the fee recipient. The other fields are a different budget. `getSlot0` contributes the tick to the route TWAP. The sqrt price and the fee fields are not the band check.
 - unused-return BuybackExecutor.pokeRoute | `onSwap` reports whether it wrote a ring slot. The cumulative is updated either way, and the caller does not branch on the write.
 - unused-return BuybackExecutor._storeRoute | `getSlot0` contributes the tick that starts the external oracle. The sqrt price and the fee fields are not stored.

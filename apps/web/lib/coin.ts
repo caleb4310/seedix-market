@@ -11,6 +11,9 @@ export type Coin = {
   description: string;
   recipient: `0x${string}`;
   mcap?: number;
+  startMcap?: number;
+  pairDecimals?: number;
+  pairUsd?: number | null;
   price?: number;
   holders?: number;
   creator?: string;

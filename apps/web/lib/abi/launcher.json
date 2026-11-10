@@ -38,7 +38,8 @@
       { "name": "teamAmount", "type": "uint256", "indexed": false },
       { "name": "startMcap", "type": "uint256", "indexed": false },
       { "name": "category", "type": "uint8", "indexed": false },
-      { "name": "pairStatus", "type": "uint8", "indexed": false }
+      { "name": "pairStatus", "type": "uint8", "indexed": false },
+      { "name": "backing", "type": "address", "indexed": false }
     ]
   },
   {

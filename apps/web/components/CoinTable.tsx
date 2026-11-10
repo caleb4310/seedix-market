@@ -19,9 +19,20 @@ export function CoinTable() {
   const board = useBoard();
   const [filter, setFilter] = useState<"all" | Mode>("all");
   const [category, setCategory] = useState<"all" | PairCategory>("all");
-  const rows = board.coins.filter(
-    (c) => (category === "all" || c.category === category) && (filter === "all" || c.mode === filter),
-  );
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<"new" | "mcap">("new");
+  const needle = query.trim().toLowerCase();
+  const rows = board.coins
+    .filter((c) => (category === "all" || c.category === category) && (filter === "all" || c.mode === filter))
+    .filter((c) => {
+      if (!needle) return true;
+      return (
+        c.name.toLowerCase().includes(needle) ||
+        c.ticker.toLowerCase().includes(needle) ||
+        (c.tokenAddress ?? "").toLowerCase().includes(needle)
+      );
+    })
+    .sort((a, b) => (sort === "mcap" ? (b.mcap ?? 0) - (a.mcap ?? 0) : (b.launchTime ?? 0) - (a.launchTime ?? 0)));
   return (
     <>
       <div className="page-head">
@@ -35,6 +46,12 @@ export function CoinTable() {
           </p>
         </div>
         <div className="filter-col">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search name, ticker, or address"
+          aria-label="Search coins"
+        />
         <Tabs
           label="Pair category"
           size="sm"
@@ -59,8 +76,21 @@ export function CoinTable() {
             { id: "burn", label: modeLabel("burn") },
           ]}
         />
+        <Tabs
+          label="Sort"
+          size="sm"
+          value={sort}
+          onChange={setSort}
+          options={[
+            { id: "new", label: "New" },
+            { id: "mcap", label: "Market cap" },
+          ]}
+        />
         </div>
       </div>
+      <p className="note">
+        {board.coins.length} launched. Every coin trades against HYPE. The picked token is the backing asset, not the pool pair.
+      </p>
       <div className="board">
         <div className="head">
           <span>Coin</span>
@@ -112,6 +142,7 @@ export function CoinTable() {
                   mode: coin.mode,
                   mcap: coin.mcap,
                   mcapUsd: coin.mcapUsd,
+                  startMcap: coin.startMcap,
                   x: coin.x,
                   telegram: coin.telegram,
                   website: coin.website,

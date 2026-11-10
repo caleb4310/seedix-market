@@ -197,9 +197,10 @@ contract KickbackPushTest is Fixture {
         coin = launched;
         id = pool;
         _accrue();
-        (uint64 epoch,) = _fund();
-        uint256 goodAmt = 1 ether;
-        uint256 badAmt = 1 ether;
+        (uint64 epoch, uint128 pot) = _fund();
+        uint256 usable = uint256(pot) * 90 / 100;
+        uint256 badAmt = usable / 2;
+        uint256 goodAmt = usable - badAmt;
         bytes32 goodLeaf = _leaf(epoch, holder, goodAmt);
         bytes32 badLeaf = _leaf(epoch, other, badAmt);
         bytes32 root = KickTree.pairHash(goodLeaf, badLeaf);
@@ -435,6 +436,15 @@ contract KickbackPushTest is Fixture {
     }
 
     function _fund() internal returns (uint64 epoch, uint128 pot) {
+        address backing = d.hook.backingOf(id);
+        if (backing != address(0)) {
+            d.executor.pokeRoute(backing);
+            d.executor.convertAccrued(id);
+            pot = uint128(d.distributor.poolCarry(id));
+            vm.prank(publisher);
+            epoch = d.distributor.fund(id, 0);
+            return (epoch, pot);
+        }
         (,, pot,,) = d.hook.pots(id);
         vm.prank(publisher);
         epoch = d.distributor.fund(id, pot);
@@ -463,6 +473,8 @@ contract KickbackPushTest is Fixture {
     }
 
     function _pair() internal view returns (address) {
+        address backing = d.hook.backingOf(id);
+        if (backing != address(0)) return backing;
         (, Currency pair,,,,,) = d.hook.config(id);
         return Currency.unwrap(pair);
     }

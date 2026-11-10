@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAccount, usePublicClient, useReadContract } from "wagmi";
 import { isAddress } from "viem";
@@ -67,6 +68,7 @@ export function LaunchForm() {
   const start = useRef(0);
   const sending = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
   const tx = useContractTx();
   const { address, chainId } = useAccount();
   const client = usePublicClient({ chainId: elysiumTestnet.id });
@@ -116,7 +118,8 @@ export function LaunchForm() {
   const socials = cleanSocials({ description, website, x: xHandle, telegram });
   const nameBytes = byteLen(name.trim());
   const tickerBytes = byteLen(ticker.trim());
-  const pairOk = unverified ? addressOk : Boolean(selected);
+  const burn = mode === "burn";
+  const pairOk = burn || (unverified ? addressOk : Boolean(selected));
   const teamOk = Number.isInteger(team) && team >= 0 && team <= 5;
   const ready =
     Boolean(address) &&
@@ -167,7 +170,9 @@ export function LaunchForm() {
       category: unverified ? "crypto" : selected?.category ?? null,
       mode,
       mcap,
+      startMcap: mcap,
       mcapUsd: selected?.usd != null ? mcap * selected.usd : null,
+      startMcapUsd: selected?.usd != null ? mcap * selected.usd : null,
       description: socials.description,
       website: socials.website,
       x: socials.x,
@@ -211,7 +216,7 @@ export function LaunchForm() {
   }
 
   async function runLaunch() {
-    if (!address || !pairAddress || !launcherAddress) {
+    if (!address || (!burn && !pairAddress) || !launcherAddress) {
       setNote("Connect a wallet to launch.");
       setHolding(0);
       return;
@@ -224,17 +229,9 @@ export function LaunchForm() {
     }
     setNote("");
     setPoolId(null);
-    let decimals = 18;
-    try {
-      decimals = await tokenDecimals(pairAddress);
-    } catch (err) {
-      setNote(err instanceof Error ? err.message : "Could not read the pair decimals.");
-      setHolding(0);
-      return;
-    }
     let startMcapInPair: bigint;
     try {
-      startMcapInPair = parseTokenAmount(String(mcap), decimals);
+      startMcapInPair = parseTokenAmount(String(mcap), 18);
     } catch (err) {
       setNote(err instanceof Error ? err.message : "Enter a starting market cap.");
       setHolding(0);
@@ -245,7 +242,7 @@ export function LaunchForm() {
       params = buildLaunchParams({
         name,
         symbol: ticker,
-        pair: pairAddress,
+        pair: (burn ? "0x0000000000000000000000000000000000000000" : pairAddress) as `0x${string}`,
         mode,
         feeRecipient,
         teamPercent: team,
@@ -276,6 +273,7 @@ export function LaunchForm() {
       return;
     }
     setPoolId(launched.poolId);
+    window.setTimeout(() => router.push(`/coin/${launched.poolId}`), 900);
     // The image input is a local preview (`blob:`). It is not uploaded and it is not pinned.
     // CoinMetadata accepts a CID of letters and digits only, which is what a raw CIDv0 or CIDv1
     // looks like. This form never sends `ipfs://`. A description that is itself that CID is pinned.
@@ -335,8 +333,12 @@ export function LaunchForm() {
           </button>
         </div>
         <div>
-          <span className="lbl">Pair token</span>
-          <Tabs label="Pair source" size="sm" value={source} onChange={setSource} options={sources} />
+          <span className="lbl">Backing token</span>
+          {burn ? (
+            <p className="note stack-top">Burn has no backing token. The coin trades against HYPE, and fees buy the coin back and burn it.</p>
+          ) : (
+            <>
+          <Tabs label="Backing source" size="sm" value={source} onChange={setSource} options={sources} />
           {source === "any" ? (
             <div className="stack-top">
               <Field label="Token address">
@@ -361,6 +363,8 @@ export function LaunchForm() {
                 options={listed.map((pair) => ({ id: pair.address, label: pairTabLabel(pair) }))}
               />
             </div>
+          )}
+            </>
           )}
         </div>
         <div className="modes" role="radiogroup" aria-label="Fee mode">
@@ -423,7 +427,7 @@ export function LaunchForm() {
                 onChange={(e) => setTeam(Math.min(5, Math.max(0, Number(e.target.value) || 0)))}
               />
             </Field>
-            <Field label={`Starting market cap · ${pairSymbol || "pair"}`}>
+            <Field label="Starting market cap · HYPE">
               <input type="number" min={1000} value={mcap} onChange={(e) => setMcap(Number(e.target.value))} />
             </Field>
             <Button variant="ghost" type="button" onClick={() => setMcap(20000)}>
@@ -459,6 +463,7 @@ export function LaunchForm() {
         <TxStatus state={status} />
         {poolId ? (
           <p className="stack-top">
+            Your coin is live against HYPE.
             <Link className="text-link" href={`/coin/${poolId}`}>
               Open the new coin
             </Link>

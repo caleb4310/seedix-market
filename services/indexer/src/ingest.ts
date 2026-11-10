@@ -97,6 +97,9 @@ export async function ingest(store: Store, chainId: number, logs: RawLog[], read
             ? asNumber(log.args.pairStatus)
             : 0,
       });
+      if (typeof log.args.backing === "string" && log.args.backing.startsWith("0x") && !/^0x0{40}$/i.test(log.args.backing)) {
+        await store.setBacking(chainId, poolId, asHex(log.args.backing));
+      }
       byPool.set(lower(poolId), { poolId, coin, coinIsToken0: meta.coinIsToken0 });
       byToken.set(lower(coin), poolId);
       continue;

@@ -14,6 +14,8 @@ export type CoinFace = {
   mode: Mode;
   mcap?: number;
   mcapUsd?: number | null;
+  startMcap?: number;
+  startMcapUsd?: number | null;
   description?: string | null;
   x?: string | null;
   telegram?: string | null;
@@ -196,9 +198,15 @@ export function CoinHeader({ face }: { face: CoinFace }) {
         {face.description ? <p className="lede">{face.description}</p> : <p className="lede ghost">Description</p>}
         <div className="statline">
           <div>
-            <span>Starting cap</span>
+            <span>Market cap</span>
             <div className="num">
               <MarketCap amount={face.mcap} symbol={face.pairSymbol} usd={face.mcapUsd} />
+            </div>
+          </div>
+          <div>
+            <span>Starting cap</span>
+            <div className="num">
+              <MarketCap amount={face.startMcap} symbol={face.pairSymbol} usd={face.startMcapUsd} />
             </div>
           </div>
           <div>

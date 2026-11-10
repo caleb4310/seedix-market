@@ -63,6 +63,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
     bytes32 internal constant LOCK_SLOT = keccak256("seedix.lock");
     bytes32 internal constant STAGE_COIN = keccak256("seedix.stage.coin");
     bytes32 internal constant STAGE_PAIR = keccak256("seedix.stage.pair");
+    bytes32 internal constant STAGE_BACKING = keccak256("seedix.stage.backing");
     bytes32 internal constant STAGE_META = keccak256("seedix.stage.meta");
     bytes32 internal constant META_SLOT = keccak256("seedix.meta");
     bytes32 internal constant HOOK_AMT_SLOT = keccak256("seedix.hookAmt");
@@ -115,6 +116,8 @@ contract LaunchHook is IHooks, IUnlockCallback {
     address public locker;
 
     mapping(PoolId => CoinConfig) public config;
+    /// @notice Backing token for Keep and Kickback. Zero means fees stay in WHYPE (Burn, or a WHYPE launch).
+    mapping(PoolId => address) public backingOf;
     mapping(PoolId => Pots) public pots;
     mapping(Currency => uint256) public platformBurn;
     mapping(Currency => uint256) public platformWallet;
@@ -233,11 +236,13 @@ contract LaunchHook is IHooks, IUnlockCallback {
         bool coinIsToken0,
         uint8 mode,
         bool isPlatform,
-        address feeRecipient
+        address feeRecipient,
+        address backing
     ) external {
         if (msg.sender != launcher) revert NotLauncher();
         if (_readStage().coin != address(0)) revert StageOccupied();
         _checkKey(key, coin, pair, coinIsToken0);
+        _tstore(STAGE_BACKING, uint256(uint160(backing)));
         _writeStage(
             Stage({
                 coin: coin,
@@ -272,6 +277,8 @@ contract LaunchHook is IHooks, IUnlockCallback {
             launchTime: uint40(block.timestamp),
             feeRecipient: s.feeRecipient
         });
+        backingOf[id] = address(uint160(_tload(STAGE_BACKING)));
+        _tstore(STAGE_BACKING, 0);
         pools.push(id);
         OracleLib.init(_oracle[id], uint32(block.timestamp), TickMath.getTickAtSqrtPrice(sqrtPriceX96));
         return IHooks.beforeInitialize.selector;
@@ -420,7 +427,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
     }
 
     function debitCreatorPair(PoolId id, uint256 amount, address to) external {
-        if (msg.sender != feeVault) revert NotVault();
+        if (msg.sender != feeVault && msg.sender != buybackExecutor) revert NotVault();
         _openMove();
         Pots storage p = pots[id];
         if (amount == 0 || amount > p.creatorPair) revert Amount();
@@ -445,7 +452,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
 
     /// @notice Moves the kickback pot to the distributor. The keeper pushes that balance to holders.
     function debitKickback(PoolId id, uint256 amount, address to) external {
-        if (msg.sender != kickbackDistributor) revert NotDistributor();
+        if (msg.sender != kickbackDistributor && msg.sender != buybackExecutor) revert NotDistributor();
         _openMove();
         Pots storage p = pots[id];
         if (amount == 0 || amount > p.kickbackPair) revert Amount();

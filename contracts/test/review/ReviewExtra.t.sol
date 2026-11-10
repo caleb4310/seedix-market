@@ -142,7 +142,7 @@ contract ReviewAccessTest is Fixture {
     function test_R_stageOnlyLauncher() public {
         PoolKey memory key = d.hook.keyOf(id);
         vm.expectRevert();
-        d.hook.stage(key, coin, Currency.wrap(address(whype)), true, 0, false, address(this));
+        d.hook.stage(key, coin, Currency.wrap(address(whype)), true, 0, false, address(this), address(0));
         vm.expectRevert();
         d.hook.armLaunchGuard(id);
     }

@@ -37,6 +37,8 @@ export function CoinBody({ coin }: { coin: Coin }) {
             mode: coin.mode,
             mcap: coin.mcap,
             mcapUsd: coin.mcapUsd,
+            startMcap: coin.startMcap,
+            startMcapUsd: coin.pairUsd != null && coin.startMcap !== undefined ? coin.startMcap * coin.pairUsd : null,
             description: `${coin.description} ${decaying ? "The decay is still running." : "The hook fee has settled at 1%."}`,
             x: coin.x,
             telegram: coin.telegram,
@@ -45,7 +47,7 @@ export function CoinBody({ coin }: { coin: Coin }) {
         />
         {coin.price !== undefined ? (
           <p className="num">
-            <Price value={coin.price} />
+            <Price value={coin.price} symbol={coin.pair} usd={coin.pairUsd} />
           </p>
         ) : null}
         <Chart poolId={coin.poolId} />

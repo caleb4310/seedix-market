@@ -52,13 +52,16 @@ test("the board cap is the raw start cap scaled into pair units", () => {
     price: null,
     holders: 0,
     startMcap: (20_000n * 10n ** 18n).toString(),
+    marketCap: "40000",
     pairDecimals: 18,
     pairUsd: 1.5,
   };
   const coin = coinFromApi(row);
-  assert.equal(coin.mcap, 20_000);
-  assert.equal(coin.mcapUsd, 30_000);
-  const usdc = coinFromApi({ ...row, startMcap: (2_500n * 10n ** 6n).toString(), pairDecimals: 6, pairUsd: null });
+  assert.equal(coin.startMcap, 20_000);
+  assert.equal(coin.mcap, 40_000);
+  assert.equal(coin.mcapUsd, 60_000);
+  const usdc = coinFromApi({ ...row, marketCap: "2500", startMcap: (2_500n * 10n ** 6n).toString(), pairDecimals: 6, pairUsd: null });
   assert.equal(usdc.mcap, 2_500);
+  assert.equal(usdc.startMcap, 2_500);
   assert.equal(usdc.mcapUsd, null);
 });

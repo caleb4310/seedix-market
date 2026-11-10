@@ -31,6 +31,7 @@ contract KickbackDistributor {
     error NotInitializer();
     error NotKeeper();
     error NotAdmin();
+    error NotExecutor();
     error BadEpoch();
     error Cap();
     error ReviewOpen();
@@ -273,9 +274,9 @@ contract KickbackDistributor {
         lastEnd[id] = end;
 
         if (amount > 0) {
-            (, Currency pair,,,,,) = hook.config(id);
+            if (hook.backingOf(id) != address(0)) revert Cap();
             hook.debitKickback(id, amount, address(this));
-            liabilities[Currency.unwrap(pair)] += amount;
+            liabilities[_pairToken(id)] += amount;
         }
         if (carry > 0) emit RolloverApplied(id, epochId, carry);
         emit KickbackFunded(id, epochId, amount);
@@ -304,11 +305,15 @@ contract KickbackDistributor {
         if (e.postedAt != 0 && block.timestamp >= uint256(e.postedAt) + C.REVIEW_WINDOW) revert ReviewClosed();
         e.cancelled = true;
         uint256 amount = e.funded;
-        (, Currency pair,,,,,) = hook.config(id);
-        address token = Currency.unwrap(pair);
+        address token = _pairToken(id);
         liabilities[token] -= amount;
-        IERC20(token).forceApprove(address(hook), amount);
-        hook.restoreKickback(id, amount);
+        if (hook.backingOf(id) == address(0)) {
+            IERC20(token).forceApprove(address(hook), amount);
+            hook.restoreKickback(id, amount);
+        } else {
+            (,,,,,, address recipient) = hook.config(id);
+            IERC20(token).safeTransfer(recipient, amount);
+        }
         emit KickbackCancelled(id, epochId, amount);
     }
 
@@ -529,18 +534,27 @@ contract KickbackDistributor {
         if (!MerkleProof.verifyCalldata(proof, epochs[id][epochId].root, leaf)) revert BadProof();
     }
 
+    /// @notice Keeper conversion delivered `amount` of the backing token. It waits in `poolCarry`.
+    function noteBacking(PoolId id, uint256 amount) external {
+        if (msg.sender != hook.buybackExecutor()) revert NotExecutor();
+        address token = hook.backingOf(id);
+        if (token == address(0) || amount == 0) revert BadEpoch();
+        if (IERC20(token).balanceOf(address(this)) < liabilities[token] + amount) revert Nothing();
+        liabilities[token] += amount;
+        poolCarry[id] += amount;
+    }
+
     function _leaf(PoolId id, uint64 epochId, address account, uint256 amount) internal view returns (bytes32) {
-        (address coin, Currency pair,,,,,) = hook.config(id);
+        (address coin,,,,,,) = hook.config(id);
+        address pair = _pairToken(id);
         return keccak256(
-            bytes.concat(
-                keccak256(
-                    abi.encode(block.chainid, address(this), coin, Currency.unwrap(pair), epochId, account, amount)
-                )
-            )
+            bytes.concat(keccak256(abi.encode(block.chainid, address(this), coin, pair, epochId, account, amount)))
         );
     }
 
     function _pairToken(PoolId id) internal view returns (address) {
+        address backing = hook.backingOf(id);
+        if (backing != address(0)) return backing;
         (, Currency pair,,,,,) = hook.config(id);
         return Currency.unwrap(pair);
     }
