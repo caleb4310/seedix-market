@@ -5,6 +5,7 @@ import { useState } from "react";
 import { modeLabel, type Mode } from "@/lib/coin";
 import type { PairCategory } from "@/lib/registry";
 import { useBoard } from "@/lib/board";
+import { useHypeUsd } from "@/lib/hype";
 import { CoinLine } from "@/components/CoinFace";
 import { Tabs } from "@/components/ui/Tabs";
 
@@ -17,6 +18,7 @@ function age(sec: number): string {
 
 export function CoinTable() {
   const board = useBoard();
+  const hypeUsd = useHypeUsd();
   const [filter, setFilter] = useState<"all" | Mode>("all");
   const [category, setCategory] = useState<"all" | PairCategory>("all");
   const [query, setQuery] = useState("");
@@ -141,7 +143,7 @@ export function CoinTable() {
                   category: coin.category,
                   mode: coin.mode,
                   mcap: coin.mcap,
-                  mcapUsd: coin.mcapUsd,
+                  mcapUsd: coin.mcap !== undefined && hypeUsd != null ? coin.mcap * hypeUsd : coin.mcapUsd,
                   startMcap: coin.startMcap,
                   x: coin.x,
                   telegram: coin.telegram,
