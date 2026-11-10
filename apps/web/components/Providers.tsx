@@ -32,7 +32,18 @@ function SeedixRainbow({ children }: { children: ReactNode }) {
 }
 
 export function Providers({ children }: { children: ReactNode }) {
-  const [client] = useState(() => new QueryClient());
+  const [client] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            refetchIntervalInBackground: false,
+            refetchOnWindowFocus: false,
+            staleTime: 8_000,
+          },
+        },
+      }),
+  );
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={client}>

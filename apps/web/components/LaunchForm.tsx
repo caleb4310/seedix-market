@@ -382,14 +382,16 @@ export function LaunchForm() {
         <section className="permanent">
           <header className="permanent-head">
             <span>Permanent</span>
+            <span className="permanent-rule" />
             <span>4 things</span>
+            <span className="permanent-split" aria-hidden="true" />
             <span>Never changeable</span>
           </header>
-          <Field label={`Name · ${nameBytes}/32 bytes`}>
+          <Field label="Name" hint={`${nameBytes}/32`}>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="North star" />
           </Field>
           <div className="pair-row">
-            <Field label={`Ticker · ${tickerBytes}/8 bytes`}>
+            <Field label="Ticker" hint={`${tickerBytes}/8`}>
               <span className="ticker-field">
                 <span className="ticker-prefix" aria-hidden="true">$</span>
                 <input

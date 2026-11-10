@@ -9,6 +9,7 @@ export const apiConfig = {
   port: Number(process.env.API_PORT ?? 3001),
   host: process.env.API_HOST ?? "0.0.0.0",
   databaseUrl: process.env.DATABASE_URL ?? "",
+  rpcUrl: process.env.RPC_URL || "https://testnet-rpc.elysium.kinetiq.xyz",
 };
 
 export async function main(): Promise<void> {

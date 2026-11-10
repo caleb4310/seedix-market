@@ -101,7 +101,7 @@ export function TradePanel({ coin, initialSide = "buy" }: { coin: Coin; initialS
       poolReady && built && typedAmount && typedAmount <= UINT128_MAX
         ? [quoteParams(built.key, direction, typedAmount)]
         : undefined,
-    query: { enabled: Boolean(poolReady && quoterAddress && typedAmount), refetchInterval: 12_000 },
+    query: { enabled: Boolean(poolReady && quoterAddress && typedAmount), refetchInterval: 20_000 },
   });
   const amountQuoted = quotedAmount(quoted.data?.result);
   const minOut = amountQuoted !== undefined && slip.ok && kind === "exactIn" ? swapLimit("exactIn", amountQuoted, slip.pct) : undefined;

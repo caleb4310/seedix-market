@@ -29,7 +29,7 @@ export function ClaimPanel({ coin }: { coin: Coin }) {
     abi: kickbackAbi,
     functionName: "nextEpoch",
     args: id ? [id] : undefined,
-    query: { enabled, refetchInterval: 20_000 },
+    query: { enabled, refetchInterval: 30_000 },
   });
   const latest = Number(nextEpoch.data ?? 0n);
   const epochs = latest > 0 ? Array.from({ length: Math.min(latest, 8) }, (_, index) => latest - index) : [];

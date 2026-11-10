@@ -4,18 +4,22 @@ import { useEffect, useState } from "react";
 import { apiUrl, getChart, type Candle } from "@/lib/api";
 
 function line(candles: Candle[]): string {
-  const values = candles.map((candle) => Number(candle.close)).filter((value) => Number.isFinite(value) && value > 0);
-  if (values.length < 2) return "";
+  const values = candles.map((candle) => Number(candle.close)).filter((value) => Number.isFinite(value));
+  if (values.length === 0) return "";
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
   const width = 240;
   const height = 72;
+  const yOf = (value: number) => height - 4 - ((value - min) / span) * (height - 8);
+  if (values.length === 1) {
+    const y = yOf(values[0] ?? 0).toFixed(2);
+    return `M0 ${y} L${width} ${y}`;
+  }
   return values
     .map((value, index) => {
       const x = (index / (values.length - 1)) * width;
-      const y = height - 4 - ((value - min) / span) * (height - 8);
-      return `${index === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`;
+      return `${index === 0 ? "M" : "L"}${x.toFixed(2)} ${yOf(value).toFixed(2)}`;
     })
     .join(" ");
 }
