@@ -814,9 +814,15 @@ details.advanced summary { cursor: pointer; color: var(--ink-soft); min-height: 
 @keyframes pulse { from { opacity: 1; } to { opacity: 0.45; } }
 
 .permanent { border: var(--focus-w) solid var(--ink); }
-.trade .status { margin-bottom: var(--space-4); }
+.trade .status { margin-top: var(--space-4); margin-bottom: var(--space-5); }
+.form .lbl { text-transform: none; letter-spacing: 0; font-family: var(--sans); }
+.field-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.field-hint { font-family: var(--mono); font-size: var(--fs-caption); color: var(--ink-soft); }
+.permanent-rule { flex: 1; height: var(--hair); background: var(--ink); min-width: var(--space-4); }
+.permanent-split { width: var(--hair); align-self: stretch; background: var(--ink); }
+.filter-scroll { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .ticker-field { position: relative; }
-.ticker-field input { padding-left: var(--space-6); }
+.ticker-field input { padding-left: var(--space-8); }
 .ticker-prefix {
   position: absolute;
   left: var(--space-3);
@@ -993,8 +999,15 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea { 
 @media (max-width: 560px) {
   .coin-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ticker-hero { font-size: var(--fs-display); line-height: var(--lh-display); }
-  .count-line { white-space: normal; }
-  .filter-bar .coin-search { flex-basis: 100%; }
+  .filter-bar { flex-wrap: wrap; }
+  .filter-scroll { flex: none; width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+  .filter-scroll .seg { flex-wrap: nowrap; }
+  .search-count { flex: none; width: 100%; min-width: 0; }
+  .nav { padding: var(--space-2) var(--space-1); gap: var(--space-1); }
+  .nav-links { gap: var(--space-1); }
+  .nav-links a.nav-launch, .nav .btn { padding: 0 var(--space-2); }
+  .theme-toggle { flex: none; min-width: var(--tap); padding: 0; }
+  .wordmark { margin-right: var(--space-1); }
 }
 
 @media (prefers-reduced-motion: reduce) {

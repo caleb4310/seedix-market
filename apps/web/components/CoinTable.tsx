@@ -121,6 +121,7 @@ export function CoinTable() {
   return (
     <>
       <div className="filter-bar">
+        <div className="filter-scroll">
         <div className="seg" role="tablist" aria-label="Backing category">
           {(
             [
@@ -151,12 +152,13 @@ export function CoinTable() {
             New
           </button>
         </div>
+        </div>
         <div className="search-count">
           <input
             className="coin-search"
             value={query}
             onChange={(event) => write({ q: event.target.value })}
-            placeholder="Search ticker, name or pair"
+            placeholder="Search coins"
             aria-label="Search ticker, name or pair"
           />
           <p className="count-line">

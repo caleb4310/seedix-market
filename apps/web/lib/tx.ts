@@ -1,5 +1,7 @@
 import {
   ContractFunctionRevertedError,
+  keccak256,
+  toBytes,
   type Abi,
   type Address,
   type Chain,
@@ -153,6 +155,9 @@ export function explainTxError(err: unknown): string {
     return "The swap price bound does not match this pool. Refresh the page and try again.";
   }
   if (selector === "0x7a5ed734") return "This pool does not have enough liquidity for that size.";
+  if (selector && selectorCopy[selector]) return selectorCopy[selector];
+  const blob = errorText(err);
+  if (/rate limit|too many requests|\b429\b/i.test(blob)) return "The network is busy, try again.";
   const brief = briefText(err);
   if (/chain mismatch|wrong network|wrong chain|not configured for chain|does not match the target chain/i.test(brief)) {
     return `The wallet is on the wrong network. Switch to Elysium testnet (${elysiumTestnet.id}).`;
@@ -167,9 +172,58 @@ export function explainTxError(err: unknown): string {
   if (/HttpRequestError|TimeoutError|RpcRequestError|failed to fetch|network request failed|Invalid parameters were provided to the RPC/i.test(brief)) {
     return "The network request failed. Check the RPC and try again.";
   }
-  const line = brief.split("\n").find((item) => item.trim().length > 0) ?? "The transaction failed.";
-  return line.length > 220 ? `${line.slice(0, 220)}…` : line;
+  const line = brief.split("\n").find((item) => item.trim().length > 0 && !item.includes("Contract Call:")) ?? "The transaction failed.";
+  const short = line.replace(/\s+/g, " ").trim();
+  return short.length > 160 ? `${short.slice(0, 160)}…` : short;
 }
+
+const selectorOf = (signature: string): string => keccak256(toBytes(signature)).slice(0, 10);
+
+const selectorCopy: Record<string, string> = {
+  [selectorOf("PriceLimit()")]: revertCopy.PriceLimit ?? "",
+  [selectorOf("Expired()")]: revertCopy.Expired ?? "",
+  [selectorOf("TooLittleReceived()")]: revertCopy.TooLittleReceived ?? "",
+  [selectorOf("TooMuchRequested()")]: revertCopy.TooMuchRequested ?? "",
+  [selectorOf("PriceLimitAlreadyExceeded(uint160,uint160)")]: "The swap price bound does not match this pool. Refresh the page and try again.",
+  [selectorOf("PriceLimitOutOfBounds(uint160)")]: "The swap price bound does not match this pool. Refresh the page and try again.",
+  [selectorOf("NotEnoughLiquidity(bytes32)")]: "This pool does not have enough liquidity for that size.",
+  [selectorOf("SafeCastOverflow()")]: "That amount is too large for this pool.",
+  [selectorOf("SwapDuringLaunch()")]: "The pool is still opening. Wait a moment and try again.",
+  [selectorOf("UnknownPool()")]: "This pool is not on the launch hook.",
+  [selectorOf("Locked()")]: "The hook is busy with another swap. Try again.",
+};
+
+/** 429s, transport failures, and an allowance read that has not caught up with the approve receipt. */
+export function isRetryableTxError(err: unknown): boolean {
+  if (isUserRejection(err)) return false;
+  const name = revertName(err);
+  if (name === "PriceLimit" || name === "TooLittleReceived" || name === "TooMuchRequested" || name === "Expired") return false;
+  const blob = `${briefText(err)}\n${errorText(err)}`;
+  if (/rate limit|too many requests|\b429\b/i.test(blob)) return true;
+  if (/timeout|timed out|network request failed|failed to fetch|ECONNRESET|ETIMEDOUT|HttpRequestError|TimeoutError/i.test(blob)) return true;
+  if (/insufficient allowance/i.test(blob)) return true;
+  const selector = revertSelector(err);
+  return selector === selectorOf("ERC20InsufficientAllowance(address,uint256,uint256)");
+}
+
+export async function runWithRetry<T>(
+  fn: () => Promise<T>,
+  waits: readonly number[],
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<T> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= waits.length || !isRetryableTxError(err)) throw err;
+      await sleep(waits[attempt] ?? 0);
+      attempt += 1;
+    }
+  }
+}
+
+const retryWaits = [300, 800, 1600];
 
 type ChainRequest = {
   request: (args: { method: "wallet_addEthereumChain"; params: readonly [Record<string, unknown>] }) => Promise<unknown>;
@@ -220,14 +274,23 @@ export async function sendContractSteps(input: {
   for (const step of input.steps) {
     let hash: Hex | undefined;
     try {
-      const simulated = await input.publicClient.simulateContract({
-        address: step.address,
-        abi: step.abi,
-        functionName: step.functionName,
-        args: step.args,
-        account: input.account,
-        value: step.value,
-      });
+      const simulated = await runWithRetry(async () => {
+        try {
+          return await input.publicClient.simulateContract({
+            address: step.address,
+            abi: step.abi,
+            functionName: step.functionName,
+            args: step.args,
+            account: input.account,
+            value: step.value,
+          });
+        } catch (err) {
+          if (isRetryableTxError(err)) {
+            input.onState({ status: "pending", action: step.action, message: "Network busy, retrying…" });
+          }
+          throw err;
+        }
+      }, retryWaits);
       input.onState({ status: "awaiting_signature", action: step.action });
       hash = await input.walletClient.writeContract(simulated.request);
       input.onState({ status: "pending", action: step.action, hash });

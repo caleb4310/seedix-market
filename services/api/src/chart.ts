@@ -17,12 +17,21 @@ function cmp(a: string, b: string): number {
   return left > right ? 1 : -1;
 }
 
+/** Seconds. Millisecond and microsecond stamps are scaled down so a 5m bucket is five minutes. */
+export function epochSeconds(t: number): number {
+  if (!Number.isFinite(t)) return Number.NaN;
+  if (t > 1e14) return t / 1e6;
+  if (t > 1e11) return t / 1e3;
+  return t;
+}
+
 /** OHLC candles. Prices stay decimal strings so a large sqrt price is not rounded. */
 export function candles(points: ChartPoint[], bucketSec: number): Candle[] {
   const out: Candle[] = [];
   for (const point of points) {
-    if (!Number.isFinite(point.t)) continue;
-    const t = Math.floor(point.t / bucketSec) * bucketSec;
+    const seconds = epochSeconds(point.t);
+    if (!Number.isFinite(seconds)) continue;
+    const t = Math.floor(seconds / bucketSec) * bucketSec;
     const last = out[out.length - 1];
     if (!last || last.t !== t) {
       out.push({ t, open: point.price, high: point.price, low: point.price, close: point.price, volume: point.volume.toString() });

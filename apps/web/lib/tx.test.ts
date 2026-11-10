@@ -5,7 +5,7 @@ import { launcherAbi, routerAbi } from "./abi.ts";
 import { whypeAddress } from "./deployment.ts";
 import { buildLaunchParams } from "./launch.ts";
 import { amountSpecifiedFor, approvalForSwap, poolKey, swapLimit, tradeSteps, zeroForOne } from "./swap.ts";
-import { deadlineFromNow, exactApproval, explainTxError, parseDeadlineMinutes } from "./tx.ts";
+import { deadlineFromNow, exactApproval, explainTxError, isRetryableTxError, parseDeadlineMinutes, runWithRetry } from "./tx.ts";
 
 const coin = "0x00000000000000000000000000000000000000aa" as const;
 const pair = "0x00000000000000000000000000000000000000bb" as const;
@@ -106,9 +106,29 @@ test("a trade wraps the shortfall and approves only the exact spend", () => {
   assert.equal(swap?.[2], -5n);
   assert.equal(swap?.[3], 8n);
   assert.equal(swap?.[4], 100n);
+  const funded = tradeSteps({
+    action: "Buy",
+    kind: "exactIn",
+    spendToken: whypeAddress,
+    spendLabel: "WHYPE",
+    key: built.key,
+    zeroForOne: false,
+    typedAmount: 5n,
+    quoted: 9n,
+    slippagePct: 1,
+    deadline: 100n,
+    allowance: 5n,
+    tokenBalance: 5n,
+    nativeBalance: 10n,
+  });
+  assert.ok("steps" in funded);
+  if ("steps" in funded) {
+    assert.equal(funded.steps.length, 1);
+    assert.equal(funded.steps[0]?.functionName, "swap");
+  }
 });
 
-test("error mapping decodes custom errors and wallet failures", () => {
+test("error mapping decodes custom errors and wallet failures", async () => {
   const data = encodeErrorResult({ abi: routerAbi, errorName: "TooLittleReceived" });
   const reverted = new ContractFunctionRevertedError({ abi: routerAbi, data, functionName: "swap" });
   assert.match(explainTxError(reverted), /quoted minimum/);
@@ -131,6 +151,23 @@ test("error mapping decodes custom errors and wallet failures", () => {
   });
   assert.match(explainTxError(priceLimit), /price limit stopped/i);
   assert.doesNotMatch(explainTxError(new Error("execution reverted: out of gas inside the hook")), /enough HYPE/i);
+  assert.equal(explainTxError(new Error("429 Rate Limit Exceeded")), "The network is busy, try again.");
+  assert.equal(isRetryableTxError(new Error("429 Rate Limit Exceeded")), true);
+  assert.equal(isRetryableTxError(new Error("request timed out")), true);
+  assert.equal(isRetryableTxError(new Error("ERC20: insufficient allowance")), true);
+  assert.equal(isRetryableTxError(priceLimit), false);
+  let calls = 0;
+  const value = await runWithRetry(
+    async () => {
+      calls += 1;
+      if (calls < 3) throw new Error("429 Rate Limit Exceeded");
+      return "ok";
+    },
+    [1, 1, 1],
+    async () => {},
+  );
+  assert.equal(value, "ok");
+  assert.equal(calls, 3);
   assert.match(explainTxError(new Error("ERC20: transfer amount exceeds balance")), /enough of this token/);
   assert.match(explainTxError(new Error("chain mismatch")), /wrong network/);
 });

@@ -26,6 +26,8 @@ Compose reads `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` from that env file and pass
 
 `NEXT_PUBLIC_API_URL` is passed the same way. The default is `/api`, which nginx proxies to the API container.
 
+`NEXT_PUBLIC_RPC_URL` is also a build arg. The default is the public Elysium RPC `https://testnet-rpc.elysium.kinetiq.xyz`. `NEXT_PUBLIC_RPC_URLS` is an optional comma-separated fallback list, also inlined at build time. The API, indexer, and keeper read `RPC_URL` at runtime. None of these values is a secret.
+
 Changing the project id, or the API URL, means running `build web` again and recreating the web container. `docker compose up -d` without a rebuild keeps the old bundle.
 
 ## WHYPE for the seed
