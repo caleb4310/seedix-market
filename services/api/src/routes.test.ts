@@ -87,8 +87,10 @@ describe("api", () => {
         tokenListPath: path.join(dir, "token-list.json"),
       });
       assert.equal(res.status, 200);
-      const body = res.json as { startMcap: string; pairUsd: number; pairDecimals: number };
+      const body = res.json as { startMcap: string; marketCap: string; pairUsd: number; pairDecimals: number };
       assert.equal(body.startMcap, "10");
+      assert.equal(body.marketCap, "4000000000");
+      assert.notEqual(body.marketCap, body.startMcap);
       assert.equal(body.pairUsd, 1.5);
       assert.equal(body.pairDecimals, 18);
     } finally {

@@ -169,7 +169,7 @@ contract OrientationTest is Fixture {
             bytes32 coinSalt = keccak256(abi.encode(address(this), nonce, "Seed Coin", "SEED", predicted));
             address coin = Clones.predictDeterministicAddress(address(d.implementation), coinSalt, address(d.launcher));
             if (predicted.code.length != 0) continue;
-            if ((coin < predicted) == wantCoin0) {
+            if ((coin < address(whype)) == wantCoin0) {
                 pair = new MockXStock{salt: salt}("Side", "S", 18, address(this));
                 assertEq(address(pair), predicted);
                 return pair;

@@ -24,7 +24,12 @@ export type ApiCoin = {
   x?: string | null;
   telegram?: string | null;
   startMcap?: string;
+  marketCap?: string | null;
+  volume24h?: string;
+  image?: string | null;
+  backing?: string | null;
   pairDecimals?: number;
+  coinIsToken0?: boolean;
   pairUsd?: number | null;
 };
 
@@ -73,7 +78,10 @@ export function portfolioPath(account: string): string | null {
 export function coinFromApi(row: ApiCoin, hook?: `0x${string}`): Coin {
   const now = Math.floor(Date.now() / 1000);
   const price = row.price === null ? undefined : Number(row.price);
-  const mcap = row.startMcap ? marketCapFromRaw(row.startMcap, row.pairDecimals ?? 18) : undefined;
+  const pairDecimals = row.pairDecimals ?? 18;
+  const startMcap = row.startMcap ? marketCapFromRaw(row.startMcap, pairDecimals) : undefined;
+  const live = row.marketCap == null || row.marketCap === "" ? undefined : Number(row.marketCap);
+  const mcap = live !== undefined && Number.isFinite(live) ? live : undefined;
   return {
     id: row.poolId,
     name: row.name || "Coin",
@@ -92,7 +100,14 @@ export function coinFromApi(row: ApiCoin, hook?: `0x${string}`): Coin {
     recipient: row.feeRecipient as `0x${string}`,
     price: price !== undefined && Number.isFinite(price) ? price : undefined,
     mcap,
+    startMcap,
+    pairDecimals,
+    pairUsd: row.pairUsd ?? null,
     mcapUsd: marketCapUsd(mcap, row.pairUsd),
+    coinIsToken0: row.coinIsToken0,
+    image: row.image ?? null,
+    backing: row.backing ?? null,
+    volume: row.volume24h ? Number(row.volume24h) : 0,
     holders: row.holders,
     tokenAddress: row.coin as `0x${string}`,
     pairAddress: row.pair as `0x${string}`,

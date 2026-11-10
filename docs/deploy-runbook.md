@@ -28,6 +28,10 @@ Compose reads `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` from that env file and pass
 
 Changing the project id, or the API URL, means running `build web` again and recreating the web container. `docker compose up -d` without a rebuild keeps the old bundle.
 
+## WHYPE for the seed
+
+The script spends exactly 1.05 WHYPE (7 pools × 0.15). If the deployer holds 0.05 WHYPE, wrap 1.00 HYPE into WHYPE before broadcasting. Native HYPE left after that wrap pays gas. Pools are coin/WHYPE. The stock and pre-IPO tokens are backing assets, not the pool pair.
+
 ## Indexer and keeper
 
 Pass the same env file on every Compose command. The indexer and keeper services interpolate these names from it, so a separate override file is not required. An empty value leaves the process on the address compiled into `deployments/99801.json`.

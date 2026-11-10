@@ -20,6 +20,9 @@ const eventAbi = {
   CoinLaunchedV2: parseAbiItem(
     "event CoinLaunched(bytes32 indexed poolId, address indexed coin, address indexed pair, uint8 mode, bool isPlatform, address feeRecipient, address teamWallet, uint256 teamAmount, uint256 startMcap, uint8 category, uint8 pairStatus)",
   ),
+  CoinLaunchedV3: parseAbiItem(
+    "event CoinLaunched(bytes32 indexed poolId, address indexed coin, address indexed pair, uint8 mode, bool isPlatform, address feeRecipient, address teamWallet, uint256 teamAmount, uint256 startMcap, uint8 category, uint8 pairStatus, address backing)",
+  ),
   PairClassified: parseAbiItem("event PairClassified(address indexed pair, uint8 status, uint8 category)"),
   MetadataPinned: parseAbiItem("event MetadataPinned(bytes32 indexed poolId, address indexed creator, string cid)"),
   Swap: parseAbiItem(
@@ -182,6 +185,7 @@ export async function pollOnce(client: PublicClient, store: Store, cfg: IndexerC
     const sources: Array<Promise<RawLog[]>> = [
       pull(client, cfg.launcher, eventAbi.CoinLaunched, "CoinLaunched", range.from, range.to),
       pull(client, cfg.launcher, eventAbi.CoinLaunchedV2, "CoinLaunched", range.from, range.to),
+      pull(client, cfg.launcher, eventAbi.CoinLaunchedV3, "CoinLaunched", range.from, range.to),
       pull(client, cfg.launcher, eventAbi.PairClassified, "PairClassified", range.from, range.to),
       ...(cfg.metadata
         ? [pull(client, cfg.metadata, eventAbi.MetadataPinned, "MetadataPinned", range.from, range.to)]
@@ -194,6 +198,7 @@ export async function pollOnce(client: PublicClient, store: Store, cfg: IndexerC
       if (
         name === "CoinLaunched" ||
         name === "CoinLaunchedV2" ||
+        name === "CoinLaunchedV3" ||
         name === "PairClassified" ||
         name === "MetadataPinned" ||
         name === "FeesTaken" ||

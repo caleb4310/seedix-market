@@ -1,5 +1,6 @@
 import type { AbiEvent, Address, Hex, PublicClient } from "viem";
-import { marketCapFromRaw } from "./amounts";
+import { marketCapFromRaw, marketCapUsd } from "./amounts";
+import { coinPrice, LAUNCH_SUPPLY, marketCapFromSpot } from "@seedix/shared";
 import { erc20Abi, hookConfigAbi, launcherAbi, metadataAbi } from "./abi";
 import type { Coin, Mode } from "./coin";
 import { coinMetadataAddress, hookAddress, indexerStartBlock, launcherAddress, stateViewAddress } from "./deployment";
@@ -33,7 +34,10 @@ export type LaunchedRead = {
   symbol: string;
   pairSymbol: string;
   pairDecimals: number;
+  coinIsToken0: boolean;
   startMcap: bigint | null;
+  sqrtPriceX96?: bigint | null;
+  supplyRaw?: bigint | null;
   metadataCid: string | null;
   poolLive: boolean;
   category: Coin["category"];
@@ -57,7 +61,12 @@ export function coinFromLaunch(id: string, read: LaunchedRead): Coin | null {
   const now = Math.floor(Date.now() / 1000);
   const mode = modeOf(read.mode);
   const pairName = read.pairSymbol.trim() || "PAIR";
-  const mcap = read.startMcap === null ? undefined : marketCapFromRaw(read.startMcap, read.pairDecimals);
+  const startMcap = read.startMcap === null ? undefined : marketCapFromRaw(read.startMcap, read.pairDecimals);
+  const supply = read.supplyRaw && read.supplyRaw > 0n ? read.supplyRaw : LAUNCH_SUPPLY;
+  const liveText = read.sqrtPriceX96 && read.sqrtPriceX96 > 0n
+    ? marketCapFromSpot(coinPrice(read.sqrtPriceX96, read.coinIsToken0), supply, read.pairDecimals)
+    : null;
+  const mcap = liveText == null ? undefined : Number(liveText);
   return {
     id,
     name: read.name.trim() || "Coin",
@@ -68,8 +77,11 @@ export function coinFromLaunch(id: string, read: LaunchedRead): Coin | null {
     launchTime: read.launchTime,
     description: read.isPlatform ? "Platform token." : `${mode} mode, paired with ${pairName}.`,
     recipient: read.feeRecipient,
-    mcap,
-    mcapUsd: null,
+    mcap: mcap !== undefined && Number.isFinite(mcap) ? mcap : undefined,
+    startMcap,
+    mcapUsd: marketCapUsd(mcap !== undefined && Number.isFinite(mcap) ? mcap : undefined, null),
+    coinIsToken0: read.coinIsToken0,
+    pairDecimals: read.pairDecimals,
     category: read.category,
     tokenAddress: read.coin,
     pairAddress: read.pair,
@@ -105,12 +117,13 @@ export async function readLaunchedCoin(client: PublicClient, id: string): Promis
   const coin = config[0] as Address;
   const pair = config[1] as Address;
   if (!coin || zero.test(coin) || !pair) return null;
+  const coinIsToken0 = Boolean(config[2]);
   const mode = Number(config[3] ?? 0);
   const isPlatform = Boolean(config[4]);
   const launchTime = Number(config[5] ?? 0);
   const feeRecipient = (config[6] as Address) ?? coin;
 
-  const [name, symbol, pairSymbol, pairDecimals, metadataCid, poolLive] = await Promise.all([
+  const [name, symbol, pairSymbol, pairDecimals, metadataCid, sqrtPriceX96, supplyRaw] = await Promise.all([
     readString(client, coin, "name"),
     readString(client, coin, "symbol"),
     readString(client, pair, "symbol"),
@@ -129,10 +142,14 @@ export async function readLaunchedCoin(client: PublicClient, id: string): Promis
           .readContract({ address: stateViewAddress, abi: stateViewAbi, functionName: "getSlot0", args: [poolId] })
           .then((value) => {
             const sqrt = Array.isArray(value) ? value[0] : (value as { sqrtPriceX96?: bigint }).sqrtPriceX96;
-            return typeof sqrt === "bigint" && sqrt > 0n;
+            return typeof sqrt === "bigint" && sqrt > 0n ? sqrt : null;
           })
-          .catch(() => false)
-      : Promise.resolve(false),
+          .catch(() => null)
+      : Promise.resolve(null),
+    client
+      .readContract({ address: coin, abi: erc20Abi, functionName: "totalSupply" })
+      .then((value) => (typeof value === "bigint" && value > 0n ? value : LAUNCH_SUPPLY))
+      .catch(() => LAUNCH_SUPPLY),
   ]);
   const launchedEvent = launcherAbi.find((item): item is AbiEvent => item.type === "event" && item.name === "CoinLaunched");
   const start = launchedEvent
@@ -149,9 +166,7 @@ export async function readLaunchedCoin(client: PublicClient, id: string): Promis
     : undefined;
   const args = (start as { args?: { startMcap?: bigint; category?: number } } | undefined)?.args;
   const category = categoryOf(Number(args?.category ?? 0));
-  // `poolLive` is the StateView slot. A pool the indexer has not confirmed yet still renders.
-  // `metadataCid` is CoinMetadata. The launch form does not upload an image, so a CID is not a picture URL.
-  void poolLive;
+  void metadataCid;
 
   const built = coinFromLaunch(id, {
     coin,
@@ -164,9 +179,12 @@ export async function readLaunchedCoin(client: PublicClient, id: string): Promis
     symbol,
     pairSymbol,
     pairDecimals: Number.isInteger(pairDecimals) ? pairDecimals : 18,
+    coinIsToken0,
     startMcap: typeof args?.startMcap === "bigint" ? args.startMcap : null,
+    sqrtPriceX96,
+    supplyRaw,
     metadataCid,
-    poolLive,
+    poolLive: sqrtPriceX96 !== null,
     category,
   });
   return built;

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { fees, hookPips } from "@/lib/tokens";
 import { coinAge, type Coin } from "@/lib/coin";
+import { useHypeUsd } from "@/lib/hype";
 import { CoinHeader } from "@/components/CoinFace";
 import { Price } from "@/components/Price";
 import { Chart } from "@/components/Chart";
@@ -15,6 +16,7 @@ function shortAddress(value: string): string {
 export function CoinBody({ coin }: { coin: Coin }) {
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   const [copied, setCopied] = useState(false);
+  const hypeUsd = useHypeUsd();
   useEffect(() => {
     const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
     return () => window.clearInterval(id);
@@ -36,7 +38,9 @@ export function CoinBody({ coin }: { coin: Coin }) {
             category: coin.category,
             mode: coin.mode,
             mcap: coin.mcap,
-            mcapUsd: coin.mcapUsd,
+            mcapUsd: coin.mcap !== undefined && hypeUsd != null ? coin.mcap * hypeUsd : coin.mcapUsd,
+            startMcap: coin.startMcap,
+            startMcapUsd: coin.pairUsd != null && coin.startMcap !== undefined ? coin.startMcap * coin.pairUsd : null,
             description: `${coin.description} ${decaying ? "The decay is still running." : "The hook fee has settled at 1%."}`,
             x: coin.x,
             telegram: coin.telegram,
@@ -45,7 +49,7 @@ export function CoinBody({ coin }: { coin: Coin }) {
         />
         {coin.price !== undefined ? (
           <p className="num">
-            <Price value={coin.price} />
+            <Price value={coin.price} symbol="HYPE" usd={hypeUsd} />
           </p>
         ) : null}
         <Chart poolId={coin.poolId} />

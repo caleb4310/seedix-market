@@ -49,6 +49,7 @@ contract FeeVault {
         if (msg.sender != recipient) revert NotRecipient();
         uint256 amount;
         if (pairSide) {
+            if (hook.backingOf(id) != address(0)) revert Nothing();
             (uint128 creatorPair,,,,) = hook.pots(id);
             amount = creatorPair;
             if (amount == 0) revert Nothing();

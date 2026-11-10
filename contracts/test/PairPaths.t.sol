@@ -279,13 +279,15 @@ contract PairPathsTest is Fixture {
         PairLike(token).approve(address(router), type(uint256).max);
         (address coin, PoolId id) = d.launcher.launch(_params(token, 1, 0, address(0)));
         vm.warp(block.timestamp + 11);
-        _buy(id, 100 ether);
+        _buy(id, 5 ether);
         vm.warp(block.timestamp + 2 hours);
-        address holder = address(0x1111);
-        uint256 funded = 0.01 ether;
+        d.executor.pokeRoute(token);
+        d.executor.convertAccrued(id);
+        uint256 funded = d.distributor.poolCarry(id);
         uint256 pay = funded * 90 / 100;
+        address holder = address(0x1111);
         vm.prank(publisher);
-        uint64 epoch = d.distributor.fund(id, uint128(funded));
+        uint64 epoch = d.distributor.fund(id, 0);
         bytes32 leaf = KickTree.leaf(block.chainid, address(d.distributor), coin, token, epoch, holder, pay);
         vm.prank(publisher);
         d.distributor.postRoot(id, epoch, leaf, keccak256("manifest"));
@@ -318,18 +320,22 @@ contract PairPathsTest is Fixture {
     }
 
     function _exercise(MockXStock token) internal {
-        token.approve(address(router), type(uint256).max);
         token.approve(address(d.launcher), type(uint256).max);
-        (, PoolId id) = d.launcher.launch(_params(address(token), 2, 0, address(0)));
+        (, PoolId id) = d.launcher.launch(_params(address(token), 0, 0, address(0)));
         vm.warp(block.timestamp + 11);
         _buy(id, 5 ether);
-        assertGt(d.hook.platformBurn(Currency.wrap(address(token))), 0);
+        assertGt(d.hook.platformBurn(Currency.wrap(address(whype))), 0);
+        (uint128 owed,,,,) = d.hook.pots(id);
+        assertGt(owed, 0);
         vm.warp(block.timestamp + C.TWAP_WINDOW);
         d.executor.pokeRoute(address(token));
-        uint256 budget = d.hook.platformBurn(Currency.wrap(address(token)));
+        uint256 beforeBal = token.balanceOf(creator);
+        d.executor.convertAccrued(id);
+        assertGt(token.balanceOf(creator), beforeBal);
+        uint256 budget = d.hook.platformBurn(Currency.wrap(address(whype)));
         uint256 amount = budget > 0.01 ether ? 0.01 ether : budget;
-        d.executor.buybackPlatform(Currency.wrap(address(token)), amount, 1, 1);
-        assertLt(d.hook.platformBurn(Currency.wrap(address(token))), budget);
+        d.executor.buybackPlatform(Currency.wrap(address(whype)), amount, 1, 1);
+        assertLt(d.hook.platformBurn(Currency.wrap(address(whype))), budget);
     }
 
     function _vet(address token, uint8 category) internal {

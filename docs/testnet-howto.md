@@ -24,9 +24,10 @@ The router moves ERC-20 only. Buys of the WHYPE pair spend WHYPE, not native HYP
 
 1. Connect an injected wallet (MetaMask or Rabby) or WalletConnect.
 2. Open Launch.
-3. Enter the name and ticker. Pick a listed stock or pre-IPO pair, or paste any token address. Kickback is only offered when that pair is vetted on chain. Keep and Burn work for an unvetted token.
+3. Enter the name and ticker. The coin always trades against HYPE. Pick a stock, a pre-IPO token, or paste a contract: that token is the backing asset, not the pool pair. Kickback is only offered when that backing token is vetted on chain. Keep works for an unvetted backing token. Burn hides the picker and has no backing token; fees buy the coin back and burn it.
 4. Description, website, X, and Telegram are optional. A description that is a metadata id (10 to 128 letters and numbers) is pinned with `CoinMetadata.pin` when that contract is in `deployments/99801.json`.
-5. Hold the launch button until it fills. The wallet asks you to sign `launch` with that pair and mode. The page shows the transaction as pending, with an explorer link, and confirmed after it is mined.
+5. Hold the launch button until it fills. The wallet asks you to sign `launch`. After it is mined, a confirmation opens and the page moves to the new coin. The form resets.
+6. Dollar amounts use the API's CoinGecko `hyperliquid` quote, cached for about 60 seconds. If that feed is down, the last price is kept and then the UI falls back to HYPE. The footer names the source.
 
 ## Buy and sell
 

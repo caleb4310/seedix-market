@@ -1,15 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAccount, usePublicClient, useReadContract } from "wagmi";
 import { isAddress } from "viem";
 import { cleanSocials } from "@seedix/shared";
 import { erc20Abi, launcherAbi, metadataAbi } from "@/lib/abi";
+import { apiUrl } from "@/lib/api";
 import { elysiumTestnet } from "@/lib/chain";
 import { modeLabel, type Mode } from "@/lib/coin";
 import { coinMetadataAddress, feeWallet, sameAddress } from "@/lib/deployment";
 import { buildLaunchParams } from "@/lib/launch";
+import { launchSuccess } from "@/lib/launchSuccess";
 import { launchedCoin, tokenDecimals } from "@/lib/onchain";
 import { parseTokenAmount } from "@/lib/amounts";
 import { DEAD } from "@/lib/protocol";
@@ -67,6 +70,7 @@ export function LaunchForm() {
   const start = useRef(0);
   const sending = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
   const tx = useContractTx();
   const { address, chainId } = useAccount();
   const client = usePublicClient({ chainId: elysiumTestnet.id });
@@ -116,7 +120,8 @@ export function LaunchForm() {
   const socials = cleanSocials({ description, website, x: xHandle, telegram });
   const nameBytes = byteLen(name.trim());
   const tickerBytes = byteLen(ticker.trim());
-  const pairOk = unverified ? addressOk : Boolean(selected);
+  const burn = mode === "burn";
+  const pairOk = burn || (unverified ? addressOk : Boolean(selected));
   const teamOk = Number.isInteger(team) && team >= 0 && team <= 5;
   const ready =
     Boolean(address) &&
@@ -167,7 +172,9 @@ export function LaunchForm() {
       category: unverified ? "crypto" : selected?.category ?? null,
       mode,
       mcap,
+      startMcap: mcap,
       mcapUsd: selected?.usd != null ? mcap * selected.usd : null,
+      startMcapUsd: selected?.usd != null ? mcap * selected.usd : null,
       description: socials.description,
       website: socials.website,
       x: socials.x,
@@ -200,6 +207,23 @@ export function LaunchForm() {
     if (!busy && tx.state.status !== "confirmed") setHolding(0);
   }
 
+  function resetLaunch() {
+    setName("");
+    setTicker("");
+    setPasted("");
+    setAck(false);
+    setMode("keep");
+    setTeam(0);
+    setMcap(20000);
+    setDescription("");
+    setWebsite("");
+    setXHandle("");
+    setTelegram("");
+    setImage(null);
+    setHolding(0);
+    setNote("");
+  }
+
   async function launch() {
     if (sending.current) return;
     sending.current = true;
@@ -211,7 +235,7 @@ export function LaunchForm() {
   }
 
   async function runLaunch() {
-    if (!address || !pairAddress || !launcherAddress) {
+    if (!address || (!burn && !pairAddress) || !launcherAddress) {
       setNote("Connect a wallet to launch.");
       setHolding(0);
       return;
@@ -224,17 +248,9 @@ export function LaunchForm() {
     }
     setNote("");
     setPoolId(null);
-    let decimals = 18;
-    try {
-      decimals = await tokenDecimals(pairAddress);
-    } catch (err) {
-      setNote(err instanceof Error ? err.message : "Could not read the pair decimals.");
-      setHolding(0);
-      return;
-    }
     let startMcapInPair: bigint;
     try {
-      startMcapInPair = parseTokenAmount(String(mcap), decimals);
+      startMcapInPair = parseTokenAmount(String(mcap), 18);
     } catch (err) {
       setNote(err instanceof Error ? err.message : "Enter a starting market cap.");
       setHolding(0);
@@ -245,7 +261,7 @@ export function LaunchForm() {
       params = buildLaunchParams({
         name,
         symbol: ticker,
-        pair: pairAddress,
+        pair: (burn ? "0x0000000000000000000000000000000000000000" : pairAddress) as `0x${string}`,
         mode,
         feeRecipient,
         teamPercent: team,
@@ -276,6 +292,21 @@ export function LaunchForm() {
       return;
     }
     setPoolId(launched.poolId);
+    const success = launchSuccess(launched.poolId);
+    if (apiUrl && image?.startsWith(`${apiUrl}/logos/`)) {
+      const url = image.slice(apiUrl.length);
+      void fetch(`${apiUrl}/logos/attach`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ poolId: launched.poolId, url }),
+      });
+    }
+    if (success) {
+      window.setTimeout(() => {
+        resetLaunch();
+        router.push(success.href);
+      }, 900);
+    }
     // The image input is a local preview (`blob:`). It is not uploaded and it is not pinned.
     // CoinMetadata accepts a CID of letters and digits only, which is what a raw CIDv0 or CIDv1
     // looks like. This form never sends `ipfs://`. A description that is itself that CID is pinned.
@@ -326,7 +357,19 @@ export function LaunchForm() {
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (!file) return;
-              setImage(URL.createObjectURL(file));
+              if (!apiUrl) {
+                setImage(URL.createObjectURL(file));
+                return;
+              }
+              void file.arrayBuffer().then(async (buf) => {
+                const response = await fetch(`${apiUrl}/logos`, { method: "POST", body: buf });
+                if (!response.ok) {
+                  setNote("Use a PNG, JPEG, or WEBP under 512kb.");
+                  return;
+                }
+                const body = (await response.json()) as { url?: string };
+                if (body.url) setImage(`${apiUrl}${body.url}`);
+              });
             }}
           />
           <button className="file-btn" type="button" onClick={() => fileRef.current?.click()}>
@@ -335,8 +378,12 @@ export function LaunchForm() {
           </button>
         </div>
         <div>
-          <span className="lbl">Pair token</span>
-          <Tabs label="Pair source" size="sm" value={source} onChange={setSource} options={sources} />
+          <span className="lbl">Backing token</span>
+          {burn ? (
+            <p className="note stack-top">Burn has no backing token. The coin trades against HYPE, and fees buy the coin back and burn it.</p>
+          ) : (
+            <>
+          <Tabs label="Backing source" size="sm" value={source} onChange={setSource} options={sources} />
           {source === "any" ? (
             <div className="stack-top">
               <Field label="Token address">
@@ -361,6 +408,8 @@ export function LaunchForm() {
                 options={listed.map((pair) => ({ id: pair.address, label: pairTabLabel(pair) }))}
               />
             </div>
+          )}
+            </>
           )}
         </div>
         <div className="modes" role="radiogroup" aria-label="Fee mode">
@@ -423,7 +472,7 @@ export function LaunchForm() {
                 onChange={(e) => setTeam(Math.min(5, Math.max(0, Number(e.target.value) || 0)))}
               />
             </Field>
-            <Field label={`Starting market cap · ${pairSymbol || "pair"}`}>
+            <Field label="Starting market cap · HYPE">
               <input type="number" min={1000} value={mcap} onChange={(e) => setMcap(Number(e.target.value))} />
             </Field>
             <Button variant="ghost" type="button" onClick={() => setMcap(20000)}>
@@ -457,12 +506,15 @@ export function LaunchForm() {
         <p id="hold-help" className="note">Hold the button, or hold Enter or Space, until it fills. That sends the launch.</p>
         {chainId !== undefined && address && chainId !== elysiumTestnet.id ? <WalletButton /> : null}
         <TxStatus state={status} />
-        {poolId ? (
-          <p className="stack-top">
-            <Link className="text-link" href={`/coin/${poolId}`}>
+        {launchSuccess(poolId) ? (
+          <div className="launch-success" role="dialog" aria-label="Coin launched">
+            <p className="kicker">Launched</p>
+            <h2>Your coin is live</h2>
+            <p className="lede">It trades against HYPE. Opening the coin page.</p>
+            <Link className="btn" href={launchSuccess(poolId)!.href}>
               Open the new coin
             </Link>
-          </p>
+          </div>
         ) : null}
       </form>
       <aside className="preview-side">{preview}</aside>

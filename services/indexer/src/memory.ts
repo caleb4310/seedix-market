@@ -25,6 +25,8 @@ export class MemoryStore implements Store {
 
   readonly pairs = new Map<string, { status: number; category: number }>();
 
+  async setBacking(): Promise<void> {}
+
   async classifyPair(chainId: number, pair: Hex, status: number, category: number): Promise<void> {
     this.pairs.set(`${chainId}:${lower(pair)}`, { status, category });
     for (const [key, coin] of this.coins) {

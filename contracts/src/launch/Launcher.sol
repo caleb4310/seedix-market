@@ -20,9 +20,9 @@ import {BuybackExecutor} from "../buyback/BuybackExecutor.sol";
 /// @notice Ownerless launcher. One transaction deploys the coin, initialises the pool, and seeds it.
 ///         Swaps in that same transaction revert. Pause is instant for the guardian role.
 ///
-///         Vetted pairs may use Kickback. A pasted or unvetted pair may use Keep or Burn only.
-///         Pasted pairs are probed for fee-on-transfer in this transaction. Rebasing cannot be
-///         proved here. A rebasing pair is unsafe for the pool and for Kickback. See docs/pairs.md.
+///         Every pool is coin/WHYPE. `pair` on a Keep or Kickback launch is the backing token.
+///         Burn has no backing token. Vetted backing tokens may use Kickback. A pasted backing
+///         token may use Keep only. Rebasing backing is unsafe for the conversion route.
 contract Launcher {
     using PoolIdLibrary for PoolKey;
     using SafeERC20 for IERC20;
@@ -96,7 +96,8 @@ contract Launcher {
         uint256 teamAmount,
         uint256 startMcap,
         uint8 category,
-        uint8 pairStatus
+        uint8 pairStatus,
+        address backing
     );
     event LaunchesPaused(address indexed by);
     event LaunchesUnpaused();
@@ -289,21 +290,21 @@ contract Launcher {
         built.liqAmt = C.SUPPLY - built.teamAmt;
         bytes32 salt = keccak256(abi.encode(msg.sender, launchNonce++, params.name, params.symbol, params.pair));
         built.coin = Clones.cloneDeterministic(address(implementation), salt);
-        built.coinIsToken0 = uint160(built.coin) < uint160(params.pair);
         LaunchToken(built.coin)
             .initialize(params.name, params.symbol, address(this), built.liqAmt, params.teamWallet, built.teamAmt);
     }
 
     function _openPool(LaunchParams calldata params, bool isPlatform, Built memory built) internal returns (PoolId id) {
         uint8 mode = isPlatform ? 2 : params.mode;
-        uint8 status = statusOf[params.pair];
-        if (status == STATUS_UNKNOWN) {
-            statusOf[params.pair] = STATUS_UNVETTED;
-            categoryOf[params.pair] = CATEGORY_CRYPTO;
-            status = STATUS_UNVETTED;
-            emit PairClassified(params.pair, STATUS_UNVETTED, CATEGORY_CRYPTO);
+        address whype = Currency.unwrap(executor.whype());
+        address backing = (!isPlatform && mode != 2 && params.pair != whype) ? params.pair : address(0);
+        if (backing != address(0) && statusOf[backing] == STATUS_UNKNOWN) {
+            statusOf[backing] = STATUS_UNVETTED;
+            categoryOf[backing] = CATEGORY_CRYPTO;
+            emit PairClassified(backing, STATUS_UNVETTED, CATEGORY_CRYPTO);
         }
-        Currency pair = Currency.wrap(params.pair);
+        built.coinIsToken0 = uint160(built.coin) < uint160(whype);
+        Currency pair = Currency.wrap(whype);
         Currency coinCur = Currency.wrap(built.coin);
         PoolKey memory key = PoolKey({
             currency0: built.coinIsToken0 ? coinCur : pair,
@@ -316,22 +317,23 @@ contract Launcher {
         creatorOf[id] = msg.sender;
         LaunchCurve.Plan memory curve = LaunchCurve.plan(built.coinIsToken0, params.startMcapInPair, built.liqAmt);
         hook.armLaunchGuard(id);
-        hook.stage(key, built.coin, pair, built.coinIsToken0, mode, isPlatform, params.feeRecipient);
+        hook.stage(key, built.coin, pair, built.coinIsToken0, mode, isPlatform, params.feeRecipient, backing);
         poolManager.initialize(key, curve.sqrtPriceX96);
         IERC20(built.coin).safeTransfer(address(locker), built.liqAmt);
         locker.seed(key, curve.near, curve.far);
         emit CoinLaunched(
             id,
             built.coin,
-            params.pair,
+            whype,
             mode,
             isPlatform,
             params.feeRecipient,
             params.teamWallet,
             built.teamAmt,
             params.startMcapInPair,
-            categoryOf[params.pair],
-            status
+            backing == address(0) ? CATEGORY_CRYPTO : categoryOf[backing],
+            backing == address(0) ? STATUS_VETTED : statusOf[backing],
+            backing
         );
     }
 
@@ -340,22 +342,25 @@ contract Launcher {
         uint256 symLen = bytes(params.symbol).length;
         if (nameLen == 0 || nameLen > 32 || symLen == 0 || symLen > 8) revert BadArgs();
         if (!isPlatform && params.mode > 2) revert BadArgs();
-        if (params.pair.code.length == 0) revert UnsafePair();
-        if (_isProtocol(params.pair) || params.pair == address(implementation) || _isLaunchClone(params.pair)) {
-            revert UnsafePair();
-        }
-        uint8 status = statusOf[params.pair];
-        if (status == STATUS_REFUSED) revert PairRefused();
-        if (status != STATUS_VETTED) {
-            (bool meta,,,) = _tryMeta(params.pair);
-            if (!meta) revert UnsafePair();
-            uint8 dec = _decimals(params.pair);
-            if (dec < 6 || dec > 18) revert UnsafePair();
-            if (!_probe(params.pair)) revert FeeOnTransfer();
-        }
-        if (!isPlatform && params.mode == MODE_KICKBACK && status != STATUS_VETTED) revert KickbackNeedsVetted();
         address whype = Currency.unwrap(executor.whype());
-        if (params.pair != whype && !executor.routeOk(Currency.wrap(params.pair))) revert RouteNotReady();
+        bool burn = isPlatform || params.mode == 2;
+        if (!burn && params.pair != whype) {
+            if (params.pair.code.length == 0) revert UnsafePair();
+            if (_isProtocol(params.pair) || params.pair == address(implementation) || _isLaunchClone(params.pair)) {
+                revert UnsafePair();
+            }
+            uint8 status = statusOf[params.pair];
+            if (status == STATUS_REFUSED) revert PairRefused();
+            if (status != STATUS_VETTED) {
+                (bool meta,,,) = _tryMeta(params.pair);
+                if (!meta) revert UnsafePair();
+                uint8 dec = _decimals(params.pair);
+                if (dec < 6 || dec > 18) revert UnsafePair();
+                if (!_probe(params.pair)) revert FeeOnTransfer();
+            }
+            if (params.mode == MODE_KICKBACK && status != STATUS_VETTED) revert KickbackNeedsVetted();
+            if (!executor.routeOk(Currency.wrap(params.pair))) revert RouteNotReady();
+        }
         if (params.teamBps > C.MAX_TEAM_BPS) revert BadArgs();
         if (params.teamBps > 0 && params.teamWallet == address(0)) revert BadArgs();
         if (params.startMcapInPair == 0) revert BadArgs();

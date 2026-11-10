@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { elysiumTestnet, cleanSocials } from "@seedix/shared";
+import { elysiumTestnet, cleanSocials, LAUNCH_SUPPLY, marketCapFromSpot } from "@seedix/shared";
+import { attachLogo, logoFor } from "./logos.ts";
 import { claimsForPool } from "./claims.ts";
 import { bucketSeconds, candles, type ChartPoint } from "./chart.ts";
 
@@ -87,6 +88,11 @@ type CoinRow = {
   start_mcap: string;
   category?: number | string;
   pair_decimals?: number | string;
+  coin_decimals?: number | string;
+  coin_is_token0?: boolean;
+  supply?: string;
+  backing?: string | null;
+  volume_24h?: string;
   pair_status?: number | string;
   description?: string | null;
   website?: string | null;
@@ -116,6 +122,14 @@ function tokenUsd(filePath?: string): Map<string, number> {
   return map;
 }
 
+function liveMarketCap(row: CoinRow): string | null {
+  const pairDecimals = Number(row.pair_decimals ?? 18);
+  const summed = row.supply && /^\d+$/.test(row.supply) ? BigInt(row.supply) : 0n;
+  const supply = summed > 0n ? summed : LAUNCH_SUPPLY;
+  if (!row.price || row.price === "0") return null;
+  return marketCapFromSpot(row.price, supply, pairDecimals);
+}
+
 function coinJson(row: CoinRow, usd: Map<string, number>) {
   const pair = prefixed(row.pair);
   return {
@@ -133,6 +147,11 @@ function coinJson(row: CoinRow, usd: Map<string, number>) {
     price: row.price,
     holders: Number(row.holders),
     startMcap: row.start_mcap,
+    marketCap: liveMarketCap(row),
+    coinIsToken0: Boolean(row.coin_is_token0),
+    backing: prefixed(row.backing),
+    volume24h: row.volume_24h ?? "0",
+    image: logoFor(prefixed(row.pool_id) ?? ""),
     pairUsd: pair ? (usd.get(pair.toLowerCase()) ?? null) : null,
     category: categoryName(Number(row.category ?? 0)),
     pairDecimals: Number(row.pair_decimals ?? 18),
@@ -145,10 +164,12 @@ function coinJson(row: CoinRow, usd: Map<string, number>) {
 }
 
 const coinSelect = `SELECT encode(c.pool_id, 'hex') AS pool_id, encode(c.coin, 'hex') AS coin, encode(c.pair, 'hex') AS pair,
-  c.name, c.symbol, c.pair_symbol, c.mode, c.is_platform, c.category, c.pair_decimals, c.pair_status,
+  c.name, c.symbol, c.pair_symbol, c.mode, c.is_platform, c.category, c.coin_decimals, c.pair_decimals, c.coin_is_token0, c.pair_status,
   c.description, c.website, c.x_url, c.telegram, encode(c.fee_recipient, 'hex') AS fee_recipient,
-  encode(c.team_wallet, 'hex') AS team_wallet, extract(epoch from c.launch_time) AS launch_time, c.start_mcap::text AS start_mcap,
+  encode(c.team_wallet, 'hex') AS team_wallet, encode(c.backing, 'hex') AS backing, extract(epoch from c.launch_time) AS launch_time, c.start_mcap::text AS start_mcap,
   (SELECT s.price::text FROM swaps s WHERE s.pool_id = c.pool_id ORDER BY s.block_time DESC, s.log_index DESC LIMIT 1) AS price,
+  (SELECT COALESCE(SUM(h.balance), 0)::text FROM holders h WHERE h.pool_id = c.pool_id) AS supply,
+  (SELECT COALESCE(SUM(s.amount_in), 0)::text FROM swaps s WHERE s.pool_id = c.pool_id AND s.block_time > now() - interval '1 day') AS volume_24h,
   (SELECT count(*) FROM holders h WHERE h.pool_id = c.pool_id AND h.balance > 0) AS holders
   FROM coins c`;
 
@@ -158,6 +179,27 @@ export type RequestExtras = {
   tokenListPath?: string;
 };
 
+let hypeCache: { at: number; usd: number | null } = { at: 0, usd: null };
+
+/** CoinGecko `hyperliquid` id, cached for 60s. A failed refresh keeps the last price. */
+export async function hypeQuote(): Promise<{ usd: number | null; source: string; stale: boolean }> {
+  if (hypeCache.usd != null && Date.now() - hypeCache.at < 60_000) {
+    return { usd: hypeCache.usd, source: "coingecko:hyperliquid", stale: false };
+  }
+  try {
+    const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=hyperliquid&vs_currencies=usd");
+    const body = (await response.json()) as { hyperliquid?: { usd?: number } };
+    const usd = body.hyperliquid?.usd;
+    if (typeof usd === "number" && Number.isFinite(usd) && usd > 0) {
+      hypeCache = { at: Date.now(), usd };
+      return { usd, source: "coingecko:hyperliquid", stale: false };
+    }
+  } catch {
+    /* stale fallback */
+  }
+  return { usd: hypeCache.usd, source: "coingecko:hyperliquid", stale: hypeCache.usd != null };
+}
+
 export async function handleRequest(
   db: Db,
   method: string,
@@ -166,6 +208,13 @@ export async function handleRequest(
   extras: RequestExtras = {},
 ): Promise<{ status: number; json: unknown }> {
   const path = pathname.replace(/^\/api(?=\/|$)/, "") || "/";
+  if (method === "POST" && path === "/logos/attach") {
+    const record = extras.body && typeof extras.body === "object" ? (extras.body as Record<string, unknown>) : {};
+    const poolId = typeof record.poolId === "string" ? record.poolId : "";
+    const url = typeof record.url === "string" ? record.url : "";
+    attachLogo(poolId, url);
+    return { status: 200, json: { ok: true } };
+  }
   if (method === "POST" && path === "/metadata") {
     const record = extras.body && typeof extras.body === "object" ? (extras.body as Record<string, unknown>) : {};
     return { status: 200, json: cleanSocials(record) };
@@ -173,6 +222,30 @@ export async function handleRequest(
   if (method !== "GET") return { status: 405, json: { error: "GET only" } };
   const chainId = elysiumTestnet.id;
   if (path === "/health") return { status: 200, json: { ok: true, chainId } };
+  if (path === "/price/hype") {
+    const quote = await hypeQuote();
+    return { status: 200, json: quote };
+  }
+  if (path === "/stats") {
+    const coins = await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM coins WHERE chain_id = $1`, [chainId]);
+    const burned = await db.query<{ n: string }>(
+      `SELECT COALESCE(SUM(coin_burned), 0)::text AS n FROM buybacks WHERE chain_id = $1`,
+      [chainId],
+    );
+    const kick = await db.query<{ n: string }>(
+      `SELECT COALESCE(SUM(amount), 0)::text AS n FROM kickback_payouts WHERE chain_id = $1`,
+      [chainId],
+    );
+    const volume = await db.query<{ n: string }>(
+      `SELECT COALESCE(SUM(amount_in), 0)::text AS n FROM swaps WHERE chain_id = $1 AND block_time > now() - interval '1 day'`,
+      [chainId],
+    );
+    const num = (rows: { n: string }[]) => rows[0]?.n ?? "0";
+    return {
+      status: 200,
+      json: { coins: num(coins.rows), burned: num(burned.rows), kickback: num(kick.rows), volume24h: num(volume.rows) },
+    };
+  }
   if (path === "/coins") {
     const filters = ["c.chain_id = $1"];
     const params: unknown[] = [chainId];

@@ -17,6 +17,7 @@ const chain = defineChain({
 
 const executorAbi = parseAbi([
   "function buybackCoin(bytes32 id, uint256 amountIn, uint256 minOut) returns (uint256)",
+  "function convertAccrued(bytes32 id) returns (uint256)",
   "function buybackPlatform(address pair, uint256 amountIn, uint256 minWhypeOut, uint256 minPlatformOut) returns (uint256, uint256)",
   "function lastBuybackAt(bytes32 id) view returns (uint256)",
   "function maxInPerPeriod() view returns (uint256)",
@@ -201,6 +202,7 @@ export async function main(): Promise<void> {
         }
       }
       for (const poolId of pools) {
+        await send(executor, executorAbi, "convertAccrued", [poolId]);
         const pots = await publicClient.readContract({ address: hook, abi: hookAbi, functionName: "pots", args: [poolId] });
         const last = await publicClient.readContract({
           address: executor,

@@ -20,6 +20,7 @@ import {OracleLib} from "../libraries/OracleLib.sol";
 import {RouteDepth} from "../libraries/RouteDepth.sol";
 import {LaunchHook} from "../hook/LaunchHook.sol";
 import {LaunchToken} from "../token/LaunchToken.sol";
+import {KickbackDistributor} from "../kickback/KickbackDistributor.sol";
 
 /// @notice Guarded buybacks. The executor calls the PoolManager itself so the hook fee exemption applies.
 ///         Guards run first: pause, pool age, 30-minute oracle coverage, 2% spot band, TWAP min-out.
@@ -259,6 +260,45 @@ contract BuybackExecutor is IUnlockCallback {
         hook.debitBurnCoin(id, burnCoin, address(this));
         LaunchToken(coin).burn(burnCoin);
         emit CoinSideBurned(id, burnCoin);
+    }
+
+    /// @notice Swaps accrued WHYPE fees into the backing token. A missing route or a price
+    ///         outside the TWAP band reverts before the pot is touched, so the keeper retries.
+    function convertAccrued(PoolId id) external returns (uint256 out) {
+        if (msg.sender != keeper || keeper == address(0)) revert NotKeeper();
+        address backing = hook.backingOf(id);
+        if (backing == address(0)) revert Nothing();
+        (,,, uint8 mode,,,) = hook.config(id);
+        (uint128 creatorPair,, uint128 kickbackPair,,) = hook.pots(id);
+        uint256 amount = mode == 0 ? uint256(creatorPair) : mode == 1 ? uint256(kickbackPair) : 0;
+        if (amount == 0) revert Nothing();
+        Currency token = Currency.wrap(backing);
+        Route memory registered = whypeRoute[token];
+        if (!registered.set) revert RouteNotRegistered();
+        if (minRouteDepth != 0 && _depth(registered) + 1 < minRouteDepth) revert RouteNotRegistered();
+        uint256 depth = _depth(registered);
+        if (depth > 4 && amount > depth / 4) amount = depth / 4;
+        pokeRoute(backing);
+        Route memory route = whypeRoute[token];
+        PoolKey memory key = _routeKey(route);
+        (, int24 spot,,) = hook.poolManager().getSlot0(key.toId());
+        int24 twap = OracleLib.consult(routeOracle[backing], uint32(block.timestamp), C.TWAP_WINDOW, spot);
+        TwapGuard.assertBand(spot, twap);
+        bool zeroForOne = Currency.unwrap(whype) == Currency.unwrap(key.currency0);
+        uint256 floor = TwapGuard.minOut(amount, twap, zeroForOne);
+        if (floor < 1) revert TooLittleReceived();
+        if (mode == 0) hook.debitCreatorPair(id, amount, address(this));
+        else hook.debitKickback(id, amount, address(this));
+        out = _swapKey(key, whype, amount, floor);
+        if (mode == 0) {
+            (,,,,,, address recipient) = hook.config(id);
+            IERC20(backing).safeTransfer(recipient, out);
+        } else {
+            address dist = hook.kickbackDistributor();
+            IERC20(backing).safeTransfer(dist, out);
+            KickbackDistributor(dist).noteBacking(id, out);
+        }
+        emit BuybackExecuted(id, amount, out);
     }
 
     /// @notice Buys the coin with the burn-pair pot and burns what it receives.

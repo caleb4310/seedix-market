@@ -2,17 +2,62 @@
 
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
-import { marketCapFromRaw } from "./amounts";
+import { marketCapFromRaw, marketCapUsd } from "./amounts";
+import { coinPrice, LAUNCH_SUPPLY, marketCapFromSpot } from "@seedix/shared";
 import { apiUrl, coinFromApi, getCoins } from "./api";
 import type { Coin, Mode } from "./coin";
-import { decimalsAbi, launcherLegacyAbi } from "./abi";
-import { hookAddress, hookConfigAbi, indexerStartBlock, launcherAbi, launcherAddress, tokenMetaAbi } from "./trade";
+import { decimalsAbi, erc20Abi, launcherLegacyAbi } from "./abi";
+import type { PublicClient } from "viem";
+import { hookAddress, hookConfigAbi, indexerStartBlock, launcherAbi, launcherAddress, stateViewAddress, tokenMetaAbi } from "./trade";
 
 export type Board = {
   status: "loading" | "ready" | "error";
   coins: Coin[];
   error?: string;
 };
+
+const slotAbi = [
+  {
+    type: "function",
+    name: "getSlot0",
+    stateMutability: "view",
+    inputs: [{ name: "poolId", type: "bytes32" }],
+    outputs: [
+      { name: "sqrtPriceX96", type: "uint160" },
+      { name: "tick", type: "int24" },
+      { name: "protocolFee", type: "uint24" },
+      { name: "lpFee", type: "uint24" },
+    ],
+  },
+] as const;
+
+async function withSpot(client: PublicClient, coins: Coin[]): Promise<Coin[]> {
+  if (!stateViewAddress) return coins;
+  return Promise.all(
+    coins.map(async (coin) => {
+      if (!coin.poolId || !coin.tokenAddress || coin.coinIsToken0 === undefined) return coin;
+      try {
+        const [slot, supply] = await Promise.all([
+          client.readContract({ address: stateViewAddress, abi: slotAbi, functionName: "getSlot0", args: [coin.poolId] }),
+          client.readContract({ address: coin.tokenAddress, abi: erc20Abi, functionName: "totalSupply" }).catch(() => LAUNCH_SUPPLY),
+        ]);
+        const sqrt = Array.isArray(slot) ? slot[0] : 0n;
+        if (typeof sqrt !== "bigint" || sqrt <= 0n) return coin;
+        const text = marketCapFromSpot(
+          coinPrice(sqrt, coin.coinIsToken0),
+          typeof supply === "bigint" && supply > 0n ? supply : LAUNCH_SUPPLY,
+          coin.pairDecimals ?? 18,
+        );
+        if (!text) return coin;
+        const amount = Number(text);
+        if (!Number.isFinite(amount)) return coin;
+        return { ...coin, mcap: amount, mcapUsd: marketCapUsd(amount, coin.pairUsd) };
+      } catch {
+        return coin;
+      }
+    }),
+  );
+}
 
 const empty: Board = { status: launcherAddress ? "loading" : "ready", coins: [] };
 
@@ -28,7 +73,9 @@ export function useBoard(): Board {
       if (apiUrl) {
         try {
           const body = await getCoins();
-          if (!cancel) setBoard({ status: "ready", coins: body.coins.map((row) => coinFromApi(row, hookAddress || undefined)) });
+          let coins = body.coins.map((row) => coinFromApi(row, hookAddress || undefined));
+          if (client) coins = await withSpot(client, coins);
+          if (!cancel) setBoard({ status: "ready", coins });
         } catch {
           if (!cancel) setBoard({ status: "error", coins: [], error: "The coin list is unavailable." });
         }
@@ -104,7 +151,8 @@ export function useBoard(): Board {
             launchTime,
             description: args.isPlatform ? "Platform token." : `${mode} mode, paired with ${pairName}.`,
             recipient: (args.feeRecipient ?? token) as `0x${string}`,
-            mcap: args.startMcap === undefined ? undefined : marketCapFromRaw(BigInt(args.startMcap), Number(pairDecimals)),
+            startMcap: args.startMcap === undefined ? undefined : marketCapFromRaw(BigInt(args.startMcap), Number(pairDecimals)),
+            pairDecimals: Number(pairDecimals),
             coinIsToken0: Boolean(configRow[2]),
             tokenAddress: token,
             pairAddress: pair,
@@ -113,7 +161,8 @@ export function useBoard(): Board {
           });
         }
         coins.reverse();
-        if (!cancel) setBoard({ status: "ready", coins });
+        const spotted = client ? await withSpot(client, coins) : coins;
+        if (!cancel) setBoard({ status: "ready", coins: spotted });
       } catch {
         if (!cancel) {
           setBoard({

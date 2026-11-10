@@ -62,7 +62,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </header>
       <main className="main">{children}</main>
       <footer className="footer">
-        <span>Testnet only. Gas is HYPE.</span>
+        <span>Testnet only. Gas is HYPE. USD marks use the CoinGecko hyperliquid price when it is available.</span>
         <span>Fees: 1% platform, hook 80% to 1%, LP 0.1%.</span>
       </footer>
     </div>

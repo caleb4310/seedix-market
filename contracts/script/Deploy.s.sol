@@ -194,20 +194,23 @@ contract DeploySeedix is Script {
         console2.log("planned whype total", TESTNET_MIN_ROUTE_DEPTH * seeded.length);
         console2.log("mainnet min route depth", C.MAINNET_MIN_ROUTE_DEPTH);
         RouteSeeder seeder = new RouteSeeder();
+        // These pools are WHYPE↔backing routes, not launch pairs. Launch pools are coin/WHYPE.
         // A shortfall is pulled from the deployer, capped at one depth. Cleared after the loop.
         IERC20(whype).approve(address(seeder), TESTNET_MIN_ROUTE_DEPTH);
         PoolKey[] memory stockRoutes = new PoolKey[](5);
+        PoolKey[2] memory preipoRoutes;
         uint256 whypeSpent;
         for (uint256 i; i < seeded.length; ++i) {
-            // The pair token funds both sides of the range, so it keeps a 4x buffer. WHYPE is one
+            // The backing token funds both sides of the range, so it keeps a 4x buffer. WHYPE is one
             // side: send exactly one depth. Anything the position does not take returns here.
             MockXStock(seeded[i]).approve(address(seeder), TESTNET_MIN_ROUTE_DEPTH * 4);
             MockXStock(seeded[i]).transfer(address(seeder), TESTNET_MIN_ROUTE_DEPTH * 4);
             IERC20(whype).transfer(address(seeder), TESTNET_MIN_ROUTE_DEPTH);
             (PoolKey memory key, uint256 spent) = seeder.seed(manager, whype, seeded[i], TESTNET_MIN_ROUTE_DEPTH);
             whypeSpent += spent;
-            console2.log("seeded", seeded[i], spent);
+            console2.log("backing route", seeded[i], spent);
             if (i < 5) stockRoutes[i] = key;
+            else preipoRoutes[i - 5] = key;
         }
         IERC20(whype).approve(address(seeder), 0);
         for (uint256 i; i < seeded.length; ++i) {
@@ -220,6 +223,14 @@ contract DeploySeedix is Script {
         console2.log("metadata", address(meta));
         console2.log("preipo unregistered", spacex);
         console2.log("preipo unregistered", openai);
+        console2.log("timelock setPair wSPACEx status 1 category 2");
+        console2.logBytes(abi.encodeCall(Launcher.setPair, (spacex, 1, 2)));
+        console2.log("timelock setPair wOPENAIx status 1 category 2");
+        console2.logBytes(abi.encodeCall(Launcher.setPair, (openai, 1, 2)));
+        console2.log("timelock registerExternal wSPACEx currency0", Currency.unwrap(preipoRoutes[0].currency0));
+        console2.log("timelock registerExternal wSPACEx currency1", Currency.unwrap(preipoRoutes[0].currency1));
+        console2.log("timelock registerExternal wOPENAIx currency0", Currency.unwrap(preipoRoutes[1].currency0));
+        console2.log("timelock registerExternal wOPENAIx currency1", Currency.unwrap(preipoRoutes[1].currency1));
 
         vm.stopBroadcast();
         routeSeeder = address(seeder);

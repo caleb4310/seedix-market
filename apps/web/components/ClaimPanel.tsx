@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { kickbackAbi } from "@/lib/abi";
 import { claimsUrl, getClaims, type ClaimProof } from "@/lib/api";
+import { claimNotice } from "@/lib/claims";
 import { formatTokenAmount } from "@/lib/amounts";
 import type { Coin } from "@/lib/coin";
 import { kickbackAddress } from "@/lib/deployment";
@@ -93,6 +94,11 @@ export function ClaimPanel({ coin }: { coin: Coin }) {
     }
   }
 
+  const notice = claimNotice(
+    isConnected,
+    Boolean(claimsUrl),
+    isConnected ? (proofs === null ? null : proofs.length) : null,
+  );
   const failed = epochs.flatMap((epoch, index) => {
     const row = credits.data?.[index];
     const amount = row?.status === "success" ? (row.result as bigint) : 0n;
@@ -108,9 +114,7 @@ export function ClaimPanel({ coin }: { coin: Coin }) {
           <WalletButton prominent />
         </div>
       ) : null}
-      {claimsUrl && proofs === null ? <p className="note">Loading claim proofs.</p> : null}
-      {claimsUrl && proofs?.length === 0 ? <p className="note">No merkle claim is waiting for this wallet.</p> : null}
-      {!claimsUrl ? <p className="note">Set the API URL to load merkle proofs. Failed-transfer credits below still come from the contract.</p> : null}
+      {notice ? <p className="note">{notice}</p> : null}
       <div className="claims">
         {proofs?.map((row) => (
           <div key={`${row.epoch}-${row.amount}`} className="claim">

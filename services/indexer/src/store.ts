@@ -119,6 +119,7 @@ export type KnownCoin = { poolId: Hex; coin: Hex; coinIsToken0: boolean };
 export interface Store {
   listCoins(chainId: number): Promise<KnownCoin[]>;
   upsertCoin(row: CoinRow): Promise<void>;
+  setBacking(chainId: number, poolId: Hex, backing: Hex): Promise<void>;
   classifyPair(chainId: number, pair: Hex, status: number, category: number): Promise<void>;
   setSocials(
     chainId: number,
@@ -220,6 +221,14 @@ export class PgStore implements Store {
         row.pairStatus ?? 0,
       ],
     );
+  }
+
+  async setBacking(chainId: number, poolId: Hex, backing: Hex): Promise<void> {
+    await this.db.query(`UPDATE coins SET backing = $3 WHERE chain_id = $1 AND pool_id = $2`, [
+      chainId,
+      toBuffer(poolId),
+      toBuffer(backing),
+    ]);
   }
 
   async classifyPair(chainId: number, pair: Hex, status: number, category: number): Promise<void> {
