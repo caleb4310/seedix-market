@@ -47,6 +47,16 @@ export type KickbackRow = {
   blockTime: number;
 };
 
+export type KickbackEpoch = {
+  epoch: string;
+  funded: string;
+  gasReimbursed: string;
+  netDistributed: string;
+  carry: string;
+  sealedAmount: string | null;
+  cancelled: boolean;
+};
+
 const poolId = /^0x[0-9a-fA-F]{64}$/;
 const address = /^0x[0-9a-fA-F]{40}$/;
 
@@ -65,7 +75,7 @@ export function kickbackKind(kind: string): string {
   if (kind === "Rolled") return "Rolled";
   if (kind === "ClaimableCredited") return "Claimable";
   if (kind === "FailedPull") return "Pulled";
-  if (kind === "GasReimbursed") return "Gas";
+  if (kind === "GasReimbursed") return "Gas from the round";
   return kind;
 }
 
@@ -150,7 +160,7 @@ async function getJsonFrom<T>(base: string, path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function getKickbacks(id: string): Promise<{ payouts: KickbackRow[] }> {
+export function getKickbacks(id: string): Promise<{ payouts: KickbackRow[]; epochs?: KickbackEpoch[] }> {
   const path = kickbackPath(id);
   if (!path) return Promise.reject(new Error("bad pool"));
   return getJson(path);

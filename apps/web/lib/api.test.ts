@@ -34,7 +34,7 @@ test("an API coin becomes a board row", () => {
   assert.equal(coin.poolId, id);
   assert.equal(kickbackKind("Pushed"), "Push");
   assert.equal(kickbackKind("ClaimableCredited"), "Claimable");
-  assert.equal(kickbackKind("GasReimbursed"), "Gas");
+  assert.equal(kickbackKind("GasReimbursed"), "Gas from the round");
   assert.equal(kickbackKind("FailedPull"), "Pulled");
 });
 

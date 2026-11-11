@@ -34,6 +34,20 @@ Changing the project id, or the API URL, means running `build web` again and rec
 
 The script spends exactly 1.05 WHYPE (7 pools × 0.15). If the deployer holds 0.05 WHYPE, wrap 1.00 HYPE into WHYPE before broadcasting. Native HYPE left after that wrap pays gas. Pools are coin/WHYPE. The stock and pre-IPO tokens are backing assets, not the pool pair.
 
+## Kickback publisher
+
+The publisher funds a round, posts the merkle root, waits out the one-hour review, then pushes holder transfers in batches of 32 and seals the round. Re-running skips holders already marked paid. Gas is reimbursed from the round, capped at 2%. WHYPE is repaid 1:1 with the HYPE spent. Any other reward token is converted at the backing route's TWAP. A holder whose share is below the gas to pay them is left for the next round.
+
+Create the key file on the host. Do not commit it.
+
+```bash
+install -m 600 -o root /dev/null /etc/seedix/publisher.key
+# write one hex private key into that file, then:
+SEEDIX_PUBLISHER_KEY_FILE=/etc/seedix/publisher.key
+```
+
+`KICKBACK_DRY_RUN=1` logs the next action and does not broadcast. Manifests land in `KICKBACK_MANIFEST_DIR` (default `/var/lib/seedix/manifests`), which the API reads for the payment history.
+
 ## Indexer and keeper
 
 Pass the same env file on every Compose command. The indexer and keeper services interpolate these names from it, so a separate override file is not required. An empty value leaves the process on the address compiled into `deployments/99801.json`.

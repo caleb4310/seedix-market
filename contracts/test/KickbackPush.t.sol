@@ -103,7 +103,7 @@ contract KickbackPushTest is Fixture {
     function test_onlyKeeperPushes() public {
         (uint64 epoch, uint256 amount) = _openSingle(holder, 1 ether);
         vm.prank(holder);
-        vm.expectRevert(KickbackDistributor.NotKeeper.selector);
+        vm.expectRevert(KickbackDistributor.NotPublisher.selector);
         d.distributor.push(id, epoch, _one(holder), _oneAmt(amount), _oneProof(new bytes32[](0)));
     }
 

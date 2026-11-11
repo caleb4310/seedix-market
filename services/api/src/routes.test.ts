@@ -113,6 +113,21 @@ describe("api", () => {
     assert.ok(db.calls.every((sql) => !sql.includes(pool)));
   });
 
+  it("sums all-time HYPE-side volume without the one-day window", async () => {
+    const db = new FakeDb();
+    const res = await handleRequest(db, "GET", "/stats", new URLSearchParams());
+    assert.equal(res.status, 200);
+    const body = res.json as { volume24h: string; volumeAll: string };
+    assert.equal(body.volume24h, "0");
+    assert.equal(body.volumeAll, "0");
+    const day = db.calls.find((sql) => sql.includes("interval '1 day'"));
+    const all = db.calls.find((sql) => sql.includes("SUM(s.amount_in)") && !sql.includes("interval '1 day'"));
+    assert.ok(day);
+    assert.ok(all);
+    assert.match(all ?? "", /coin_is_token0 AND NOT s\.zero_for_one/);
+    assert.doesNotMatch(all ?? "", /coin_burned/);
+  });
+
   it("filters and sorts the coin list in the query", async () => {
     const db = new FakeDb();
     const res = await handleRequest(db, "GET", "/coins", new URLSearchParams("mode=kickback&sort=holders&q=ex"));
@@ -151,6 +166,16 @@ describe("api", () => {
     });
     assert.equal((posted.json as { website: string }).website, "https://seedix.example/coin");
     assert.equal((posted.json as { x: string }).x, "https://x.com/seedix");
+  });
+
+  it("sums gas reimbursed and net paid for each kickback round", async () => {
+    const db = new FakeDb();
+    const res = await handleRequest(db, "GET", `/coins/0x${pool}/kickbacks`, new URLSearchParams());
+    assert.equal(res.status, 200);
+    const sql = db.calls.join("\n");
+    assert.match(sql, /GasReimbursed/);
+    assert.match(sql, /net_distributed/);
+    assert.deepEqual((res.json as { epochs: unknown[] }).epochs, []);
   });
 
   it("returns a merkle proof from the manifest directory", async () => {

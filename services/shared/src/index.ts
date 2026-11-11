@@ -72,3 +72,12 @@ export {
   xUrl,
   type Socials,
 } from "./metadata.ts";
+export {
+  LOGO_EXPIRY_SECONDS,
+  LOGO_MAX_BYTES,
+  LOGO_RATE_LIMIT,
+  LOGO_RATE_WINDOW_MS,
+  logoAttachTypes,
+  logoDomainName,
+  logoUploadTypes,
+} from "./logoMessage.ts";

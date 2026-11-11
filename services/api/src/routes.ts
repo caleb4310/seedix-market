@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { elysiumTestnet, cleanSocials, LAUNCH_SUPPLY, marketCapFromSpot } from "@seedix/shared";
 import { attachLogo, logoFor } from "./logos.ts";
+import { peekNonce } from "./logoAuth.ts";
 import { claimsForPool } from "./claims.ts";
 import { bucketSeconds, candles, type ChartPoint } from "./chart.ts";
 
@@ -65,10 +66,10 @@ async function tokenList(db: Db, chainId: number, filePath?: string): Promise<{ 
   return { tokens: [...byAddress.values()] };
 }
 
-function limitOf(query: URLSearchParams): number {
+function limitOf(query: URLSearchParams, ceiling = 500): number {
   const raw = Number(query.get("limit") ?? 100);
-  if (!Number.isInteger(raw) || raw < 1) return 100;
-  return Math.min(raw, 500);
+  if (!Number.isInteger(raw) || raw < 1) return Math.min(100, ceiling);
+  return Math.min(raw, ceiling);
 }
 
 type CoinRow = {
@@ -190,6 +191,13 @@ export type RequestExtras = {
   body?: unknown;
   inspect?: (address: string) => Promise<Record<string, unknown> | null>;
   tokenListPath?: string;
+  authorizeAttach?: (input: {
+    poolId: string;
+    url: string;
+    nonce: bigint;
+    expiry: bigint;
+    signature: string;
+  }) => Promise<{ ok: true } | { ok: false; status: number; error: string }>;
 };
 
 let hypeCache: { at: number; usd: number | null } = { at: 0, usd: null };
@@ -221,10 +229,27 @@ export async function handleRequest(
   extras: RequestExtras = {},
 ): Promise<{ status: number; json: unknown }> {
   const path = pathname.replace(/^\/api(?=\/|$)/, "") || "/";
+  if (method === "GET" && path === "/logos/nonce") {
+    const address = query.get("address") ?? "";
+    if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return { status: 400, json: { error: "bad address" } };
+    return { status: 200, json: { nonce: peekNonce(address).toString() } };
+  }
   if (method === "POST" && path === "/logos/attach") {
     const record = extras.body && typeof extras.body === "object" ? (extras.body as Record<string, unknown>) : {};
     const poolId = typeof record.poolId === "string" ? record.poolId : "";
     const url = typeof record.url === "string" ? record.url : "";
+    const signature = typeof record.signature === "string" ? record.signature : "";
+    let nonce = 0n;
+    let expiry = 0n;
+    try {
+      nonce = BigInt(typeof record.nonce === "string" ? record.nonce : "");
+      expiry = BigInt(typeof record.expiry === "string" ? record.expiry : "");
+    } catch {
+      return { status: 401, json: { error: "signature required" } };
+    }
+    if (!extras.authorizeAttach || !signature) return { status: 401, json: { error: "signature required" } };
+    const auth = await extras.authorizeAttach({ poolId, url, nonce, expiry, signature });
+    if (!auth.ok) return { status: auth.status, json: { error: auth.error } };
     attachLogo(poolId, url);
     return { status: 200, json: { ok: true } };
   }
@@ -250,14 +275,25 @@ export async function handleRequest(
       `SELECT COALESCE(SUM(amount), 0)::text AS n FROM kickback_payouts WHERE chain_id = $1`,
       [chainId],
     );
+    const hypeSide = `((c.coin_is_token0 AND NOT s.zero_for_one) OR (NOT c.coin_is_token0 AND s.zero_for_one))`;
     const volume = await db.query<{ n: string }>(
-      `SELECT COALESCE(SUM(s.amount_in), 0)::text AS n FROM swaps s JOIN coins c ON c.pool_id = s.pool_id WHERE s.chain_id = $1 AND s.block_time > now() - interval '1 day' AND ((c.coin_is_token0 AND NOT s.zero_for_one) OR (NOT c.coin_is_token0 AND s.zero_for_one))`,
+      `SELECT COALESCE(SUM(s.amount_in), 0)::text AS n FROM swaps s JOIN coins c ON c.pool_id = s.pool_id WHERE s.chain_id = $1 AND s.block_time > now() - interval '1 day' AND ${hypeSide}`,
+      [chainId],
+    );
+    const volumeAll = await db.query<{ n: string }>(
+      `SELECT COALESCE(SUM(s.amount_in), 0)::text AS n FROM swaps s JOIN coins c ON c.pool_id = s.pool_id WHERE s.chain_id = $1 AND ${hypeSide}`,
       [chainId],
     );
     const num = (rows: { n: string }[]) => rows[0]?.n ?? "0";
     return {
       status: 200,
-      json: { coins: num(coins.rows), burned: num(burned.rows), kickback: num(kick.rows), volume24h: num(volume.rows) },
+      json: {
+        coins: num(coins.rows),
+        burned: num(burned.rows),
+        kickback: num(kick.rows),
+        volume24h: num(volume.rows),
+        volumeAll: num(volumeAll.rows),
+      },
     };
   }
   if (path === "/coins") {
@@ -428,7 +464,7 @@ export async function handleRequest(
       `SELECT encode(account, 'hex') AS account, balance::text AS balance
        FROM holders WHERE chain_id = $1 AND pool_id = $2 AND balance > 0
        ORDER BY balance DESC LIMIT $3`,
-      [chainId, pool, limitOf(query)],
+      [chainId, pool, limitOf(query, 5000)],
     );
     return {
       status: 200,
@@ -471,10 +507,16 @@ export async function handleRequest(
     [chainId, pool, limitOf(query)],
   );
   const epochs = await db.query(
-    `SELECT epoch::text AS epoch, funded::text AS funded, carry::text AS carry,
-            sealed_amount::text AS sealed_amount, encode(root, 'hex') AS root, cancelled,
-            extract(epoch from start_time) AS start_time, extract(epoch from end_time) AS end_time
-     FROM kickback_epochs WHERE chain_id = $1 AND pool_id = $2 ORDER BY epoch DESC LIMIT $3`,
+    `SELECT e.epoch::text AS epoch, e.funded::text AS funded, e.carry::text AS carry,
+            e.sealed_amount::text AS sealed_amount, encode(e.root, 'hex') AS root, e.cancelled,
+            extract(epoch from e.start_time) AS start_time, extract(epoch from e.end_time) AS end_time,
+            COALESCE((SELECT SUM(amount) FROM kickback_payouts p
+                      WHERE p.chain_id = e.chain_id AND p.pool_id = e.pool_id AND p.epoch = e.epoch
+                        AND p.kind = 'GasReimbursed'), 0)::text AS gas_reimbursed,
+            COALESCE((SELECT SUM(amount) FROM kickback_payouts p
+                      WHERE p.chain_id = e.chain_id AND p.pool_id = e.pool_id AND p.epoch = e.epoch
+                        AND p.kind IN ('Pushed', 'KickbackClaimed', 'FailedPull')), 0)::text AS net_distributed
+     FROM kickback_epochs e WHERE e.chain_id = $1 AND e.pool_id = $2 ORDER BY e.epoch DESC LIMIT $3`,
     [chainId, pool, limitOf(query)],
   );
   return {
@@ -491,6 +533,8 @@ export async function handleRequest(
       epochs: epochs.rows.map((row) => ({
         epoch: String(row.epoch),
         funded: String(row.funded),
+        gasReimbursed: String(row.gas_reimbursed ?? "0"),
+        netDistributed: String(row.net_distributed ?? "0"),
         carry: row.carry == null ? "0" : String(row.carry),
         sealedAmount: row.sealed_amount == null ? null : String(row.sealed_amount),
         root: prefixed(row.root == null ? "" : String(row.root)),

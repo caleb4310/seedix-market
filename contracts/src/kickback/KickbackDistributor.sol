@@ -11,12 +11,20 @@ import {SeedixConstants as C} from "../libraries/SeedixConstants.sol";
 import {LaunchHook} from "../hook/LaunchHook.sol";
 import {LaunchToken} from "../token/LaunchToken.sol";
 
+/// @notice Gas quote on the buyback executor. WHYPE returns the input. Any other token uses its route TWAP.
+interface IRewardQuote {
+    function whype() external view returns (address);
+    function quoteReward(address token, uint256 hypeIn) external view returns (uint256);
+}
+
 /// @notice Hourly Kickback rounds. Epochs are timestamp windows, never block ranges.
 ///         The publisher funds a round and posts the holder merkle root. After the review hour
-///         the keeper pushes that root in bounded batches. Dust, skipped contracts, and anything
+///         the publisher pushes that root in bounded batches. Dust, skipped contracts, and anything
 ///         still unallocated roll into the next round. A transfer that reverts is credited to the
-///         holder and does not stop the batch. Keeper gas is paid from the round in the pair token,
-///         at most 2% of the round, and that ceiling is enforced here.
+///         holder and does not stop the batch. Distribution gas is paid from this round, never by
+///         the platform. The amount is gas used times the effective gas price. WHYPE rounds reimburse
+///         that 1:1. Any other reward token is converted with the backing route's TWAP. The payment
+///         cannot exceed `gasCapBps` of the round (2% ceiling).
 ///
 ///         Conservation, once a round is closed:
 ///         `pushed + claimable + rollover == funded - gasPaid`.
@@ -47,6 +55,7 @@ contract KickbackDistributor {
     error Locked();
     error Nothing();
     error TransferFailed();
+    error Paused();
 
     /// @dev A batch cannot grow with the holder set. Callers repeat `push` until the round is done.
     uint256 public constant MAX_BATCH = 32;
@@ -95,11 +104,18 @@ contract KickbackDistributor {
     event ClaimableCredited(PoolId indexed poolId, uint64 indexed epoch, address indexed account, uint256 amount);
     event FailedPull(PoolId indexed poolId, uint64 indexed epoch, address indexed account, uint256 amount);
     event GasReimbursed(PoolId indexed poolId, uint64 indexed epoch, address indexed keeper, uint256 amount);
+    /// @notice Final round split. `gross` is what was funded, `gasReimbursed` came out of that pot,
+    ///         and `netDistributed` is what holders were actually sent.
+    event RoundAccounted(
+        PoolId indexed poolId, uint64 indexed epoch, uint256 gross, uint256 gasReimbursed, uint256 netDistributed
+    );
     event RoundSealed(PoolId indexed poolId, uint64 indexed epoch, uint256 rolled);
     event KeeperSet(address indexed previous, address indexed next);
     event AllowlistSet(address indexed account, bool allowed);
     event DustSet(uint256 threshold);
     event GasCapSet(uint256 bps);
+    event KickbackPaused(address indexed by);
+    event KickbackUnpaused();
 
     SeedixRoles public immutable roles;
     address public immutable initializer;
@@ -120,6 +136,10 @@ contract KickbackDistributor {
     uint256 public dustThreshold = 1_000_000;
     /// @notice Share of a round that can reimburse keeper gas. Defaults to the 2% ceiling.
     uint256 public gasCapBps = MAX_GAS_CAP_BPS;
+    /// @notice Guardian or admin pause. Blocks fund, post, claim, and push. Cancel still works.
+    bool public kickbackPaused;
+    /// @notice Leaf total the publisher committed. Claims cannot exceed it, and it cannot exceed `funded`.
+    mapping(PoolId => mapping(uint64 => uint128)) public allocation;
 
     mapping(PoolId => mapping(uint64 => Epoch)) public epochs;
     mapping(PoolId => uint64) public nextEpoch;
@@ -171,6 +191,18 @@ contract KickbackDistributor {
         locker = locker_;
         vault = vault_;
         buybackExecutor = buybackExecutor_;
+    }
+
+    function pause() external {
+        if (msg.sender != roles.guardian() && msg.sender != roles.admin()) revert NotGuardian();
+        kickbackPaused = true;
+        emit KickbackPaused(msg.sender);
+    }
+
+    function unpause() external {
+        if (msg.sender != address(roles.timelock())) revert NotTimelock();
+        kickbackPaused = false;
+        emit KickbackUnpaused();
     }
 
     function setPublisher(address next) external {
@@ -240,6 +272,7 @@ contract KickbackDistributor {
     }
 
     function fund(PoolId id, uint128 amount) external nonReentrant returns (uint64 epochId) {
+        if (kickbackPaused) revert Paused();
         if (msg.sender != publisher) revert NotPublisher();
         uint256 carry = poolCarry[id];
         if ((amount == 0 && carry == 0) || amount > roundCap) revert Cap();
@@ -283,11 +316,27 @@ contract KickbackDistributor {
     }
 
     function postRoot(PoolId id, uint64 epochId, bytes32 root, bytes32 manifestHash) external {
+        _postRoot(id, epochId, root, manifestHash, epochs[id][epochId].funded);
+    }
+
+    /// @notice Same as `postRoot`, but `allocated` is the sum of the merkle leaves.
+    ///         It has to be non-zero and no larger than the funded amount.
+    function postRootAllocated(PoolId id, uint64 epochId, bytes32 root, bytes32 manifestHash, uint128 allocated)
+        external
+    {
+        if (allocated < 1 || allocated > epochs[id][epochId].funded) revert Cap();
+        _postRoot(id, epochId, root, manifestHash, allocated);
+    }
+
+    function _postRoot(PoolId id, uint64 epochId, bytes32 root, bytes32 manifestHash, uint128 allocated) internal {
+        if (kickbackPaused) revert Paused();
         if (msg.sender != publisher) revert NotPublisher();
         Epoch storage e = epochs[id][epochId];
-        if (e.funded == 0 || e.cancelled || e.postedAt != 0) revert BadEpoch();
+        if (e.funded < 1 || e.cancelled || e.postedAt > 0) revert BadEpoch();
         if (block.timestamp < e.end) revert BadEpoch();
-        if (root == bytes32(0) || manifestHash == bytes32(0)) revert BadEpoch();
+        if (uint256(root) < 1 || uint256(manifestHash) < 1) revert BadEpoch();
+        if (allocated < 1 || allocated > e.funded) revert Cap();
+        allocation[id][epochId] = allocated;
         e.root = root;
         e.manifestHash = manifestHash;
         e.postedAt = uint64(block.timestamp);
@@ -321,11 +370,14 @@ contract KickbackDistributor {
         external
         nonReentrant
     {
+        if (kickbackPaused) revert Paused();
         _requireOpen(id, epochId);
         if (claimed[id][epochId][account]) revert AlreadyClaimed();
         if (isSkipped(id, account)) revert Excluded();
         _verify(id, epochId, account, amount, proof);
         if (amount == 0 || amount > holderBudget(id, epochId) || amount > type(uint128).max) revert Cap();
+        uint128 posted = allocation[id][epochId];
+        if (posted != 0 && uint256(epochs[id][epochId].claimed) + amount > posted) revert Cap();
         if (amount < dustThreshold) revert Dust();
         claimed[id][epochId][account] = true;
         address token = _pairToken(id);
@@ -343,9 +395,9 @@ contract KickbackDistributor {
         }
     }
 
-    /// @notice Keeper push of one batch of merkle leaves. Length is at most `MAX_BATCH`.
-    ///         A reverting receiver is credited and the loop continues. The keeper is then
-    ///         reimbursed from this round, up to the gas cap and the tokens still in the round.
+    /// @notice Publisher (or keeper) push of one batch. Length is at most `MAX_BATCH`.
+    ///         A reverting receiver is credited and the loop continues. Gas is then reimbursed
+    ///         from this round to the caller, up to the gas cap and the tokens still in the round.
     function push(
         PoolId id,
         uint64 epochId,
@@ -353,7 +405,8 @@ contract KickbackDistributor {
         uint256[] calldata amounts,
         bytes32[][] calldata proofs
     ) external nonReentrant returns (uint256 gasReimbursed) {
-        if (msg.sender != keeper || keeper == address(0)) revert NotKeeper();
+        if (kickbackPaused) revert Paused();
+        if (msg.sender != publisher && (keeper == address(0) || msg.sender != keeper)) revert NotPublisher();
         uint256 n = accounts.length;
         if (n == 0 || n > MAX_BATCH || n != amounts.length || n != proofs.length) revert Batch();
         _requireOpen(id, epochId);
@@ -381,12 +434,14 @@ contract KickbackDistributor {
 
     /// @notice Classifies whatever is left in the round as rollover and closes it.
     function seal(PoolId id, uint64 epochId) external nonReentrant {
-        if (msg.sender != keeper || keeper == address(0)) revert NotKeeper();
+        if (kickbackPaused) revert Paused();
+        if (msg.sender != publisher && (keeper == address(0) || msg.sender != keeper)) revert NotPublisher();
         _requireOpen(id, epochId);
         Round memory r = roundOf(id, epochId);
         if (r.pending > 0) _rollover(id, epochId, r.pending);
         roundClosed[id][epochId] = true;
         emit RoundSealed(id, epochId, r.pending);
+        emit RoundAccounted(id, epochId, r.funded, r.gasPaid, r.pushed);
     }
 
     function sweep(PoolId, uint64) external pure {
@@ -502,9 +557,10 @@ contract KickbackDistributor {
         Round memory r = roundOf(id, epochId);
         if (r.pending == 0) return 0;
         uint256 usedGas = gasStart - gasleft() + GAS_OVERHEAD;
+        // tx.gasprice is the effective price (base fee plus tip). The platform does not top this up.
         uint256 price = tx.gasprice;
-        uint256 cost = usedGas > type(uint256).max / price ? type(uint256).max : usedGas * price;
-        payment = cost;
+        uint256 hypeCost = usedGas > type(uint256).max / price ? type(uint256).max : usedGas * price;
+        payment = _rewardForGas(token, hypeCost);
         if (payment > room) payment = room;
         if (payment > r.pending) payment = r.pending;
         if (payment == 0) return 0;
@@ -512,6 +568,15 @@ contract KickbackDistributor {
         gasPaidEpoch[id][epochId] = already + payment;
         liabilities[token] -= payment;
         emit GasReimbursed(id, epochId, msg.sender, payment);
+    }
+
+    /// @dev WHYPE is the gas token, so the wei cost is paid 1:1. A different reward token is quoted
+    ///      off the backing route TWAP. An unpriced token pays nothing rather than a guessed amount.
+    function _rewardForGas(address token, uint256 hypeCost) internal view returns (uint256) {
+        if (hypeCost == 0 || buybackExecutor == address(0)) return hypeCost;
+        IRewardQuote quote = IRewardQuote(buybackExecutor);
+        if (token == quote.whype()) return hypeCost;
+        return quote.quoteReward(token, hypeCost);
     }
 
     function _rollover(PoolId id, uint64 epochId, uint256 amount) internal {

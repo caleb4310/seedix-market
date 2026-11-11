@@ -600,7 +600,7 @@ details.advanced summary { cursor: pointer; color: var(--ink-soft); min-height: 
   border-radius: var(--r-md);
   background: var(--bg-raised);
 }
-.stats-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+.stats-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
 .stat-card {
   padding: var(--space-4);
   border: var(--hair) solid var(--line);

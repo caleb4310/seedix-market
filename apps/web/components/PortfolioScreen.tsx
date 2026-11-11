@@ -107,6 +107,7 @@ export function PortfolioScreen() {
       </section>
       <section className="activity">
         <h2>Kickbacks</h2>
+        <p className="note">Paid to your wallet automatically. Gas comes out of the round.</p>
         {data.kickbacks.length === 0 ? <p className="lede">No Kickback payments yet.</p> : null}
         {data.kickbacks.map((row) => (
           <p key={`${row.txHash}-${row.kind}-${row.epoch}`} className="activity-row">

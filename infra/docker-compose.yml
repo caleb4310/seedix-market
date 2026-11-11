@@ -23,6 +23,8 @@ networks:
 secrets:
   keeper_key:
     file: ${SEEDIX_KEEPER_KEY_FILE:-/etc/seedix/keeper.key}
+  publisher_key:
+    file: ${SEEDIX_PUBLISHER_KEY_FILE:-/etc/seedix/publisher.key}
 
 services:
   web:
@@ -101,9 +103,20 @@ services:
     networks: [launchpad]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://launchpad@/launchpad?host=/var/run/postgresql}
+      RPC_URL: ${RPC_URL:-https://testnet-rpc.elysium.kinetiq.xyz}
+      PUBLISHER_PRIVATE_KEY: /run/secrets/publisher_key
+      KICKBACK_MANIFEST_DIR: ${KICKBACK_MANIFEST_DIR:-/var/lib/seedix/manifests}
+      KICKBACK_DRY_RUN: ${KICKBACK_DRY_RUN:-}
+      KICKBACK_DISTRIBUTOR: ${KICKBACK_DISTRIBUTOR:-}
+      HOOK_ADDRESS: ${HOOK_ADDRESS:-}
+      BUYBACK_EXECUTOR: ${BUYBACK_EXECUTOR:-}
+      API_URL: ${API_URL:-http://api:3001}
+    secrets:
+      - publisher_key
     volumes:
       - ..:/app
       - /var/run/postgresql:/var/run/postgresql:ro
+      - manifests:/var/lib/seedix/manifests
     mem_limit: 1g
     cpus: 0.5
     restart: unless-stopped

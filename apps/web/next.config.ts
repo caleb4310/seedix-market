@@ -1,4 +1,5 @@
 import path from "path";
+import { securityHeaders } from "./lib/csp";
 // Webpack ships with Next and is only used in this config. The web package does not depend on it directly.
 // @ts-expect-error webpack types are not part of the app compilation.
 import webpack from "webpack";
@@ -14,6 +15,9 @@ const nextConfig: NextConfig = {
   webpack: (config) => {
     config.plugins.push(new webpack.NormalModuleReplacementPlugin(/^@x402\//, emptyModule));
     return config;
+  },
+  async headers() {
+    return [{ source: "/:path*", headers: [...securityHeaders] }];
   },
 };
 
