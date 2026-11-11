@@ -26,13 +26,14 @@ function ageLabel(sec: number): string {
 export function CoinBody({ coin, trade }: { coin: Coin; trade?: ReactNode }) {
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   const [copied, setCopied] = useState(false);
+  const [broken, setBroken] = useState(false);
   const hypeUsd = useHypeUsd();
   useEffect(() => {
     const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 30_000);
     return () => window.clearInterval(id);
   }, []);
   const age = coin.launchTime !== undefined ? coinAge(coin, now) : coin.ageSec;
-  const contract = coin.tokenAddress ?? coin.recipient;
+  const contract = coin.tokenAddress;
   const backing = backingLabel({ mode: coin.mode, pair: coin.pair, backingSymbol: coin.backingSymbol });
   const image = logoSrc(coin.image);
   const letter = (coin.ticker || coin.name).trim().slice(0, 1).toUpperCase();
@@ -42,19 +43,11 @@ export function CoinBody({ coin, trade }: { coin: Coin; trade?: ReactNode }) {
     <>
       <section className="coin-stage">
         <div className="coin-poster">
-          {image ? <img src={image} alt="" /> : <span className="stripes">{letter}</span>}
+          {image && !broken ? <img src={image} alt="" onError={() => setBroken(true)} /> : <span className="stripes">{letter}</span>}
         </div>
         <div className="coin-facts">
           <h1 className="ticker-hero">${coin.ticker}</h1>
-          <p className="backed">
-            {coin.mode === "burn" ? "Burn" : `Backed by ${backing}`}
-            {coin.price !== undefined ? (
-              <>
-                {" "}
-                · <Price value={coin.price} symbol="HYPE" usd={hypeUsd} />
-              </>
-            ) : null}
-          </p>
+          <p className="backed">{coin.mode === "burn" ? "Burn" : `Backed by ${backing}`}</p>
           {category ? <span className="tag">{category}</span> : null}
           <dl className="fact-row">
             <div>
@@ -79,30 +72,28 @@ export function CoinBody({ coin, trade }: { coin: Coin; trade?: ReactNode }) {
               <dt>By</dt>
               <dd>{coin.creator ? shortAddress(coin.creator) : shortAddress(coin.recipient)}</dd>
             </div>
-            <div>
-              <dt>Pair</dt>
-              <dd>{backing}</dd>
-            </div>
           </dl>
           {trade}
-          <p className="contract-link">
-            <a href={explorerAddress(contract)} target="_blank" rel="noopener noreferrer">
-              Contract and pool records
-            </a>
-            <button
-              className="text-link copy-btn"
-              type="button"
-              onClick={() => {
-                void navigator.clipboard.writeText(contract).then(() => {
-                  setCopied(true);
-                  window.setTimeout(() => setCopied(false), 1500);
-                });
-              }}
-            >
-              {copied ? "Copied" : "Copy"}
-            </button>
-            <span className="addr-full">{contract}</span>
-          </p>
+          {contract ? (
+            <p className="contract-link">
+              <a href={explorerAddress(contract)} target="_blank" rel="noopener noreferrer">
+                Token address
+              </a>
+              <button
+                className="text-link copy-btn"
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(contract).then(() => {
+                    setCopied(true);
+                    window.setTimeout(() => setCopied(false), 1500);
+                  });
+                }}
+              >
+                {copied ? "Copied" : "Copy address"}
+              </button>
+              <span className="addr-full">{contract}</span>
+            </p>
+          ) : null}
         </div>
       </section>
       <Chart poolId={coin.poolId} />

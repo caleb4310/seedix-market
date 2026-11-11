@@ -241,8 +241,9 @@ export async function handleRequest(
   }
   if (path === "/stats") {
     const coins = await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM coins WHERE chain_id = $1`, [chainId]);
+    // amount_in is pair-token (WHYPE) wei spent by buybacks. coin_burned is coin units and must not be priced as HYPE.
     const burned = await db.query<{ n: string }>(
-      `SELECT COALESCE(SUM(coin_burned), 0)::text AS n FROM buybacks WHERE chain_id = $1`,
+      `SELECT COALESCE(SUM(amount_in), 0)::text AS n FROM buybacks WHERE chain_id = $1`,
       [chainId],
     );
     const kick = await db.query<{ n: string }>(

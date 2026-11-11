@@ -1,5 +1,5 @@
 import { extremeSqrtPriceLimit, maximumFromQuote, minimumFromQuote } from "./amounts";
-import { erc20Abi, routerAbi, wethAbi } from "./abi";
+import { erc20Abi, swapAbi, wethAbi } from "./abi";
 import { type Address, routerAddress, sameAddress, whypeAddress } from "./deployment";
 import { LP_FEE, TICK_SPACING, UINT128_MAX } from "./protocol";
 import { exactApproval, type TxStep } from "./tx";
@@ -110,7 +110,7 @@ export function tradeSteps(input: {
   steps.push({
     action: input.action,
     address: routerAddress,
-    abi: routerAbi,
+      abi: swapAbi,
     functionName: "swap",
     args: [
       input.key,

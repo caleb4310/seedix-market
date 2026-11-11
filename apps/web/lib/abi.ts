@@ -16,6 +16,43 @@ export const launcherAbi = launcher as Abi;
 export const launcherLegacyAbi = launcherLegacy as Abi;
 export const metadataAbi = metadata as Abi;
 export const routerAbi = router as Abi;
+/** Router errors plus hook, pool, and ERC-20 errors that bubble out of `swap`. */
+export const swapAbi = [
+  ...router,
+  { type: "error", name: "Locked", inputs: [] },
+  { type: "error", name: "SwapDuringLaunch", inputs: [] },
+  { type: "error", name: "UnknownPool", inputs: [] },
+  { type: "error", name: "Overflow", inputs: [] },
+  { type: "error", name: "SafeCastOverflow", inputs: [] },
+  {
+    type: "error",
+    name: "PriceLimitAlreadyExceeded",
+    inputs: [
+      { name: "sqrtPriceCurrentX96", type: "uint160" },
+      { name: "sqrtPriceLimitX96", type: "uint160" },
+    ],
+  },
+  { type: "error", name: "PriceLimitOutOfBounds", inputs: [{ name: "sqrtPriceLimitX96", type: "uint160" }] },
+  { type: "error", name: "NotEnoughLiquidity", inputs: [{ name: "poolId", type: "bytes32" }] },
+  {
+    type: "error",
+    name: "ERC20InsufficientAllowance",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "allowance", type: "uint256" },
+      { name: "needed", type: "uint256" },
+    ],
+  },
+  {
+    type: "error",
+    name: "ERC20InsufficientBalance",
+    inputs: [
+      { name: "sender", type: "address" },
+      { name: "balance", type: "uint256" },
+      { name: "needed", type: "uint256" },
+    ],
+  },
+] as Abi;
 export const quoterAbi = quoter as Abi;
 export const kickbackAbi = kickback as Abi;
 export const hookConfigAbi = hook as Abi;

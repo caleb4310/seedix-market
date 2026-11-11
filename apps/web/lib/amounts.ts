@@ -1,3 +1,6 @@
+/** Left untouched when Max spends native HYPE, so the wrap transaction can still pay gas. */
+export const NATIVE_GAS_RESERVE = 10n ** 16n;
+
 const MIN_SQRT_PRICE = 4295128739n;
 const MAX_SQRT_PRICE = 1461446703485210103287273052203988822378723970342n;
 

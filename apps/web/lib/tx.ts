@@ -63,11 +63,56 @@ const revertCopy: Record<string, string> = {
   TransferFailed: "The token transfer failed.",
   InsufficientBalance: "The wallet does not have enough of this token.",
   InsufficientAllowance: "The router is not approved for this amount.",
+  Locked: "The hook is busy with another swap. Try again.",
+  SwapDuringLaunch: "The pool is still opening. Wait a moment and try again.",
+  UnknownPool: "This pool is not on the launch hook.",
+  Overflow: "That amount is too large for this pool.",
+  SafeCastOverflow: "That amount is too large for this pool.",
+  PriceLimitAlreadyExceeded: "The swap price bound does not match this pool. Refresh the page and try again.",
+  PriceLimitOutOfBounds: "The swap price bound does not match this pool. Refresh the page and try again.",
+  NotEnoughLiquidity: "This pool does not have enough liquidity for that size.",
+  ERC20InsufficientAllowance: "The router is not approved for this amount.",
+  ERC20InsufficientBalance: "The wallet does not have enough of this token.",
 };
+
+const EMPTY_SWAP = "The swap did not go through. Raise slippage or try a smaller amount. If you just approved, wait a moment and try again.";
 
 export function messageForRevert(name: string | undefined): string | undefined {
   if (!name) return undefined;
-  return revertCopy[name] ?? `The contract reverted with ${name}.`;
+  const key = name.split("(")[0]?.trim() ?? name;
+  if (revertCopy[key]) return revertCopy[key];
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return `The contract reverted with ${key}.`;
+  const text = name.replace(/\s+/g, " ").trim();
+  return text.length > 160 ? `${text.slice(0, 160)}…` : text;
+}
+
+function errorNameOf(item: unknown): string | undefined {
+  if (!item || typeof item !== "object") return undefined;
+  const record = item as { data?: unknown; errorName?: string; reason?: string };
+  if (typeof record.errorName === "string" && record.errorName && record.errorName !== "Error" && record.errorName !== "Panic") {
+    return record.errorName;
+  }
+  if (record.data && typeof record.data === "object") {
+    const name = (record.data as { errorName?: string }).errorName;
+    if (name && name !== "Error" && name !== "Panic") return name;
+  }
+  if (typeof record.reason === "string" && record.reason.trim()) return record.reason.trim();
+  return undefined;
+}
+
+/** viem puts the revert name on the line after this sentence, which the old parser dropped. */
+function reasonLines(err: unknown): string[] {
+  return briefText(err)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function reasonAfterTemplate(err: unknown): string | undefined {
+  const lines = reasonLines(err);
+  const index = lines.findIndex((line) => /reverted with the following reason:?$/i.test(line));
+  if (index < 0) return undefined;
+  return lines[index + 1];
 }
 
 export function parseDeadlineMinutes(raw: string): { ok: true; minutes: number } | { ok: false; message: string } {
@@ -120,15 +165,27 @@ export function isUserRejection(err: unknown): boolean {
 
 function revertName(err: unknown): string | undefined {
   for (const item of causes(err)) {
+    const named = errorNameOf(item);
+    if (named) return named.split("(")[0]?.trim() || named;
     if (item instanceof ContractFunctionRevertedError) {
       const name = item.data?.errorName;
-      if (name && name !== "Error" && name !== "Panic" && revertCopy[name]) return name;
-      if (typeof item.reason === "string" && revertCopy[item.reason]) return item.reason;
+      if (name && name !== "Error" && name !== "Panic") return name;
     }
-    const data = (item as { data?: { errorName?: string } }).data;
-    if (data?.errorName && revertCopy[data.errorName]) return data.errorName;
   }
+  const trailed = reasonAfterTemplate(err);
+  if (trailed && /^[A-Za-z_][A-Za-z0-9_]*(\(.*\))?$/.test(trailed)) return trailed.split("(")[0];
   return undefined;
+}
+
+function emptyRevert(err: unknown): boolean {
+  const lines = reasonLines(err);
+  const index = lines.findIndex((line) => /reverted with the following reason:?$/i.test(line));
+  if (index >= 0 && !lines[index + 1] && !revertName(err)) return true;
+  for (const item of causes(err)) {
+    const data = (item as { data?: unknown }).data;
+    if (data === "0x") return true;
+  }
+  return false;
 }
 
 /** First 4 bytes of revert data. Matched exactly, never as a substring of the ABI dump. */
@@ -147,8 +204,9 @@ function briefText(err: unknown): string {
 
 export function explainTxError(err: unknown): string {
   if (isUserRejection(err)) return "You rejected the request in your wallet. Nothing was sent.";
-  const decoded = messageForRevert(revertName(err));
+  const decoded = messageForRevert(revertName(err) ?? reasonAfterTemplate(err));
   if (decoded) return decoded;
+  if (emptyRevert(err)) return EMPTY_SWAP;
   const selector = revertSelector(err);
   if (selector === "0x4b3eeb24") return revertCopy.PriceLimit;
   if (selector === "0x7c9c6e8f" || selector === "0x9e4d7cc7") {
@@ -172,7 +230,11 @@ export function explainTxError(err: unknown): string {
   if (/HttpRequestError|TimeoutError|RpcRequestError|failed to fetch|network request failed|Invalid parameters were provided to the RPC/i.test(brief)) {
     return "The network request failed. Check the RPC and try again.";
   }
-  const line = brief.split("\n").find((item) => item.trim().length > 0 && !item.includes("Contract Call:")) ?? "The transaction failed.";
+  const line =
+    brief.split("\n").find((item) => {
+      const text = item.trim();
+      return text.length > 0 && !item.includes("Contract Call:") && !/reverted with the following reason:?$/i.test(text);
+    }) ?? "The transaction failed.";
   const short = line.replace(/\s+/g, " ").trim();
   return short.length > 160 ? `${short.slice(0, 160)}…` : short;
 }
@@ -198,6 +260,8 @@ export function isRetryableTxError(err: unknown): boolean {
   if (isUserRejection(err)) return false;
   const name = revertName(err);
   if (name === "PriceLimit" || name === "TooLittleReceived" || name === "TooMuchRequested" || name === "Expired") return false;
+  if (name === "ERC20InsufficientAllowance" || name === "InsufficientAllowance") return true;
+  if (emptyRevert(err)) return true;
   const blob = `${briefText(err)}\n${errorText(err)}`;
   if (/rate limit|too many requests|\b429\b/i.test(blob)) return true;
   if (/timeout|timed out|network request failed|failed to fetch|ECONNRESET|ETIMEDOUT|HttpRequestError|TimeoutError/i.test(blob)) return true;

@@ -565,7 +565,17 @@ details.advanced summary { cursor: pointer; color: var(--ink-soft); min-height: 
   gap: var(--space-2) var(--space-4);
 }
 .chart-block { margin-top: var(--space-4); }
-.chart-tabs { display: flex; gap: var(--space-2); }
+.chart-tabs { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.candle-up { stroke: var(--success); fill: var(--success); }
+.candle-down { stroke: var(--danger); fill: var(--danger); }
+.vol-bar { fill: var(--ink); }
+.filter-select select {
+  min-height: var(--tap);
+  border-radius: var(--r-pill);
+  padding-right: var(--space-6);
+}
+.trade-inputs { display: grid; grid-template-columns: minmax(0, 1fr) calc(var(--space-16) * 2); gap: var(--space-3); align-items: end; }
+.balance-row { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); margin-top: var(--space-2); color: var(--ink-soft); font-size: var(--fs-caption); }
 .chart { width: 100%; height: calc(var(--space-16) + var(--space-12)); color: var(--accent); display: block; }
 .activity { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-6); min-width: 0; }
 .activity h2 { font-size: var(--fs-title); line-height: var(--lh-title); }
@@ -821,15 +831,11 @@ details.advanced summary { cursor: pointer; color: var(--ink-soft); min-height: 
 .permanent-rule { flex: 1; height: var(--hair); background: var(--ink); min-width: var(--space-4); }
 .permanent-split { width: var(--hair); align-self: stretch; background: var(--ink); }
 .filter-scroll { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.ticker-field { position: relative; }
-.ticker-field input { padding-left: var(--space-8); }
+.ticker-field { display: flex; align-items: center; gap: var(--space-1); }
+.ticker-field input { flex: 1; min-width: 0; padding-left: var(--space-2); }
 .ticker-prefix {
-  position: absolute;
-  left: var(--space-3);
-  top: 0;
-  bottom: 0;
-  display: flex;
-  align-items: center;
+  position: static;
+  padding-left: var(--space-3);
   font-family: var(--mono);
   pointer-events: none;
 }
