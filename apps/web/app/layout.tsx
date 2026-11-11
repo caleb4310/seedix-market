@@ -18,12 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
       <body>
         <style dangerouslySetInnerHTML={{ __html: tokenCss }} />
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "try{var q=new URLSearchParams(location.search).get('theme');var t=q==='dark'||q==='light'?q:localStorage.getItem('seedix-theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t;}catch(e){}",
-          }}
-        />
+        <script src="/theme.js" />
         <Providers>
           <Shell>{children}</Shell>
         </Providers>

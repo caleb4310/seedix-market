@@ -37,6 +37,10 @@ services:
         NEXT_PUBLIC_RPC_URL: ${NEXT_PUBLIC_RPC_URL:-https://testnet-rpc.elysium.kinetiq.xyz}
         NEXT_PUBLIC_RPC_URLS: ${NEXT_PUBLIC_RPC_URLS:-}
     image: seedix-web:local
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
     working_dir: /app
     command: ["npm", "run", "start", "-w", "@seedix/web", "--", "--hostname", "0.0.0.0", "--port", "3000"]
     networks: [launchpad]
@@ -50,6 +54,10 @@ services:
 
   api:
     image: node:22-bookworm
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
     working_dir: /app
     command:
       ["node", "--experimental-strip-types", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--eval", "import('./services/api/src/index.ts').then((m) => m.main())"]
@@ -62,8 +70,9 @@ services:
       API_PORT: "3001"
       LOGOS_DIR: /var/lib/seedix/logos
       RPC_URL: ${RPC_URL:-https://testnet-rpc.elysium.kinetiq.xyz}
+      CHAIN_ID: ${CHAIN_ID:-99801}
     volumes:
-      - ..:/app
+      - ..:/app:ro
       - /var/run/postgresql:/var/run/postgresql:ro
       - logos:/var/lib/seedix/logos
     mem_limit: 1g
@@ -72,6 +81,10 @@ services:
 
   indexer:
     image: node:22-bookworm
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
     working_dir: /app
     command:
       ["node", "--experimental-strip-types", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--eval", "import('./services/indexer/src/index.ts').then((m) => m.main())"]
@@ -79,6 +92,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://launchpad@/launchpad?host=/var/run/postgresql}
       RPC_URL: ${RPC_URL:-https://testnet-rpc.elysium.kinetiq.xyz}
+      CHAIN_ID: ${CHAIN_ID:-99801}
       INDEXER_CONFIRMATIONS: ${INDEXER_CONFIRMATIONS:-12}
       INDEXER_START_BLOCK: ${INDEXER_START_BLOCK:-}
       INDEXER_POLL_MS: ${INDEXER_POLL_MS:-}
@@ -89,7 +103,7 @@ services:
       KICKBACK_DISTRIBUTOR: ${KICKBACK_DISTRIBUTOR:-}
       METADATA_ADDRESS: ${METADATA_ADDRESS:-}
     volumes:
-      - ..:/app
+      - ..:/app:ro
       - /var/run/postgresql:/var/run/postgresql:ro
     mem_limit: 3g
     cpus: 1.5
@@ -97,6 +111,10 @@ services:
 
   kickback:
     image: node:22-bookworm
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
     working_dir: /app
     command:
       ["node", "--experimental-strip-types", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--eval", "import('./services/kickback/src/index.ts').then((m) => m.main())"]
@@ -104,6 +122,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://launchpad@/launchpad?host=/var/run/postgresql}
       RPC_URL: ${RPC_URL:-https://testnet-rpc.elysium.kinetiq.xyz}
+      CHAIN_ID: ${CHAIN_ID:-99801}
       PUBLISHER_PRIVATE_KEY: /run/secrets/publisher_key
       KICKBACK_MANIFEST_DIR: ${KICKBACK_MANIFEST_DIR:-/var/lib/seedix/manifests}
       KICKBACK_DRY_RUN: ${KICKBACK_DRY_RUN:-}
@@ -114,7 +133,7 @@ services:
     secrets:
       - publisher_key
     volumes:
-      - ..:/app
+      - ..:/app:ro
       - /var/run/postgresql:/var/run/postgresql:ro
       - manifests:/var/lib/seedix/manifests
     mem_limit: 1g
@@ -123,6 +142,10 @@ services:
 
   keeper:
     image: node:22-bookworm
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
     working_dir: /app
     command:
       ["node", "--experimental-strip-types", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--eval", "import('./services/keeper/src/index.ts').then((m) => m.main())"]
@@ -133,13 +156,14 @@ services:
       KEEPER_MAX_FEE_GWEI: ${KEEPER_MAX_FEE_GWEI:-100}
       KEEPER_MAX_GAS: ${KEEPER_MAX_GAS:-12000000}
       RPC_URL: ${RPC_URL:-https://testnet-rpc.elysium.kinetiq.xyz}
+      CHAIN_ID: ${CHAIN_ID:-99801}
       HOOK_ADDRESS: ${HOOK_ADDRESS:-}
       BUYBACK_EXECUTOR: ${BUYBACK_EXECUTOR:-}
       KICKBACK_DISTRIBUTOR: ${KICKBACK_DISTRIBUTOR:-}
     secrets:
       - keeper_key
     volumes:
-      - ..:/app
+      - ..:/app:ro
       - manifests:/var/lib/seedix/manifests
     mem_limit: 512m
     cpus: 0.25
