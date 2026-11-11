@@ -110,7 +110,13 @@ contract BuybackExecutor is IUnlockCallback {
     mapping(Currency => uint256) public collected;
     uint256 public maxInPerPeriod = 50_000 ether;
 
-    constructor(SeedixRoles roles_, Currency whype_, address initializer_, uint256 minRouteDepth_, uint256 keeperDelay_) {
+    constructor(
+        SeedixRoles roles_,
+        Currency whype_,
+        address initializer_,
+        uint256 minRouteDepth_,
+        uint256 keeperDelay_
+    ) {
         if (initializer_ == address(0)) revert NotInitializer();
         if (block.chainid != 99801 && block.chainid != 31337 && keeperDelay_ < MAINNET_KEEPER_DELAY) {
             revert KeeperDelayTooShort(keeperDelay_, MAINNET_KEEPER_DELAY);
