@@ -37,6 +37,7 @@ export type TxStep = {
 const revertCopy: Record<string, string> = {
   Expired: "The deadline passed before the transaction was mined.",
   TooLittleReceived: "This trade would receive less than the quoted minimum. Raise slippage or try a smaller amount.",
+  PartialFill: "The pool could not take the full amount, so the trade was not sent.",
   TooMuchRequested: "This trade would cost more than the quoted maximum. Lower the size or raise slippage.",
   PriceLimit: "The price limit stopped the trade before it filled. Try a smaller amount.",
   BadArgs: "The launch details were rejected. Check the name, ticker, team share, and starting cap.",

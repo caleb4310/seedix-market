@@ -44,7 +44,7 @@ export function CoinTable() {
   const burners = params.get("burn") === "1";
   const sort = params.get("sort") === "new" ? "new" : "mcap";
   const query = params.get("q") ?? "";
-  const [stats, setStats] = useState<{ coins: string; burned: string; kickback: string; volume24h: string } | null>(null);
+  const [stats, setStats] = useState<{ coins: string; burned: string; kickback: string; volume24h: string; volumeAll?: string } | null>(null);
   const [pairs, setPairs] = useState<ListedPair[]>([]);
 
   useEffect(() => {
@@ -182,6 +182,10 @@ export function CoinTable() {
         <div className="stat-card">
           <span>24h volume</span>
           <strong>{money(stats?.volume24h, hypeUsd)}</strong>
+        </div>
+        <div className="stat-card">
+          <span>Total volume</span>
+          <strong>{money(stats?.volumeAll, hypeUsd)}</strong>
         </div>
       </div>
       {board.status === "loading" ? (

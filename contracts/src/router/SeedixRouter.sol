@@ -23,6 +23,9 @@ contract SeedixRouter is IUnlockCallback {
     error PriceLimit();
     error TooLittleReceived();
     error TooMuchRequested();
+    /// @dev Exact-in must consume the full specified amount. A price-limit stop would otherwise
+    ///      let the hook keep a fee on input the pool never took.
+    error PartialFill();
 
     IPoolManager public immutable poolManager;
 
@@ -65,17 +68,27 @@ contract SeedixRouter is IUnlockCallback {
         BalanceDelta delta = poolManager.swap(
             key, SwapParams({zeroForOne: zeroForOne, amountSpecified: amountSpecified, sqrtPriceLimitX96: limit}), ""
         );
-        _checkLimit(zeroForOne, amountSpecified, delta, limitAmount);
+        _checkLimit(address(key.hooks), zeroForOne, amountSpecified, delta, limitAmount);
         _settle(key.currency0, delta.amount0(), payer);
         _settle(key.currency1, delta.amount1(), payer);
         return abi.encode(delta);
     }
 
-    function _checkLimit(bool zeroForOne, int256 amountSpecified, BalanceDelta delta, uint256 limitAmount)
-        internal
-        pure
-    {
+    function _checkLimit(
+        address hooks,
+        bool zeroForOne,
+        int256 amountSpecified,
+        BalanceDelta delta,
+        uint256 limitAmount
+    ) internal pure {
         if (amountSpecified < 0) {
+            // Hookless pools may stop at the price limit. A Seedix hook charges the fee on the
+            // specified amount, so a short fill must not settle.
+            if (hooks != address(0)) {
+                int128 inn = zeroForOne ? delta.amount0() : delta.amount1();
+                uint256 paid = inn < 0 ? uint256(uint128(-inn)) : 0;
+                if (paid != uint256(-amountSpecified)) revert PartialFill();
+            }
             int128 out = zeroForOne ? delta.amount1() : delta.amount0();
             if (out < 0 || uint256(uint128(out)) < limitAmount) revert TooLittleReceived();
         } else {

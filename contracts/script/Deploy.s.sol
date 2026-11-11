@@ -33,6 +33,7 @@ import {SeedixRouter} from "../src/router/SeedixRouter.sol";
 ///         Do not pass --broadcast against a public RPC.
 contract DeploySeedix is Script {
     error ForbiddenChain(uint256 chainId);
+    error AdminIsFeeWallet(address admin);
     error Permit2Missing();
     error MissingCode(address target);
     error SeedBudget(uint256 total, uint256 cap);
@@ -82,7 +83,19 @@ contract DeploySeedix is Script {
     /// @dev `keeper` receives the buyback keeper and the kickback keeper. The zero address burns the
     ///      deploy-time grant so the deployer cannot assign one later. `admin == deployer` still keeps
     ///      the timelock proposer, executor, and canceller roles.
+    /// @notice Mainnet config guard. Admin must be a multisig and must not be the fee wallet.
+    ///         Returns the keeper delay the mainnet executor must be constructed with.
+    function requireMainnetAdmin(address admin) public view returns (uint256 keeperDelay) {
+        if (block.chainid != 99901) revert ForbiddenChain(block.chainid);
+        if (admin == address(0) || admin == C.FEE_WALLET) revert AdminIsFeeWallet(admin);
+        return 48 hours;
+    }
+
     function deploy(uint256 pk, address admin, address publisher, address keeper) public {
+        if (block.chainid == 99901) {
+            if (admin == address(0) || admin == C.FEE_WALLET) revert AdminIsFeeWallet(admin);
+            revert ForbiddenChain(block.chainid);
+        }
         if (block.chainid != 99801 && block.chainid != 31337) revert ForbiddenChain(block.chainid);
         address deployer = vm.addr(pk);
         if (admin == address(0)) admin = deployer;
@@ -127,7 +140,8 @@ contract DeploySeedix is Script {
         SeedixRoles roles = new SeedixRoles(tl, admin);
         LaunchToken impl = new LaunchToken();
         FeeVault vault = new FeeVault(roles, C.FEE_WALLET, deployer);
-        BuybackExecutor executor = new BuybackExecutor(roles, Currency.wrap(whype), deployer, TESTNET_MIN_ROUTE_DEPTH);
+        BuybackExecutor executor =
+            new BuybackExecutor(roles, Currency.wrap(whype), deployer, TESTNET_MIN_ROUTE_DEPTH, 0);
         KickbackDistributor distributor =
             new KickbackDistributor(roles, publisher, 1_000_000 ether, 10_000_000 ether, deployer);
         require(address(vault) == vaultA && address(executor) == execA && address(distributor) == distA, "nonce");

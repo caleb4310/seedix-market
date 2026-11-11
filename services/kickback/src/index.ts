@@ -1,4 +1,6 @@
 import { elysiumTestnet } from "@seedix/shared";
+import { leaf as roundLeaf } from "./round.ts";
+export { allocate, buildRound, buildTree, leaf as roundLeaf, verifyProof } from "./round.ts";
 
 /**
  * Hourly publisher. Epochs are timestamp windows, never block ranges.
@@ -59,10 +61,19 @@ export function leaf(parts: {
   recipient: string;
   amount: bigint;
 }): string {
-  void parts;
-  throw new Error(`Kickback leaf must be abi.encode of ${LEAF_FIELDS.join(", ")}`);
+  return roundLeaf({
+    chainId: BigInt(parts.chainId),
+    distributor: parts.distributor as `0x${string}`,
+    coin: parts.asset as `0x${string}`,
+    pair: parts.rewardToken as `0x${string}`,
+    epoch: parts.epoch,
+    account: parts.recipient as `0x${string}`,
+    amount: parts.amount,
+  });
 }
 
 export function main(): void {
-  console.log(`kickback skeleton for chain ${kickbackConfig.chainId}`);
+  console.log(
+    `kickback publisher for chain ${kickbackConfig.chainId}. Rounds are built off chain. Mainnet launches cannot select Kickback mode, and this process does not broadcast fund or postRoot.`,
+  );
 }

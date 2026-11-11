@@ -47,6 +47,9 @@ contract BuybackExecutor is IUnlockCallback {
     error NotKeeper();
     error NotAdmin();
     error TooSoon();
+    error KeeperDelayTooShort(uint256 given, uint256 minimum);
+    error ImmediateKeeperDisabled();
+    error NoKeeperProposal();
     error ExceedsPot(uint256 pot);
     error NotPoolManager();
     error TooLittleReceived();
@@ -58,6 +61,8 @@ contract BuybackExecutor is IUnlockCallback {
     event RouteRegistered(address indexed pair, PoolId indexed poolId);
     event CoinSideBurned(PoolId indexed poolId, uint256 amount);
     event KeeperSet(address indexed previous, address indexed next);
+    event KeeperProposed(address indexed next, uint256 eta);
+    event KeeperApplied(address indexed previous, address indexed next);
     event BuybackReserved(PoolId indexed poolId, uint256 amountIn, uint256 floor);
     event BuybackExecuted(PoolId indexed poolId, uint256 amountIn, uint256 coinBurned);
 
@@ -79,6 +84,12 @@ contract BuybackExecutor is IUnlockCallback {
     address public keeper;
     /// @dev One-shot. Deploy burns this so the deployer cannot grant a keeper later.
     bool public initialKeeperUsed;
+    /// @dev Zero on 99801 and 31337 when the constructor is passed 0. At least 48 hours on every other chain.
+    uint256 public immutable keeperDelay;
+    address public proposedKeeper;
+    uint256 public keeperEta;
+    bool public keeperProposalActive;
+    uint256 public constant MAINNET_KEEPER_DELAY = 48 hours;
     address public immutable initializer;
     Currency public immutable whype;
 
@@ -99,12 +110,16 @@ contract BuybackExecutor is IUnlockCallback {
     mapping(Currency => uint256) public collected;
     uint256 public maxInPerPeriod = 50_000 ether;
 
-    constructor(SeedixRoles roles_, Currency whype_, address initializer_, uint256 minRouteDepth_) {
+    constructor(SeedixRoles roles_, Currency whype_, address initializer_, uint256 minRouteDepth_, uint256 keeperDelay_) {
         if (initializer_ == address(0)) revert NotInitializer();
+        if (block.chainid != 99801 && block.chainid != 31337 && keeperDelay_ < MAINNET_KEEPER_DELAY) {
+            revert KeeperDelayTooShort(keeperDelay_, MAINNET_KEEPER_DELAY);
+        }
         roles = roles_;
         whype = whype_;
         initializer = initializer_;
         minRouteDepth = minRouteDepth_;
+        keeperDelay = keeperDelay_;
     }
 
     function wire(LaunchHook hook_, address launcher_, address locker_) external {
@@ -115,11 +130,40 @@ contract BuybackExecutor is IUnlockCallback {
         locker = locker_;
     }
 
-    /// @notice Admin can grant or revoke the keeper. The zero address revokes it.
-    ///         Mainnet must timelock the grant. This testnet build applies it immediately so the
-    ///         admin can turn buybacks on after the deploy. Revocation stays immediate there too.
+    /// @notice Immediate grant or revoke. Only when `keeperDelay` is zero (99801 and local Anvil).
+    ///         The zero address revokes the keeper. On mainnet use `proposeKeeper` and `applyKeeper`.
+    ///         The admin on mainnet is intended to be a multisig, distinct from the fee wallet.
     function setKeeper(address next) external {
         if (msg.sender != roles.admin()) revert NotAdmin();
+        if (keeperDelay != 0) revert ImmediateKeeperDisabled();
+        _setKeeper(next);
+    }
+
+    /// @notice Queue a keeper change. On a zero delay this applies immediately.
+    ///         Otherwise it can be applied after `keeperDelay`, which is at least 48 hours off testnet.
+    function proposeKeeper(address next) external {
+        if (msg.sender != roles.admin()) revert NotAdmin();
+        if (keeperDelay == 0) {
+            _setKeeper(next);
+            return;
+        }
+        proposedKeeper = next;
+        keeperEta = block.timestamp + keeperDelay;
+        keeperProposalActive = true;
+        emit KeeperProposed(next, keeperEta);
+    }
+
+    /// @notice Apply the queued keeper. Anyone can call it once the delay has passed.
+    function applyKeeper() external {
+        if (!keeperProposalActive) revert NoKeeperProposal();
+        if (block.timestamp < keeperEta) revert TooSoon();
+        keeperProposalActive = false;
+        address next = proposedKeeper;
+        emit KeeperApplied(keeper, next);
+        _setKeeper(next);
+    }
+
+    function _setKeeper(address next) internal {
         emit KeeperSet(keeper, next);
         keeper = next;
     }

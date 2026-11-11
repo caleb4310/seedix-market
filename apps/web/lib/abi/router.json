@@ -26,5 +26,6 @@
   { "type": "error", "name": "Expired", "inputs": [] },
   { "type": "error", "name": "PriceLimit", "inputs": [] },
   { "type": "error", "name": "TooLittleReceived", "inputs": [] },
-  { "type": "error", "name": "TooMuchRequested", "inputs": [] }
+  { "type": "error", "name": "TooMuchRequested", "inputs": [] },
+  { "type": "error", "name": "PartialFill", "inputs": [] }
 ]

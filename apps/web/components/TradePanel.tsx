@@ -11,7 +11,7 @@ import { coinAge, modeLabel } from "@/lib/coin";
 import { hookAddress, quoterAbi, quoterAddress, routerAddress } from "@/lib/trade";
 import { decimalsAbi, erc20Abi, hookConfigAbi } from "@/lib/abi";
 import { freshQuote, spendState } from "@/lib/onchain";
-import { DEFAULT_SLIPPAGE_PCT, formatAmount, parseSlippage, type Side } from "@/lib/quote";
+import { formatAmount, initialSlippagePct, parseSlippage, suggestedSlippage, type Side } from "@/lib/quote";
 import { UINT128_MAX } from "@/lib/protocol";
 import { poolKey, quoteParams, quotedAmount, swapLimit, tradeSteps, type SwapKind, zeroForOne as swapDirection } from "@/lib/swap";
 import { DEFAULT_DEADLINE_MINUTES, deadlineFromNow, explainTxError } from "@/lib/tx";
@@ -31,7 +31,10 @@ export function TradePanel({ coin, initialSide = "buy" }: { coin: Coin; initialS
   const [side, setSide] = useState<Side>(initialSide);
   const kind: SwapKind = "exactIn";
   const [amount, setAmount] = useState(initialSide === "sell" ? "1000" : "100");
-  const [slippage, setSlippage] = useState(String(DEFAULT_SLIPPAGE_PCT));
+  const [slippage, setSlippage] = useState(() => {
+    const age = coin.launchTime !== undefined ? Math.max(0, Math.floor(Date.now() / 1000) - coin.launchTime) : coin.ageSec;
+    return String(initialSlippagePct(age));
+  });
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   const [confirmed, setConfirmed] = useState(false);
   const [preparing, setPreparing] = useState(false);
@@ -126,8 +129,8 @@ export function TradePanel({ coin, initialSide = "buy" }: { coin: Coin; initialS
   const ready = gross > 0 && quoteReady && (!needsConfirm || confirmed);
   const busy = preparing || tx.state.status === "awaiting_signature" || tx.state.status === "pending";
 
-  async function submit() {
-    if (!address || !built || !spendToken || !typedAmount || !slip.ok) {
+  async function submit(slippagePct = slip.ok ? slip.pct : undefined) {
+    if (!address || !built || !spendToken || !typedAmount || slippagePct === undefined) {
       setPrepError("Quote unavailable. Nothing was sent.");
       return;
     }
@@ -146,7 +149,7 @@ export function TradePanel({ coin, initialSide = "buy" }: { coin: Coin; initialS
         zeroForOne: direction,
         typedAmount,
         quoted: fresh,
-        slippagePct: slip.pct,
+        slippagePct,
         deadline: deadlineFromNow(DEFAULT_DEADLINE_MINUTES, Math.floor(Date.now() / 1000)),
         allowance: funds.allowance,
         tokenBalance: funds.balance,
@@ -283,6 +286,21 @@ export function TradePanel({ coin, initialSide = "buy" }: { coin: Coin; initialS
         </p>
       ) : null}
       <TxStatus state={shown} />
+      {shown.status === "failed" && /quoted minimum|less than the quoted/i.test(shown.message ?? "") && onNetwork ? (
+        <Button
+          variant="secondary"
+          block
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            const next = suggestedSlippage(slip.ok ? slip.pct : 1);
+            setSlippage(String(next));
+            void submit(next);
+          }}
+        >
+          Retry at {suggestedSlippage(slip.ok ? slip.pct : 1)}% slippage
+        </Button>
+      ) : null}
       {!isConnected ? (
         <div className="stack-top">
           <WalletButton prominent />

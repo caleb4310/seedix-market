@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAccount, usePublicClient, useReadContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useSignTypedData } from "wagmi";
 import { isAddress } from "viem";
 import { cleanSocials } from "@seedix/shared";
 import { erc20Abi, launcherAbi, metadataAbi } from "@/lib/abi";
@@ -13,6 +13,7 @@ import type { Mode } from "@/lib/coin";
 import { coinMetadataAddress, executorAddress, explorerAddress, feeWallet, sameAddress } from "@/lib/deployment";
 import { buildLaunchParams } from "@/lib/launch";
 import { launchSuccess } from "@/lib/launchSuccess";
+import { attachTyped, fetchLogoNonce, logoExpiry, uploadTyped } from "@/lib/logoSign";
 import { logoAttachPath, logoSrc } from "@/lib/logoUrl";
 import { launchedCoin } from "@/lib/onchain";
 import { DEAD } from "@/lib/protocol";
@@ -103,6 +104,7 @@ export function LaunchForm() {
   const toast = useToast();
   const tx = useContractTx();
   const { address, chainId } = useAccount();
+  const { signTypedDataAsync } = useSignTypedData();
   const client = usePublicClient({ chainId: elysiumTestnet.id });
   const hypeUsd = useHypeUsd();
 
@@ -336,12 +338,29 @@ export function LaunchForm() {
     setPoolId(launched.poolId);
     const success = launchSuccess(launched.poolId);
     const path = image ? logoAttachPath(image, apiUrl) : null;
-    if (apiUrl && path) {
-      void fetch(`${apiUrl}/logos/attach`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ poolId: launched.poolId, url: path }),
-      });
+    const logoSigner = (recipient.trim() || address).toLowerCase();
+    if (apiUrl && path && address.toLowerCase() === logoSigner) {
+      try {
+        const nonce = await fetchLogoNonce(address);
+        const expiry = logoExpiry();
+        const signature = await signTypedDataAsync(attachTyped(launched.poolId, path, nonce, expiry));
+        const attached = await fetch(`${apiUrl}/logos/attach`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            poolId: launched.poolId,
+            url: path,
+            nonce: nonce.toString(),
+            expiry: expiry.toString(),
+            signature,
+          }),
+        });
+        if (!attached.ok) toast("The logo was not attached. The fee recipient has to sign it.", "error");
+      } catch {
+        toast("The logo signature was rejected.", "error");
+      }
+    } else if (apiUrl && path) {
+      toast("Connect the fee recipient wallet to attach the logo.", "error");
     }
     if (success) {
       window.setTimeout(() => {
@@ -519,9 +538,33 @@ export function LaunchForm() {
                 return;
               }
               void file.arrayBuffer().then(async (buf) => {
-                const response = await fetch(`${apiUrl}/logos`, { method: "POST", body: buf });
+                if (!address) {
+                  toast("Connect a wallet to add a logo.", "error");
+                  return;
+                }
+                const bytes = new Uint8Array(buf);
+                let signature: string;
+                let nonce: bigint;
+                let expiry: bigint;
+                try {
+                  nonce = await fetchLogoNonce(address);
+                  expiry = logoExpiry();
+                  signature = await signTypedDataAsync(uploadTyped(bytes, nonce, expiry));
+                } catch {
+                  toast("The logo signature was rejected.", "error");
+                  return;
+                }
+                const response = await fetch(`${apiUrl}/logos`, {
+                  method: "POST",
+                  body: buf,
+                  headers: {
+                    "x-seedix-nonce": nonce.toString(),
+                    "x-seedix-expiry": expiry.toString(),
+                    "x-seedix-signature": signature,
+                  },
+                });
                 if (!response.ok) {
-                  toast("Use a PNG, JPEG, or WEBP under 512kb.", "error");
+                  toast("Use a PNG, JPEG, or WEBP under 1MB, and sign with your wallet.", "error");
                   return;
                 }
                 const body = (await response.json()) as { url?: string };

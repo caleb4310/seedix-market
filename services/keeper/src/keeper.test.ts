@@ -5,6 +5,7 @@ import { assertKeyFile, keyFilePath, loadKey } from "./key.ts";
 import { buildTree, kickbackLeaf, preparePush, verifyProof, type Manifest } from "./merkle.ts";
 import { parseManifest } from "./index.ts";
 import { amountSteps, feeWithinCap, planCoinBuyback, pushBatches, pushReady } from "./plan.ts";
+import { revertLabel } from "./reason.ts";
 
 const distributor = "0x1111111111111111111111111111111111111111" as const;
 const coin = "0x2222222222222222222222222222222222222222" as const;
@@ -38,6 +39,14 @@ describe("keeper key", () => {
     assert.equal(keyFilePath({ KEEPER_PRIVATE_KEY: "/run/secrets/keeper_key" }), "/run/secrets/keeper_key");
     assert.equal(keyFilePath({ KEEPER_KEY_FILE: "/etc/seedix/keeper.key" }), "/etc/seedix/keeper.key");
     assert.throws(() => keyFilePath({ KEEPER_PRIVATE_KEY: `0x${"ab".repeat(32)}` }), /file path/);
+  });
+});
+
+describe("revert labels", () => {
+  it("keeps the reason line viem prints under the signature sentence", () => {
+    const err = new Error('The contract function "convertAccrued" reverted with the following signature:\nNothing()');
+    assert.equal(revertLabel(err), "Nothing()");
+    assert.equal(revertLabel({ data: { errorName: "RouteNotRegistered" } }), "RouteNotRegistered");
   });
 });
 

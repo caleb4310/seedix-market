@@ -7,6 +7,7 @@ import { deployment99801 } from "./deployment.ts";
 import { assertKeyFile, keyFilePath, loadKey } from "./key.ts";
 import { preparePush, type Manifest } from "./merkle.ts";
 import { feeWithinCap, planCoinBuyback, planPlatformBuyback, pushBatches, pushReady } from "./plan.ts";
+import { revertLabel } from "./reason.ts";
 
 const chain = defineChain({
   id: elysiumTestnet.id,
@@ -23,10 +24,21 @@ const executorAbi = parseAbi([
   "function maxInPerPeriod() view returns (uint256)",
   "function platformPoolId() view returns (bytes32)",
   "function platformSet() view returns (bool)",
+  "error Nothing()",
+  "error NotKeeper()",
+  "error RouteNotRegistered()",
+  "error TooLittleReceived()",
+  "error YoungPool()",
+  "error BuybackIsPaused()",
+  "error UnknownPool()",
+  "error TooSoon()",
+  "error ShallowRoute()",
 ]);
 
 const hookAbi = parseAbi([
   "function pools(uint256) view returns (bytes32)",
+  "function backingOf(bytes32) view returns (address)",
+  "function config(bytes32) view returns (address coin, address pair, bool coinIsToken0, uint8 mode, bool isPlatform, uint40 launchTime, address feeRecipient)",
   "function pots(bytes32) view returns (uint128 creatorPair, uint128 creatorCoin, uint128 kickbackPair, uint128 burnPair, uint128 burnCoin)",
   "function platformBurn(address) view returns (uint256)",
 ]);
@@ -153,7 +165,7 @@ export async function main(): Promise<void> {
       await publicClient.simulateContract({ account, address, abi, functionName, args });
     } catch (err) {
       metrics.skips += 1;
-      console.log(`skip ${functionName}: ${scrub(err, key)}`);
+      console.log(`skip ${functionName}: ${revertLabel(err)}`);
       return false;
     }
     const fees = await publicClient.estimateFeesPerGas();
@@ -202,6 +214,18 @@ export async function main(): Promise<void> {
         }
       }
       for (const poolId of pools) {
+        const backing = await publicClient.readContract({
+          address: hook,
+          abi: hookAbi,
+          functionName: "backingOf",
+          args: [poolId],
+        });
+        if (backing === "0x0000000000000000000000000000000000000000") continue;
+        const config = await publicClient.readContract({ address: hook, abi: hookAbi, functionName: "config", args: [poolId] });
+        const mode = Number(config[3]);
+        const accrued = await publicClient.readContract({ address: hook, abi: hookAbi, functionName: "pots", args: [poolId] });
+        const convertible = mode === 0 ? asRecord(accrued, 0, "creatorPair") : mode === 1 ? asRecord(accrued, 2, "kickbackPair") : 0n;
+        if (convertible === 0n) continue;
         await send(executor, executorAbi, "convertAccrued", [poolId]);
         const pots = await publicClient.readContract({ address: hook, abi: hookAbi, functionName: "pots", args: [poolId] });
         const last = await publicClient.readContract({

@@ -67,4 +67,4 @@ Observations are written at most once per 30 seconds, from the pre-swap tick. Si
 
 ## Known limit
 
-Exact-in fees are taken on the full specified amount. A swap that stops early because of `sqrtPriceLimitX96` can pay a fee on input that never reached the pool (review L-02). The router used by the app sends a limit at the edge of the price range, so a normal swap fills.
+Exact-in fees are still quoted on the specified amount inside the hook. `SeedixRouter` reverts with `PartialFill` unless the input delta equals that full amount, so a swap that stops early at `sqrtPriceLimitX96` does not settle and the fee is not kept (review L-02). The app still sends a limit at the edge of the price range.

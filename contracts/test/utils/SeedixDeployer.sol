@@ -57,7 +57,7 @@ contract SeedixDeployer {
 
         d.implementation = new LaunchToken();
         d.vault = new FeeVault(d.roles, p.feeWallet, address(this));
-        d.executor = new BuybackExecutor(d.roles, p.whype, address(this), 0);
+        d.executor = new BuybackExecutor(d.roles, p.whype, address(this), 0, 0);
         d.distributor = new KickbackDistributor(d.roles, p.publisher, p.roundCap, p.hourlyCap, address(this));
 
         d.timelock.grantRole(d.timelock.PROPOSER_ROLE(), address(d.roles));

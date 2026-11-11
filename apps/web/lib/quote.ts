@@ -1,4 +1,17 @@
 export const DEFAULT_SLIPPAGE_PCT = 1;
+export const OPENING_SLIPPAGE_PCT = 3;
+export const OPENING_WINDOW_SEC = 180;
+
+/** The first three minutes after launch use a wider default. The field stays editable. */
+export function initialSlippagePct(ageSec: number): number {
+  return ageSec < OPENING_WINDOW_SEC ? OPENING_SLIPPAGE_PCT : DEFAULT_SLIPPAGE_PCT;
+}
+
+/** One step up from the slippage that just reverted, capped at the field maximum. */
+export function suggestedSlippage(current: number): number {
+  if (!Number.isFinite(current) || current < 0) return OPENING_SLIPPAGE_PCT;
+  return Math.min(50, Math.max(current + 3, OPENING_SLIPPAGE_PCT));
+}
 
 export type Side = "buy" | "sell";
 
