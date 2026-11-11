@@ -324,7 +324,7 @@ contract KickbackDistributor {
     function postRootAllocated(PoolId id, uint64 epochId, bytes32 root, bytes32 manifestHash, uint128 allocated)
         external
     {
-        if (allocated == 0 || allocated > epochs[id][epochId].funded) revert Cap();
+        if (allocated < 1 || allocated > epochs[id][epochId].funded) revert Cap();
         _postRoot(id, epochId, root, manifestHash, allocated);
     }
 
@@ -332,10 +332,10 @@ contract KickbackDistributor {
         if (kickbackPaused) revert Paused();
         if (msg.sender != publisher) revert NotPublisher();
         Epoch storage e = epochs[id][epochId];
-        if (e.funded == 0 || e.cancelled || e.postedAt != 0) revert BadEpoch();
+        if (e.funded < 1 || e.cancelled || e.postedAt > 0) revert BadEpoch();
         if (block.timestamp < e.end) revert BadEpoch();
-        if (root == bytes32(0) || manifestHash == bytes32(0)) revert BadEpoch();
-        if (allocated == 0 || allocated > e.funded) revert Cap();
+        if (uint256(root) < 1 || uint256(manifestHash) < 1) revert BadEpoch();
+        if (allocated < 1 || allocated > e.funded) revert Cap();
         allocation[id][epochId] = allocated;
         e.root = root;
         e.manifestHash = manifestHash;

@@ -16,6 +16,8 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {SeedixRoles} from "../access/SeedixRoles.sol";
 import {SeedixConstants as C} from "../libraries/SeedixConstants.sol";
 import {TwapGuard} from "../libraries/TwapGuard.sol";
+import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+import {ProtocolFeeLibrary} from "@uniswap/v4-core/src/libraries/ProtocolFeeLibrary.sol";
 import {OracleLib} from "../libraries/OracleLib.sol";
 import {RouteDepth} from "../libraries/RouteDepth.sol";
 import {LaunchHook} from "../hook/LaunchHook.sol";
@@ -551,13 +553,29 @@ contract BuybackExecutor is IUnlockCallback {
         Route memory route = whypeRoute[Currency.wrap(token)];
         if (!route.set) revert RouteNotRegistered();
         if (buybacksPaused) revert BuybackIsPaused();
-        if (hypeIn == 0) revert Nothing();
+        if (hypeIn < 1) revert Nothing();
         PoolKey memory key = _routeKey(route);
-        (, int24 spot,,) = hook.poolManager().getSlot0(key.toId());
+        int24 spot = _routeSpot(key);
         int24 twap = OracleLib.consult(routeOracle[token], uint32(block.timestamp), C.TWAP_WINDOW, spot);
         TwapGuard.assertBand(spot, twap);
         bool zeroForOne = Currency.unwrap(whype) == Currency.unwrap(key.currency0);
         return TwapGuard.minOut(hypeIn, twap, zeroForOne);
+    }
+
+    /// @dev Every `getSlot0` word is checked. A zero sqrt price means the pool was never initialized.
+    ///      The fee words have to be a valid static fee, the dynamic-fee flag, or a valid protocol fee.
+    function _routeSpot(PoolKey memory key) internal view returns (int24 spot) {
+        (uint160 sqrtPrice, int24 tick, uint24 protocolFee, uint24 lpFee) = hook.poolManager().getSlot0(key.toId());
+        if (sqrtPrice < 1 || !_slotFeesOk(protocolFee, lpFee)) revert RouteNotRegistered();
+        spot = tick;
+    }
+
+    function _slotFeesOk(uint24 protocolFee, uint24 lpFee) internal pure returns (bool) {
+        if (!ProtocolFeeLibrary.isValidProtocolFee(protocolFee)) return false;
+        if (lpFee > LPFeeLibrary.MAX_LP_FEE) {
+            if (lpFee < LPFeeLibrary.DYNAMIC_FEE_FLAG || lpFee > LPFeeLibrary.DYNAMIC_FEE_FLAG) return false;
+        }
+        return true;
     }
 
     function _routeFloor(Currency pair, Route memory route, uint256 amountIn) internal view returns (uint256) {
