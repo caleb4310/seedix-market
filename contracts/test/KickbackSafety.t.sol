@@ -143,6 +143,25 @@ contract KickbackSafetyTest is Fixture {
         assertEq(d.executor.quoteReward(address(whype), 1 ether), 1 ether);
     }
 
+    function test_inflatedGasPriceCannotTakeTheCap() public {
+        uint128 available = _available();
+        vm.prank(publisher);
+        uint64 epoch = d.distributor.fund(id, available);
+        uint256 amount = available / 2;
+        bytes32 leaf = _leaf(epoch, holder, amount);
+        vm.prank(publisher);
+        d.distributor.postRootAllocated(id, epoch, leaf, keccak256("manifest"), uint128(amount));
+        vm.warp(block.timestamp + 1 hours + 1);
+        vm.fee(1 gwei);
+        vm.txGasPrice(500 gwei);
+        vm.prank(publisher);
+        d.distributor.push(id, epoch, _one(holder), _one(amount), _proofs());
+        KickbackDistributor.Round memory round = d.distributor.roundOf(id, epoch);
+        assertGt(round.gasPaid, 0);
+        assertLe(round.gasPaid, 500_000 * (1 gwei + d.distributor.MAX_TIP()));
+        assertLt(round.gasPaid, round.funded * d.distributor.gasCapBps() / 10_000);
+    }
+
     function _one(address account) internal pure returns (address[] memory a) {
         a = new address[](1);
         a[0] = account;

@@ -34,6 +34,9 @@ import {SeedixRouter} from "../src/router/SeedixRouter.sol";
 contract DeploySeedix is Script {
     error ForbiddenChain(uint256 chainId);
     error AdminIsFeeWallet(address admin);
+    error RolesCollide(address a, address b);
+    error FeeWalletReuse(address wallet);
+    error MainnetUsesCanonicalStack(uint256 chainId);
     error Permit2Missing();
     error MissingCode(address target);
     error SeedBudget(uint256 total, uint256 cap);
@@ -92,10 +95,7 @@ contract DeploySeedix is Script {
     }
 
     function deploy(uint256 pk, address admin, address publisher, address keeper) public {
-        if (block.chainid == 99901) {
-            if (admin == address(0) || admin == C.FEE_WALLET) revert AdminIsFeeWallet(admin);
-            revert ForbiddenChain(block.chainid);
-        }
+        if (block.chainid == 99901) revert MainnetUsesCanonicalStack(block.chainid);
         if (block.chainid != 99801 && block.chainid != 31337) revert ForbiddenChain(block.chainid);
         address deployer = vm.addr(pk);
         if (admin == address(0)) admin = deployer;
@@ -137,13 +137,15 @@ contract DeploySeedix is Script {
         address[] memory executors = new address[](1);
         executors[0] = deployer;
         TimelockController tl = new TimelockController(48 hours, proposers, executors, deployer);
-        SeedixRoles roles = new SeedixRoles(tl, admin);
+        address guardian = vm.envOr("GUARDIAN", admin);
+        SeedixRoles roles = new SeedixRoles(tl, admin, guardian);
         LaunchToken impl = new LaunchToken();
-        FeeVault vault = new FeeVault(roles, C.FEE_WALLET, deployer);
+        address feeWallet = vm.envOr("FEE_WALLET", C.FEE_WALLET);
+        FeeVault vault = new FeeVault(roles, feeWallet, deployer);
         BuybackExecutor executor =
             new BuybackExecutor(roles, Currency.wrap(whype), deployer, TESTNET_MIN_ROUTE_DEPTH, 0);
         KickbackDistributor distributor =
-            new KickbackDistributor(roles, publisher, 1_000_000 ether, 10_000_000 ether, deployer);
+            new KickbackDistributor(roles, publisher, 1_000_000 ether, 10_000_000 ether, 1_000_000 ether, deployer, 0);
         require(address(vault) == vaultA && address(executor) == execA && address(distributor) == distA, "nonce");
 
         tl.grantRole(tl.PROPOSER_ROLE(), admin);
@@ -285,7 +287,123 @@ contract DeploySeedix is Script {
         console2.logBytes32(address(hook).codehash);
     }
 
-    /// @dev Canonical code is required on 99801. Mocks exist only on local Anvil. Mainnet is a separate script.
+    struct MainnetRoles {
+        address admin;
+        address guardian;
+        address feeWallet;
+        address proposer;
+        address publisher;
+        address keeper;
+    }
+
+    /// @notice Mainnet roles must be distinct, and the fee wallet must not be the shared testnet key.
+    function requireMainnetRoles(MainnetRoles memory roles_) public view {
+        if (block.chainid != 99901) revert ForbiddenChain(block.chainid);
+        _distinct(roles_.admin, roles_.guardian);
+        _distinct(roles_.admin, roles_.feeWallet);
+        _distinct(roles_.admin, roles_.proposer);
+        _distinct(roles_.admin, roles_.publisher);
+        _distinct(roles_.admin, roles_.keeper);
+        _distinct(roles_.guardian, roles_.feeWallet);
+        _distinct(roles_.guardian, roles_.proposer);
+        _distinct(roles_.guardian, roles_.publisher);
+        _distinct(roles_.guardian, roles_.keeper);
+        _distinct(roles_.feeWallet, roles_.proposer);
+        _distinct(roles_.feeWallet, roles_.publisher);
+        _distinct(roles_.feeWallet, roles_.keeper);
+        _distinct(roles_.proposer, roles_.publisher);
+        _distinct(roles_.proposer, roles_.keeper);
+        _distinct(roles_.publisher, roles_.keeper);
+        if (roles_.feeWallet == C.FEE_WALLET) revert FeeWalletReuse(roles_.feeWallet);
+    }
+
+    struct CanonicalUniswap {
+        address poolManager;
+        address positionManager;
+        address stateView;
+        address quoter;
+        address whype;
+        address permit2;
+    }
+
+    /// @notice Mainnet deploy. Uses the canonical Uniswap v4 contracts passed in.
+    ///         This function does not deploy a PoolManager, PositionManager, or mock tokens.
+    function deployMainnet(uint256 pk, MainnetRoles memory roles_, CanonicalUniswap memory uni, address[] memory pairs)
+        public
+    {
+        requireMainnetRoles(roles_);
+        _requireCode(uni.poolManager);
+        _requireCode(uni.positionManager);
+        _requireCode(uni.stateView);
+        _requireCode(uni.quoter);
+        _requireCode(uni.whype);
+        _requireCode(uni.permit2);
+        if (pairs.length == 0) revert MissingCode(address(0));
+        address deployer = vm.addr(pk);
+        vm.startBroadcast(pk);
+        IPoolManager manager = IPoolManager(uni.poolManager);
+        uint256 n = vm.getNonce(deployer);
+        address vaultA = vm.computeCreateAddress(deployer, n + 3);
+        address execA = vm.computeCreateAddress(deployer, n + 4);
+        address distA = vm.computeCreateAddress(deployer, n + 5);
+        (, bytes32 salt) = HookMiner.find(
+            CREATE2_DEPLOYER,
+            C.HOOK_FLAGS,
+            type(LaunchHook).creationCode,
+            abi.encode(manager, vaultA, execA, distA, deployer)
+        );
+        address[] memory proposers = new address[](1);
+        proposers[0] = roles_.proposer;
+        address[] memory executors = new address[](1);
+        executors[0] = roles_.proposer;
+        TimelockController tl = new TimelockController(48 hours, proposers, executors, deployer);
+        SeedixRoles seedixRoles = new SeedixRoles(tl, roles_.admin, roles_.guardian);
+        new LaunchToken();
+        FeeVault vault = new FeeVault(seedixRoles, roles_.feeWallet, deployer);
+        BuybackExecutor executor =
+            new BuybackExecutor(seedixRoles, Currency.wrap(uni.whype), deployer, C.MAINNET_MIN_ROUTE_DEPTH, 48 hours);
+        KickbackDistributor distributor = new KickbackDistributor(
+            seedixRoles, roles_.publisher, 1_000 ether, 5_000 ether, 100 ether, deployer, 48 hours
+        );
+        require(address(vault) == vaultA && address(executor) == execA && address(distributor) == distA, "nonce");
+        new SeedixRouter(manager);
+        LaunchHook hook =
+            new LaunchHook{salt: salt}(manager, address(vault), address(executor), address(distributor), deployer);
+        LiquidityLocker locker = new LiquidityLocker(manager, deployer);
+        Launcher launcher =
+            new Launcher(seedixRoles, manager, hook, locker, new LaunchToken(), executor, deployer, pairs);
+        hook.setLauncher(address(launcher));
+        hook.setLocker(address(locker));
+        vault.setHook(hook);
+        executor.wire(hook, address(launcher), address(locker));
+        locker.wire(hook, address(launcher), address(executor));
+        distributor.wire(hook, address(manager), address(locker), address(vault), address(executor));
+        executor.grantKeeper(roles_.keeper);
+        distributor.grantKeeper(roles_.keeper);
+        vm.stopBroadcast();
+        last = Result({
+            deployer: deployer,
+            admin: roles_.admin,
+            timelock: address(tl),
+            roles: address(seedixRoles),
+            vault: address(vault),
+            executor: address(executor),
+            distributor: address(distributor),
+            hook: address(hook),
+            launcher: address(launcher),
+            locker: address(locker)
+        });
+        console2.log("mainnet poolManager", uni.poolManager);
+        console2.log("mainnet positionManager", uni.positionManager);
+        console2.log("mainnet stateView", uni.stateView);
+        console2.log("mainnet quoter", uni.quoter);
+    }
+
+    function _distinct(address a, address b) internal pure {
+        if (a == address(0) || a == b) revert RolesCollide(a, b);
+    }
+
+    /// @dev Canonical code is required on 99801. Mocks exist only on local Anvil. Mainnet uses `deployMainnet`.
     function _canonicalOrMock(address admin) internal returns (address whype, address usdc, address permit2) {
         if (block.chainid == 31337) {
             permit2 = PERMIT2.code.length == 0 ? _deployPermit2(admin) : PERMIT2;

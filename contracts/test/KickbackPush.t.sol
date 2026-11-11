@@ -287,11 +287,12 @@ contract KickbackPushTest is Fixture {
         vm.prank(publisher);
         d.distributor.postRoot(id, epoch, KickTree.pairHash(leafA, leafB), keccak256("manifest"));
         _passReview();
+        vm.fee(100_000 gwei);
         vm.txGasPrice(100_000 gwei);
         uint256 keeperBefore = whype.balanceOf(address(this));
         _push(epoch, holder, a, _sibling(leafB));
         KickbackDistributor.Round memory round = d.distributor.roundOf(id, epoch);
-        uint256 cap = round.funded * 200 / 10_000;
+        uint256 cap = round.funded * d.distributor.gasCapBps() / 10_000;
         assertEq(round.gasPaid, cap);
         assertEq(whype.balanceOf(address(this)) - keeperBefore, cap);
         _push(epoch, other, b, _sibling(leafA));
@@ -317,8 +318,8 @@ contract KickbackPushTest is Fixture {
         vm.expectRevert(KickbackDistributor.Cap.selector);
         d.distributor.setGasCapBps(50);
 
-        _timelock(address(d.distributor), abi.encodeCall(d.distributor.setGasCapBps, (200)));
-        assertEq(d.distributor.gasCapBps(), 200);
+        _timelock(address(d.distributor), abi.encodeCall(d.distributor.setGasCapBps, (100)));
+        assertEq(d.distributor.gasCapBps(), 100);
 
         vm.chainId(99801);
         vm.prank(admin);
@@ -373,7 +374,7 @@ contract KickbackPushTest is Fixture {
         KickbackDistributor.Round memory round = d.distributor.roundOf(id, epoch);
         assertEq(round.pending, 0);
         assertEq(round.pushed + round.claimable + round.rollover, round.funded - round.gasPaid);
-        assertLe(round.gasPaid, round.funded * 200 / 10_000);
+        assertLe(round.gasPaid, round.funded * d.distributor.MAX_GAS_CAP_BPS() / 10_000);
         assertLe(round.gasPaid, round.funded * d.distributor.gasCapBps() / 10_000);
         assertEq(whype.balanceOf(holder), pay);
         assertEq(whype.balanceOf(other), 0);
@@ -496,6 +497,13 @@ contract KickbackPushTest is Fixture {
     function _oneProof(bytes32[] memory proof) internal pure returns (bytes32[][] memory proofs) {
         proofs = new bytes32[][](1);
         proofs[0] = proof;
+    }
+
+    function test_recipientCapRejectsAnOversizedLeaf() public {
+        (uint64 epoch, uint256 amount) = _openSingle(holder, 2 ether);
+        _timelock(address(d.distributor), abi.encodeCall(d.distributor.setRecipientCap, (1 ether)));
+        vm.expectRevert(KickbackDistributor.Cap.selector);
+        _push(epoch, holder, amount, new bytes32[](0));
     }
 
     function _sibling(bytes32 leafHash) internal pure returns (bytes32[] memory proof) {

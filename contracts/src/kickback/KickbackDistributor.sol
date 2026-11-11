@@ -56,11 +56,21 @@ contract KickbackDistributor {
     error Nothing();
     error TransferFailed();
     error Paused();
+    error KeeperDelayTooShort(uint256 given, uint256 minimum);
+    error ImmediateKeeperDisabled();
+    error NoKeeperProposal();
+    error TooSoon();
 
     /// @dev A batch cannot grow with the holder set. Callers repeat `push` until the round is done.
     uint256 public constant MAX_BATCH = 32;
-    /// @dev 200 / 10_000 = 2%. Mainnet cannot raise this. Testnet can only lower it.
-    uint256 public constant MAX_GAS_CAP_BPS = 200;
+    /// @dev 100 / 10_000 = 1%. Mainnet cannot raise this. Testnet can only lower it.
+    uint256 public constant MAX_GAS_CAP_BPS = 100;
+    /// @dev Reimbursement cannot price gas above the block base fee plus this tip.
+    uint256 public constant MAX_TIP = 2 gwei;
+    uint256 public constant MAINNET_KEEPER_DELAY = 48 hours;
+    /// @dev A mainnet round cannot be funded above this. Testnet deploys may be larger.
+    uint256 public constant MAINNET_MAX_ROUND = 100_000 ether;
+    uint256 public constant MAINNET_MAX_HOURLY = 500_000 ether;
     uint256 public constant BPS = 10_000;
     /// @dev Stipend for one token transfer so a reverting receiver cannot consume the batch.
     uint256 public constant TRANSFER_GAS = 200_000;
@@ -111,6 +121,8 @@ contract KickbackDistributor {
     );
     event RoundSealed(PoolId indexed poolId, uint64 indexed epoch, uint256 rolled);
     event KeeperSet(address indexed previous, address indexed next);
+    event KeeperProposed(address indexed next, uint256 eta);
+    event KeeperApplied(address indexed previous, address indexed next);
     event AllowlistSet(address indexed account, bool allowed);
     event DustSet(uint256 threshold);
     event GasCapSet(uint256 bps);
@@ -134,8 +146,15 @@ contract KickbackDistributor {
     uint256 public fundedThisHour;
     /// @notice Amounts strictly below this roll into the next round. Default is 1e6 wei.
     uint256 public dustThreshold = 1_000_000;
-    /// @notice Share of a round that can reimburse keeper gas. Defaults to the 2% ceiling.
+    /// @notice Share of a round that can reimburse distribution gas. Defaults to the 1% ceiling.
     uint256 public gasCapBps = MAX_GAS_CAP_BPS;
+    /// @notice Largest single holder payment. The timelock can only lower it.
+    uint256 public recipientCap;
+    /// @dev Zero on 99801 and 31337. At least 48 hours on every other chain.
+    uint256 public immutable keeperDelay;
+    address public proposedKeeper;
+    uint256 public keeperEta;
+    bool public keeperProposalActive;
     /// @notice Guardian or admin pause. Blocks fund, post, claim, and push. Cancel still works.
     bool public kickbackPaused;
     /// @notice Leaf total the publisher committed. Claims cannot exceed it, and it cannot exceed `funded`.
@@ -171,15 +190,30 @@ contract KickbackDistributor {
         _entered = 0;
     }
 
-    constructor(SeedixRoles roles_, address publisher_, uint256 roundCap_, uint256 hourlyCap_, address initializer_) {
+    constructor(
+        SeedixRoles roles_,
+        address publisher_,
+        uint256 roundCap_,
+        uint256 hourlyCap_,
+        uint256 recipientCap_,
+        address initializer_,
+        uint256 keeperDelay_
+    ) {
         if (publisher_ == address(0) || roundCap_ == 0 || hourlyCap_ == 0 || initializer_ == address(0)) {
             revert BadEpoch();
+        }
+        if (recipientCap_ == 0 || recipientCap_ > roundCap_) revert Cap();
+        if (block.chainid != 99801 && block.chainid != 31337) {
+            if (roundCap_ > MAINNET_MAX_ROUND || hourlyCap_ > MAINNET_MAX_HOURLY) revert Cap();
+            if (keeperDelay_ < MAINNET_KEEPER_DELAY) revert KeeperDelayTooShort(keeperDelay_, MAINNET_KEEPER_DELAY);
         }
         roles = roles_;
         publisher = publisher_;
         roundCap = roundCap_;
         hourlyCap = hourlyCap_;
+        recipientCap = recipientCap_;
         initializer = initializer_;
+        keeperDelay = keeperDelay_;
     }
 
     function wire(LaunchHook hook_, address poolManager_, address locker_, address vault_, address buybackExecutor_)
@@ -219,11 +253,35 @@ contract KickbackDistributor {
         roundCap = next;
     }
 
-    /// @notice Admin can grant or revoke the kickback keeper. The zero address revokes it.
-    ///         Mainnet must timelock the grant. This testnet build applies it immediately.
-    ///         Revocation stays immediate there too.
+    /// @notice Immediate grant or revoke. Only when `keeperDelay` is zero (99801 and local Anvil).
     function setKeeper(address next) external {
         if (msg.sender != roles.admin()) revert NotAdmin();
+        if (keeperDelay != 0) revert ImmediateKeeperDisabled();
+        emit KeeperSet(keeper, next);
+        keeper = next;
+    }
+
+    /// @notice Queue a keeper change. On a zero delay this applies immediately.
+    function proposeKeeper(address next) external {
+        if (msg.sender != roles.admin()) revert NotAdmin();
+        if (keeperDelay == 0) {
+            emit KeeperSet(keeper, next);
+            keeper = next;
+            return;
+        }
+        proposedKeeper = next;
+        keeperEta = block.timestamp + keeperDelay;
+        keeperProposalActive = true;
+        emit KeeperProposed(next, keeperEta);
+    }
+
+    /// @notice Apply the queued keeper once the delay has passed. Anyone may call it.
+    function applyKeeper() external {
+        if (!keeperProposalActive) revert NoKeeperProposal();
+        if (block.timestamp < keeperEta) revert TooSoon();
+        keeperProposalActive = false;
+        address next = proposedKeeper;
+        emit KeeperApplied(keeper, next);
         emit KeeperSet(keeper, next);
         keeper = next;
     }
@@ -260,6 +318,13 @@ contract KickbackDistributor {
         }
         dustThreshold = next;
         emit DustSet(next);
+    }
+
+    /// @notice The timelock can only lower the per-holder cap.
+    function setRecipientCap(uint256 next) external {
+        if (msg.sender != address(roles.timelock())) revert NotTimelock();
+        if (next == 0 || next >= recipientCap) revert Cap();
+        recipientCap = next;
     }
 
     /// @notice Timelock allowlist for a contract holder. Infrastructure and team wallets cannot be listed.
@@ -375,7 +440,10 @@ contract KickbackDistributor {
         if (claimed[id][epochId][account]) revert AlreadyClaimed();
         if (isSkipped(id, account)) revert Excluded();
         _verify(id, epochId, account, amount, proof);
-        if (amount == 0 || amount > holderBudget(id, epochId) || amount > type(uint128).max) revert Cap();
+        if (amount == 0 || amount > holderBudget(id, epochId) || amount > recipientCap || amount > type(uint128).max) {
+            revert Cap();
+        }
+        if (!_withinNet(id, epochId, amount)) revert Cap();
         uint128 posted = allocation[id][epochId];
         if (posted != 0 && uint256(epochs[id][epochId].claimed) + amount > posted) revert Cap();
         if (amount < dustThreshold) revert Dust();
@@ -527,7 +595,8 @@ contract KickbackDistributor {
         if (amount == 0) revert Cap();
         if (claimed[id][epochId][account]) revert AlreadyClaimed();
         _verify(id, epochId, account, amount, proof);
-        if (amount > holderBudget(id, epochId)) revert Cap();
+        if (amount > holderBudget(id, epochId) || amount > recipientCap) revert Cap();
+        if (!_withinNet(id, epochId, amount)) revert Cap();
         claimed[id][epochId][account] = true;
         if (isSkipped(id, account) || amount < dustThreshold) {
             _rollover(id, epochId, amount);
@@ -557,8 +626,7 @@ contract KickbackDistributor {
         Round memory r = roundOf(id, epochId);
         if (r.pending == 0) return 0;
         uint256 usedGas = gasStart - gasleft() + GAS_OVERHEAD;
-        // tx.gasprice is the effective price (base fee plus tip). The platform does not top this up.
-        uint256 price = tx.gasprice;
+        uint256 price = _boundedGasPrice();
         uint256 hypeCost = usedGas > type(uint256).max / price ? type(uint256).max : usedGas * price;
         payment = _rewardForGas(token, hypeCost);
         if (payment > room) payment = room;
@@ -568,6 +636,24 @@ contract KickbackDistributor {
         gasPaidEpoch[id][epochId] = already + payment;
         liabilities[token] -= payment;
         emit GasReimbursed(id, epochId, msg.sender, payment);
+    }
+
+    /// @notice Holder payments cannot exceed the pot after the gas reserve.
+    function netPot(uint256 funded) public view returns (uint256) {
+        uint256 reserve = funded * gasCapBps / BPS;
+        return funded > reserve ? funded - reserve : 0;
+    }
+
+    function _withinNet(PoolId id, uint64 epochId, uint256 amount) internal view returns (bool) {
+        uint256 net = netPot(epochs[id][epochId].funded);
+        uint256 alreadyOut = paidOut[id][epochId] + uint256(epochs[id][epochId].claimed) + claimableEpoch[id][epochId];
+        return amount <= net && alreadyOut + amount <= net;
+    }
+
+    /// @dev The caller cannot be paid more than the base fee plus `MAX_TIP`, even if `tx.gasprice` is higher.
+    function _boundedGasPrice() internal view returns (uint256) {
+        uint256 ceiling = block.basefee + MAX_TIP;
+        return tx.gasprice > ceiling ? ceiling : tx.gasprice;
     }
 
     /// @dev WHYPE is the gas token, so the wei cost is paid 1:1. A different reward token is quoted

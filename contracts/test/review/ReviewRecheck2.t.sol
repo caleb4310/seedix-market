@@ -215,17 +215,17 @@ contract ReviewRecheck2DeployTest is Test {
     function test_RC2_revertsOn99901WithoutCode() public {
         vm.chainId(99901);
         DeploySeedix s = new DeploySeedix();
-        vm.expectRevert(abi.encodeWithSelector(DeploySeedix.ForbiddenChain.selector, uint256(99901)));
+        vm.expectRevert(abi.encodeWithSelector(DeploySeedix.MainnetUsesCanonicalStack.selector, uint256(99901)));
         s.deploy(PK, address(0xAD11), address(0xAD11));
     }
 
-    /// Mainnet is not this script, even if canonical code is present.
+    /// The testnet entry never deploys Uniswap, even if canonical code is present.
     function test_RC2_99901AlwaysRevertsOnUsdc() public {
         vm.chainId(99901);
         vm.etch(0xbA876237B0F021A6c6D852d6c26E107997cC5E81, hex"00");
         vm.etch(0x000000000022D473030F116dDEE9F6B43aC78BA3, hex"00");
         DeploySeedix s = new DeploySeedix();
-        vm.expectRevert(abi.encodeWithSelector(DeploySeedix.ForbiddenChain.selector, uint256(99901)));
+        vm.expectRevert(abi.encodeWithSelector(DeploySeedix.MainnetUsesCanonicalStack.selector, uint256(99901)));
         s.deploy(PK, address(0xAD11), address(0xAD11));
     }
 

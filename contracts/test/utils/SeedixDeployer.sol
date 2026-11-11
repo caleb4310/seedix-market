@@ -53,12 +53,13 @@ contract SeedixDeployer {
         address[] memory executors = new address[](1);
         executors[0] = p.admin;
         d.timelock = new TimelockController(p.timelockDelay, proposers, executors, address(this));
-        d.roles = new SeedixRoles(d.timelock, p.admin);
+        d.roles = new SeedixRoles(d.timelock, p.admin, address(0));
 
         d.implementation = new LaunchToken();
         d.vault = new FeeVault(d.roles, p.feeWallet, address(this));
         d.executor = new BuybackExecutor(d.roles, p.whype, address(this), 0, 0);
-        d.distributor = new KickbackDistributor(d.roles, p.publisher, p.roundCap, p.hourlyCap, address(this));
+        d.distributor =
+            new KickbackDistributor(d.roles, p.publisher, p.roundCap, p.hourlyCap, p.roundCap, address(this), 0);
 
         d.timelock.grantRole(d.timelock.PROPOSER_ROLE(), address(d.roles));
         d.timelock.grantRole(d.timelock.PROPOSER_ROLE(), address(d.vault));

@@ -21,12 +21,15 @@ contract SeedixRoles {
     event GuardianChanged(address indexed previous, address indexed next);
     event GuardianQueued(address indexed next, uint256 eta);
 
-    constructor(TimelockController timelock_, address admin_) {
+    /// @param guardian_ Pass the zero address to start the guardian as the admin (testnet).
+    ///        Mainnet passes a different key. `setGuardian` can still move it later.
+    constructor(TimelockController timelock_, address admin_, address guardian_) {
         if (address(timelock_) == address(0) || admin_ == address(0)) revert ZeroAddress();
+        if (guardian_ == address(0)) guardian_ = admin_;
         timelock = timelock_;
         admin = admin_;
-        guardian = admin_;
-        emit GuardianChanged(address(0), admin_);
+        guardian = guardian_;
+        emit GuardianChanged(address(0), guardian_);
         emit AdminChanged(address(0), admin_);
     }
 
