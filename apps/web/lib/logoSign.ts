@@ -1,5 +1,6 @@
 import { keccak256, type Hex } from "viem";
-import { elysiumTestnet, logoAttachTypes, logoDomainName, logoUploadTypes } from "@seedix/shared";
+import { logoAttachTypes, logoDomainName, logoUploadTypes } from "@seedix/shared";
+import { elysiumTestnet } from "./chain";
 import { apiUrl } from "./api";
 
 const domain = { ...logoDomainName, chainId: elysiumTestnet.id };

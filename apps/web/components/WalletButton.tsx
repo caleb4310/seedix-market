@@ -10,7 +10,7 @@ export function NoWalletHelp() {
   return (
     <div className="status" data-tone="error" role="alert">
       <strong>No wallet in this browser</strong>
-      <p className="note">Install a browser wallet, then reload this page. Seedix connects on Elysium testnet (99801).</p>
+      <p className="note">Install a browser wallet, then reload this page. Seedix connects on {elysiumTestnet.name} ({elysiumTestnet.id}).</p>
       <a className="text-link" href="https://metamask.io/download/">Install MetaMask</a>
     </div>
   );

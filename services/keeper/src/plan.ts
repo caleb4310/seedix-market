@@ -32,6 +32,16 @@ export function feeWithinCap(gas: bigint, maxFeePerGas: bigint, maxFeeCap: bigin
   return maxFeePerGas <= maxFeeCap;
 }
 
+/** One poll that skipped work and bought nothing back should page an operator. */
+export function buybacksStalled(buybacks: number, skips: number): boolean {
+  return buybacks === 0 && skips > 0;
+}
+
+/** A round is sealed only after every push batch was accepted. */
+export function shouldSeal(batchOk: readonly boolean[]): boolean {
+  return batchOk.length > 0 && batchOk.every(Boolean);
+}
+
 export function pushBatches<T>(items: readonly T[], size = PUSH_BATCH): T[][] {
   if (size < 1) throw new Error("batch");
   const out: T[][] = [];

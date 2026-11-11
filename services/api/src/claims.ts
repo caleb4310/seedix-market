@@ -26,11 +26,14 @@ export function parseManifest(text: string): Manifest | null {
       pair?: string;
       claims?: { account?: string; amount?: string }[];
     };
-    if (!raw.poolId?.startsWith("0x") || !raw.epoch || !raw.distributor || !raw.coin || !raw.pair || !raw.claims?.length) return null;
+    const chainRaw = raw.chainId ?? process.env.CHAIN_ID;
+    if (!raw.poolId?.startsWith("0x") || !raw.epoch || !chainRaw || !raw.distributor || !raw.coin || !raw.pair || !raw.claims?.length) {
+      return null;
+    }
     return {
       poolId: raw.poolId as Hex,
       epoch: BigInt(raw.epoch),
-      chainId: BigInt(raw.chainId ?? 99801),
+      chainId: BigInt(chainRaw),
       distributor: raw.distributor as Hex,
       coin: raw.coin as Hex,
       pair: raw.pair as Hex,

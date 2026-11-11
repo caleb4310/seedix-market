@@ -4,6 +4,11 @@ export type Address = `0x${string}`;
 
 function envAddress(name: string, fallback: string): Address {
   const value = process.env[name];
+  const chain = process.env.NEXT_PUBLIC_CHAIN_ID;
+  const foreign = chain !== undefined && chain !== "" && chain !== "99801" && chain !== "31337";
+  if (foreign && (!value || !/^0x[0-9a-fA-F]{40}$/.test(value))) {
+    throw new Error(`${name} is required when NEXT_PUBLIC_CHAIN_ID is ${chain}`);
+  }
   if (value && /^0x[0-9a-fA-F]{40}$/.test(value)) return value as Address;
   return fallback as Address;
 }

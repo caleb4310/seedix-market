@@ -31,4 +31,6 @@ RUN npm run build -w @seedix/web
 
 EXPOSE 3000
 
+USER node
+
 CMD ["npm", "run", "start", "-w", "@seedix/web", "--", "--hostname", "0.0.0.0", "--port", "3000"]

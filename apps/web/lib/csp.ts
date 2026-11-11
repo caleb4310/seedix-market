@@ -1,7 +1,8 @@
-/** Browser policy for the web app. Nginx repeats the non-CSP headers. */
-export const contentSecurityPolicy = [
+/** Page CSP only. Nginx is the single source of the other security headers. */
+export function contentSecurityPolicy(nonce: string): string {
+  return [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
@@ -11,12 +12,5 @@ export const contentSecurityPolicy = [
   "base-uri 'self'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-].join("; ");
-
-export const securityHeaders = [
-  { key: "Content-Security-Policy", value: contentSecurityPolicy },
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "X-Frame-Options", value: "DENY" },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
-] as const;
+  ].join("; ");
+}

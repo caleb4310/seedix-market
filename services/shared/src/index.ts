@@ -35,25 +35,28 @@ export const referenceAddresses = {
 
 /** Live 99801 deployment. Matches deployments/99801.json. Indexer starts at the deploy block. */
 export const deployment99801 = {
-  startBlock: 27047311,
-  deployTx: "0x9b91025ed3547f019f7e7481ce7f9d7f8f0cb166fc46febbf04b2931cb38553b",
+  startBlock: 27707424,
+  deployTx: "0xe555dda95ebb333425507b33929b8998e466f988248654ba367b0a7043a68736",
   explorerTxTemplate: "https://explorer-elysium-testnet.t.conduit.xyz/tx/{hash}",
-  poolManager: "0x82C6E26D3eb5d9955b538dABE3C71b2c3c878c09",
-  positionManager: "0x18964274A4352815D87A0C2388B6a67DA531F697",
-  stateView: "0x667cb2cDB37C6c9328D1096Ed51b1Fd6136cb1aA",
-  quoter: "0xD74E39d881E47d153FBB767CAa68140DbF35b3Bd",
-  router: "0xaC65DD1fAAbA63A18ADC609F6b53dfAB879Bb8C3",
-  timelock: "0xaFfb60AF1e2120dE60B0C9Ed51798838Ee4D2365",
-  roles: "0x1298871Cd58Ac8348289DcC323EEA7cdD4c4E388",
-  launchTokenImplementation: "0xB6A99d523eEEf62A53597F31eBeCd097A2fFCf97",
-  feeVault: "0xb5F4ADac7975955859FB7ce334c4dA6beB2F8Cc5",
-  buybackExecutor: "0xfdb16Fa1Dd6c2fF7980e8323De5085F497F67366",
-  kickbackDistributor: "0xd00eb7114f8aF86b52393893E92559308df50372",
-  hook: "0x6cf82a15C0405475552f1839DA26D964ec19a8Cc",
-  locker: "0xBa48334AE8cC9Fe2731c4535a7e20B09cd7F8119",
-  launcher: "0xeDE448d4325763C7CcBaae75FcdCC6cC6b75fc3e",
+  poolManager: "0x5002D9D837624a7DaA835fd48271A81bef793F8d",
+  positionManager: "0x409dbA5498cC6436290E93996427986D8D0dFABd",
+  stateView: "0x9b0C7865d4b5F88Fd41285BFcdf31d022bcC93a7",
+  quoter: "0x9922D73A8d7165D3227bAd13223f9eb9A1bcb4C3",
+  router: "0xCf19b436d22FB8b8BEEdb9DABC564E983f7f05dA",
+  timelock: "0xcFcf97e9B76a1191C802b8704D423c18560a85C1",
+  roles: "0x49f6268C346b16A853e09e040A6f11e53C41Fc1A",
+  launchTokenImplementation: "0xD51d533A9914002AB0a7f87233c9ee4f7D3f0D08",
+  feeVault: "0xe4C8900893dc8A07131e34f04b505a6f20d497B3",
+  buybackExecutor: "0x31177F01f3FB83693AeCD61cf6818686A0d0682d",
+  kickbackDistributor: "0x1E7aB5525a15a7949c3C0fDd1a0989bAD3124860",
+  hook: "0x39EB6bE62A613723C42Bf633553bC70B636328cC",
+  locker: "0x60C15a67a9c575dba0f9248E6cf090E96CB0ca3F",
+  launcher: "0x9cDffE00cdbd6596B423e6CCEd9560994F88EC2d",
   keeper: "0x6071b00861a449dfA741055F1E54343DDf7C1a42",
+  publisher: "0x6071b00861a449dfA741055F1E54343DDf7C1a42",
 } as const;
+
+export { configuredChainId, requiredAddress } from "./config.ts";
 
 export const pins = {
   v4Core: "59d3ecf53afa9264a16bba0e38f4c5d2231f80bc",

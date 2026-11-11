@@ -12,7 +12,7 @@ import {
   type WalletClient,
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
-import { elysiumTestnet } from "@seedix/shared";
+import { configuredChainId, elysiumMainnet, elysiumTestnet } from "@seedix/shared";
 import {
   artifactName,
   claimSum,
@@ -31,12 +31,17 @@ const REVIEW_SECONDS = 60 * 60;
 const ZERO = "0x0000000000000000000000000000000000000000";
 const DEAD = "0x000000000000000000000000000000000000dead";
 
-const chain = defineChain({
-  id: elysiumTestnet.id,
-  name: elysiumTestnet.name,
-  nativeCurrency: { ...elysiumTestnet.nativeCurrency },
-  rpcUrls: { default: { http: [...elysiumTestnet.rpcUrls] } },
-});
+function activeChain() {
+  const id = configuredChainId();
+  const known = id === elysiumMainnet.id ? elysiumMainnet : elysiumTestnet;
+  const rpc = process.env.RPC_URL && process.env.RPC_URL.length > 0 ? process.env.RPC_URL : known.rpcUrls[0];
+  return defineChain({
+    id,
+    name: id === known.id ? known.name : `Chain ${id}`,
+    nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
+    rpcUrls: { default: { http: [rpc] } },
+  });
+}
 
 const hookAbi = parseAbi([
   "function pots(bytes32) view returns (uint128, uint128, uint128, uint128, uint128)",
@@ -180,6 +185,7 @@ function fee(): { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } {
 }
 
 async function broadcast(
+  chain: ReturnType<typeof activeChain>,
   wallet: WalletClient,
   account: PrivateKeyAccount,
   distributor: Address,
@@ -220,6 +226,13 @@ export async function runPublisher(): Promise<void> {
     console.log("kickback publisher idle: set RPC_URL, HOOK_ADDRESS, KICKBACK_DISTRIBUTOR, and API_URL");
     return;
   }
+  let chain: ReturnType<typeof activeChain>;
+  try {
+    chain = activeChain();
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : "CHAIN_ID is required");
+    return;
+  }
   let account: PrivateKeyAccount | undefined;
   if (!dry) {
     const file = publisherKeyPath(process.env);
@@ -234,7 +247,7 @@ export async function runPublisher(): Promise<void> {
   console.log(`kickback publisher ${dry ? "dry-run" : account?.address} on chain ${chain.id}`);
   for (;;) {
     try {
-      await pass({ publicClient, wallet, account, hook, distributor, executor, api, dir, dry });
+      await pass({ publicClient, wallet, account, hook, distributor, executor, api, dir, dry, chain });
     } catch (err) {
       console.error(err instanceof Error ? err.message : "kickback pass failed");
     }
@@ -245,6 +258,7 @@ export async function runPublisher(): Promise<void> {
 
 async function pass(input: {
   publicClient: PublicClient;
+  chain: ReturnType<typeof activeChain>;
   wallet: WalletClient;
   account: PrivateKeyAccount | undefined;
   hook: Address;
@@ -278,6 +292,7 @@ async function pass(input: {
 
 async function onePool(input: {
   publicClient: PublicClient;
+  chain: ReturnType<typeof activeChain>;
   wallet: WalletClient;
   account: PrivateKeyAccount | undefined;
   hook: Address;
@@ -363,7 +378,7 @@ async function onePool(input: {
     if (input.executor) excluded.push(input.executor);
     for (const account of contracts) excluded.push(account);
     const built = buildPayableRound({
-      chainId: BigInt(chain.id),
+      chainId: BigInt(input.chain.id),
       distributor: input.distributor,
       coin: input.coin.coin,
       pair: reward,
@@ -411,6 +426,10 @@ async function onePool(input: {
   console.log(
     `${poolId} ${step.op}${step.op === "skip" ? ` (${step.reason})` : ""} gross=${gross} gasReserve=${reserve} holders=${round?.claims.length ?? 0}`,
   );
+  if (step.op === "push" || step.op === "seal") {
+    console.log(`${poolId} ${step.op} waits for the keeper to verify balances and finish the round`);
+    return;
+  }
   if (step.op === "skip" || input.dry || !input.account) return;
   if (step.op === "post" && round) {
     const body = manifestBody(poolId, round, step.epoch);
@@ -419,7 +438,7 @@ async function onePool(input: {
     }
   }
   const hash = await withRetry(
-    () => broadcast(input.wallet, input.account as PrivateKeyAccount, input.distributor, poolId, step, round),
+    () => broadcast(input.chain, input.wallet, input.account as PrivateKeyAccount, input.distributor, poolId, step, round),
     [2_000, 4_000, 8_000],
     (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   );

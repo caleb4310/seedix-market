@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Instrument_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { tokenCss } from "@/lib/tokens";
@@ -13,17 +14,13 @@ export const metadata: Metadata = {
   description: "Launch a coin on Elysium testnet. Keep the fees, kick them back, or burn them.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
       <body>
         <style dangerouslySetInnerHTML={{ __html: tokenCss }} />
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "try{var q=new URLSearchParams(location.search).get('theme');var t=q==='dark'||q==='light'?q:localStorage.getItem('seedix-theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t;}catch(e){}",
-          }}
-        />
+        <script nonce={nonce} src="/theme.js" />
         <Providers>
           <Shell>{children}</Shell>
         </Providers>

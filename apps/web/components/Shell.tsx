@@ -46,7 +46,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </Link>
         </nav>
         <div className="nav-spacer" />
-        <div className="chain-pill">{elysiumTestnet.id === 99801 ? "ELYSIUM TESTNET · 99801" : `LOCAL · ${elysiumTestnet.id}`}</div>
+        <div className="chain-pill">{elysiumTestnet.name.toUpperCase()} · {elysiumTestnet.id}</div>
         <Button variant="ghost" type="button" className="theme-toggle" onClick={toggle} aria-pressed={theme === "dark"} aria-label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}>
           {theme === "light" ? (
             <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
