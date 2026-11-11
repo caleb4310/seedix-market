@@ -66,10 +66,10 @@ async function tokenList(db: Db, chainId: number, filePath?: string): Promise<{ 
   return { tokens: [...byAddress.values()] };
 }
 
-function limitOf(query: URLSearchParams): number {
+function limitOf(query: URLSearchParams, ceiling = 500): number {
   const raw = Number(query.get("limit") ?? 100);
-  if (!Number.isInteger(raw) || raw < 1) return 100;
-  return Math.min(raw, 500);
+  if (!Number.isInteger(raw) || raw < 1) return Math.min(100, ceiling);
+  return Math.min(raw, ceiling);
 }
 
 type CoinRow = {
@@ -464,7 +464,7 @@ export async function handleRequest(
       `SELECT encode(account, 'hex') AS account, balance::text AS balance
        FROM holders WHERE chain_id = $1 AND pool_id = $2 AND balance > 0
        ORDER BY balance DESC LIMIT $3`,
-      [chainId, pool, limitOf(query)],
+      [chainId, pool, limitOf(query, 5000)],
     );
     return {
       status: 200,
@@ -507,10 +507,16 @@ export async function handleRequest(
     [chainId, pool, limitOf(query)],
   );
   const epochs = await db.query(
-    `SELECT epoch::text AS epoch, funded::text AS funded, carry::text AS carry,
-            sealed_amount::text AS sealed_amount, encode(root, 'hex') AS root, cancelled,
-            extract(epoch from start_time) AS start_time, extract(epoch from end_time) AS end_time
-     FROM kickback_epochs WHERE chain_id = $1 AND pool_id = $2 ORDER BY epoch DESC LIMIT $3`,
+    `SELECT e.epoch::text AS epoch, e.funded::text AS funded, e.carry::text AS carry,
+            e.sealed_amount::text AS sealed_amount, encode(e.root, 'hex') AS root, e.cancelled,
+            extract(epoch from e.start_time) AS start_time, extract(epoch from e.end_time) AS end_time,
+            COALESCE((SELECT SUM(amount) FROM kickback_payouts p
+                      WHERE p.chain_id = e.chain_id AND p.pool_id = e.pool_id AND p.epoch = e.epoch
+                        AND p.kind = 'GasReimbursed'), 0)::text AS gas_reimbursed,
+            COALESCE((SELECT SUM(amount) FROM kickback_payouts p
+                      WHERE p.chain_id = e.chain_id AND p.pool_id = e.pool_id AND p.epoch = e.epoch
+                        AND p.kind IN ('Pushed', 'KickbackClaimed', 'FailedPull')), 0)::text AS net_distributed
+     FROM kickback_epochs e WHERE e.chain_id = $1 AND e.pool_id = $2 ORDER BY e.epoch DESC LIMIT $3`,
     [chainId, pool, limitOf(query)],
   );
   return {
@@ -527,6 +533,8 @@ export async function handleRequest(
       epochs: epochs.rows.map((row) => ({
         epoch: String(row.epoch),
         funded: String(row.funded),
+        gasReimbursed: String(row.gas_reimbursed ?? "0"),
+        netDistributed: String(row.net_distributed ?? "0"),
         carry: row.carry == null ? "0" : String(row.carry),
         sealedAmount: row.sealed_amount == null ? null : String(row.sealed_amount),
         root: prefixed(row.root == null ? "" : String(row.root)),

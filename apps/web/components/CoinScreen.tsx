@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
-import { ClaimPanel } from "@/components/ClaimPanel";
 import { CoinBody } from "@/components/CoinBody";
 import { TradePanel } from "@/components/TradePanel";
 import { elysiumTestnet } from "@/lib/chain";
@@ -55,7 +54,6 @@ export function CoinScreen({ id, side }: { id: string; side: Side }) {
     return (
       <div className="coin-page">
         <CoinBody coin={coin} trade={<TradePanel coin={coin} initialSide={side} />} />
-        {coin.mode === "kickback" ? <ClaimPanel coin={coin} /> : null}
       </div>
     );
   }

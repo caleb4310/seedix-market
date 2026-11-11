@@ -4,11 +4,11 @@ export { allocate, buildRound, buildTree, leaf as roundLeaf, verifyProof } from 
 
 /**
  * Hourly publisher. Epochs are timestamp windows, never block ranges.
- * The publisher key can only fund and post roots. It cannot cancel.
- * Excluded from every manifest: pool manager, hook, locker, executor,
+ * The publisher funds a round, posts the root, then pushes batches itself.
+ * Gas is paid from the round. The key cannot cancel.
+ * Excluded from every round: pool manager, hook, locker, executor,
  * distributor, vault, the zero address, the dead address, the coin's team
- * wallet, and any contract that the timelock has not allowlisted.
- * The keeper pushes the posted leaves in batches. Dust rolls forward.
+ * wallet, and contracts. Dust and shares below one holder's gas roll forward.
  */
 export const kickbackConfig = {
   chainId: elysiumTestnet.id,
@@ -17,7 +17,7 @@ export const kickbackConfig = {
   databaseUrl: process.env.DATABASE_URL ?? "",
 };
 
-/** Matches KickbackDistributor. The keeper repeats push until the round is sealed. */
+/** Matches KickbackDistributor. Push repeats in batches of 32 until the round is sealed. */
 export const autoPush = {
   maxBatch: 32,
   dustWei: 1_000_000n,
@@ -72,8 +72,7 @@ export function leaf(parts: {
   });
 }
 
-export function main(): void {
-  console.log(
-    `kickback publisher for chain ${kickbackConfig.chainId}. Rounds are built off chain. Mainnet launches cannot select Kickback mode, and this process does not broadcast fund or postRoot.`,
-  );
+export async function main(): Promise<void> {
+  const { runPublisher } = await import("./run.ts");
+  await runPublisher();
 }

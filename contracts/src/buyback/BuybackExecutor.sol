@@ -533,6 +533,33 @@ contract BuybackExecutor is IUnlockCallback {
         return RouteDepth.whypeInNextSpacing(hook.poolManager(), key, whype);
     }
 
+    /// @notice Reward-token units that match `hypeIn` wei of HYPE.
+    ///         WHYPE is 1:1. Any other token uses the backing route's TWAP, 1% inside the quote,
+    ///         and returns 0 when the route is missing or the spot is outside the band.
+    function quoteReward(address token, uint256 hypeIn) external view returns (uint256 rewardOut) {
+        if (hypeIn == 0 || token == Currency.unwrap(whype)) return hypeIn;
+        try this.quoteRewardStrict(token, hypeIn) returns (uint256 out) {
+            return out;
+        } catch {
+            return 0;
+        }
+    }
+
+    /// @notice Reverts when the backing route cannot be priced. `quoteReward` turns that into 0.
+    function quoteRewardStrict(address token, uint256 hypeIn) external view returns (uint256) {
+        if (token == Currency.unwrap(whype)) return hypeIn;
+        Route memory route = whypeRoute[Currency.wrap(token)];
+        if (!route.set) revert RouteNotRegistered();
+        if (buybacksPaused) revert BuybackIsPaused();
+        if (hypeIn == 0) revert Nothing();
+        PoolKey memory key = _routeKey(route);
+        (, int24 spot,,) = hook.poolManager().getSlot0(key.toId());
+        int24 twap = OracleLib.consult(routeOracle[token], uint32(block.timestamp), C.TWAP_WINDOW, spot);
+        TwapGuard.assertBand(spot, twap);
+        bool zeroForOne = Currency.unwrap(whype) == Currency.unwrap(key.currency0);
+        return TwapGuard.minOut(hypeIn, twap, zeroForOne);
+    }
+
     function _routeFloor(Currency pair, Route memory route, uint256 amountIn) internal view returns (uint256) {
         if (route.hookOracle) {
             return _guard(route.poolId, amountIn, _inputIsCurrency0(route.poolId, pair));

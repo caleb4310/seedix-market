@@ -41,7 +41,6 @@ contract Launcher {
     error UnsafePair();
     error PairRefused();
     error KickbackNeedsVetted();
-    error KickbackDisabled();
     error RouteNotReady();
     error FeeOnTransfer();
     error Reentered();
@@ -355,10 +354,6 @@ contract Launcher {
         uint256 symLen = bytes(params.symbol).length;
         if (nameLen == 0 || nameLen > 32 || symLen == 0 || symLen > 8) revert BadArgs();
         if (!isPlatform && params.mode > 2) revert BadArgs();
-        // The publisher can build rounds, but it does not broadcast fund/postRoot. Keep that off mainnet.
-        if (!isPlatform && params.mode == MODE_KICKBACK && block.chainid != 99801 && block.chainid != 31337) {
-            revert KickbackDisabled();
-        }
         address whype = Currency.unwrap(executor.whype());
         bool burn = isPlatform || params.mode == 2;
         if (!burn && params.pair != whype) {

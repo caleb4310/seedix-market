@@ -8,7 +8,6 @@ import {SeedixConstants as C} from "../src/libraries/SeedixConstants.sol";
 import {SeedixRoles} from "../src/access/SeedixRoles.sol";
 import {BuybackExecutor} from "../src/buyback/BuybackExecutor.sol";
 import {DeploySeedix} from "../script/Deploy.s.sol";
-import {Launcher} from "../src/launch/Launcher.sol";
 import {Fixture} from "./utils/Fixture.sol";
 
 contract MainnetGuardTest is Test {
@@ -54,9 +53,9 @@ contract MainnetGuardTest is Test {
 }
 
 contract KickbackMainnetTest is Fixture {
-    function test_kickbackLaunchRevertsOffTestnet() public {
+    function test_kickbackLaunchAllowedOnMainnet() public {
         vm.chainId(99901);
-        vm.expectRevert(Launcher.KickbackDisabled.selector);
-        d.launcher.launch(_params(address(whype), 1, 0, address(0)));
+        (address coin,) = d.launcher.launch(_params(address(whype), 1, 0, address(0)));
+        assertTrue(coin != address(0));
     }
 }

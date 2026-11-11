@@ -168,6 +168,16 @@ describe("api", () => {
     assert.equal((posted.json as { x: string }).x, "https://x.com/seedix");
   });
 
+  it("sums gas reimbursed and net paid for each kickback round", async () => {
+    const db = new FakeDb();
+    const res = await handleRequest(db, "GET", `/coins/0x${pool}/kickbacks`, new URLSearchParams());
+    assert.equal(res.status, 200);
+    const sql = db.calls.join("\n");
+    assert.match(sql, /GasReimbursed/);
+    assert.match(sql, /net_distributed/);
+    assert.deepEqual((res.json as { epochs: unknown[] }).epochs, []);
+  });
+
   it("returns a merkle proof from the manifest directory", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "seedix-claims-"));
     const previous = process.env.KICKBACK_MANIFEST_DIR;
