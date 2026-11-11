@@ -3,39 +3,40 @@
   "name": "Elysium Testnet",
   "rpcUrl": "https://testnet-rpc.elysium.kinetiq.xyz",
   "explorerTxTemplate": "https://explorer-elysium-testnet.t.conduit.xyz/tx/{hash}",
-  "deployTx": "0x9b91025ed3547f019f7e7481ce7f9d7f8f0cb166fc46febbf04b2931cb38553b",
-  "startBlock": 27047311,
+  "deployTx": "0xe555dda95ebb333425507b33929b8998e466f988248654ba367b0a7043a68736",
+  "startBlock": 27707424,
   "contracts": {
-    "poolManager": "0x82C6E26D3eb5d9955b538dABE3C71b2c3c878c09",
-    "positionManager": "0x18964274A4352815D87A0C2388B6a67DA531F697",
-    "stateView": "0x667cb2cDB37C6c9328D1096Ed51b1Fd6136cb1aA",
-    "v4Quoter": "0xD74E39d881E47d153FBB767CAa68140DbF35b3Bd",
-    "seedixRouter": "0xaC65DD1fAAbA63A18ADC609F6b53dfAB879Bb8C3",
-    "timelock": "0xaFfb60AF1e2120dE60B0C9Ed51798838Ee4D2365",
-    "seedixRoles": "0x1298871Cd58Ac8348289DcC323EEA7cdD4c4E388",
-    "launchTokenImplementation": "0xB6A99d523eEEf62A53597F31eBeCd097A2fFCf97",
-    "feeVault": "0xb5F4ADac7975955859FB7ce334c4dA6beB2F8Cc5",
-    "buybackExecutor": "0xfdb16Fa1Dd6c2fF7980e8323De5085F497F67366",
-    "kickbackDistributor": "0xd00eb7114f8aF86b52393893E92559308df50372",
-    "launchHook": "0x6cf82a15C0405475552f1839DA26D964ec19a8Cc",
-    "liquidityLocker": "0xBa48334AE8cC9Fe2731c4535a7e20B09cd7F8119",
-    "launcher": "0xeDE448d4325763C7CcBaae75FcdCC6cC6b75fc3e",
-    "coinMetadata": "0x78238762b95cA6CF57C8e1ef0010ccEdD030a919"
+    "poolManager": "0x5002D9D837624a7DaA835fd48271A81bef793F8d",
+    "positionManager": "0x409dbA5498cC6436290E93996427986D8D0dFABd",
+    "stateView": "0x9b0C7865d4b5F88Fd41285BFcdf31d022bcC93a7",
+    "v4Quoter": "0x9922D73A8d7165D3227bAd13223f9eb9A1bcb4C3",
+    "seedixRouter": "0xCf19b436d22FB8b8BEEdb9DABC564E983f7f05dA",
+    "timelock": "0xcFcf97e9B76a1191C802b8704D423c18560a85C1",
+    "seedixRoles": "0x49f6268C346b16A853e09e040A6f11e53C41Fc1A",
+    "launchTokenImplementation": "0xD51d533A9914002AB0a7f87233c9ee4f7D3f0D08",
+    "feeVault": "0xe4C8900893dc8A07131e34f04b505a6f20d497B3",
+    "buybackExecutor": "0x31177F01f3FB83693AeCD61cf6818686A0d0682d",
+    "kickbackDistributor": "0x1E7aB5525a15a7949c3C0fDd1a0989bAD3124860",
+    "launchHook": "0x39EB6bE62A613723C42Bf633553bC70B636328cC",
+    "liquidityLocker": "0x60C15a67a9c575dba0f9248E6cf090E96CB0ca3F",
+    "launcher": "0x9cDffE00cdbd6596B423e6CCEd9560994F88EC2d",
+    "coinMetadata": "0xd70aDE94Db6A9A0136802257a36db439c8315013"
   },
   "tokens": {
     "whype": "0xCD57F65c2B0e5881CFC2E609F7CD53b746E1F234",
     "usdc": "0x7D29d8047B905000459c0E80c34a26CeedcB47b2",
     "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
-    "wNVDAx": "0x314CBAf340A02188B06A08b3458499c6d0d24189",
-    "wSPYx": "0x65E1445D212eC4990Fb21AFDbc3A6a43C1F31382",
-    "wQQQx": "0x64BA6D058B301CBb54B7De170CFeD3fcbAe60f50",
-    "wMUx": "0x40F2350Bfd5886b97ee1ffbFfd026b0c9FFDd95e",
-    "wSKHYx": "0x3CC24d1B074B21303B54b05403d457b37D677eDb"
+    "wNVDAx": "0xA0345080Fe16F8c56FC98466f7781175E6c48Bb5",
+    "wSPYx": "0xdAc960D62e394B4F624F0F5ed9918fF978Cc59C3",
+    "wQQQx": "0xdAe1d5f09A67de342c0F6d80f424218C01Ac201b",
+    "wMUx": "0xa4aB49d0bE57953e15fd6eFe1538f75cd6d1de36",
+    "wSKHYx": "0x9299baEB6332E03A29BC415bDdB1F689Ef987872"
   },
   "accounts": {
     "feeWallet": "0xf4383D1Ecfb525294A266929c7D4796314a764F9",
     "admin": "0xf4383D1Ecfb525294A266929c7D4796314a764F9",
-    "keeper": "0x6071b00861a449dfA741055F1E54343DDf7C1a42"
+    "keeper": "0x6071b00861a449dfA741055F1E54343DDf7C1a42",
+    "publisher": "0x6071b00861a449dfA741055F1E54343DDf7C1a42"
   },
-  "notes": "Live 99801 deployment from main 402e17c (seeder fix #19 + wallet transactions #18). First transaction 0x9b91025ed3547f019f7e7481ce7f9d7f8f0cb166fc46febbf04b2931cb38553b at block 27047311. Pre-IPO mocks deployed and seeded but not listed until the 48h timelock executes: wSPACEx 0x56BBa52292e67a761D2423079aC35051e583d7F6, wOPENAIx 0x9fB75eD6C4aA5a1B72459E0C50584cC1230ed06B. Previous deployment (main 059cb90, start block 26841592, launcher 0x06FF3B385c7a258a3f46390Cf9Ce4DFeAFFC7870, hook 0x2FD55b6d1fAe64f156CF6e14b03775B1F781e8cC) is retired."
+  "notes": "Live 99801 deployment from main a94a16e (PR #26). Kickback publisher is the keeper wallet. Pre-IPO mocks not listed until 48h timelock: wSPACEx 0x0Bf71cd00E26CFdECcccd9Eb955E809Fc98a57D9, wOPENAIx 0xb484B72c7B370e8bDA6690AA4e8365632cea31C7. Previous deployment (main 402e17c, start block 27047311, launcher 0xeDE448d4325763C7CcBaae75FcdCC6cC6b75fc3e) retired."
 }
