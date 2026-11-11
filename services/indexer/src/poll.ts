@@ -6,13 +6,6 @@ import { ingest, type RawLog, type Readers } from "./ingest.ts";
 import { confirmedTip, nextRange } from "./price.ts";
 import type { Store } from "./store.ts";
 
-const chain = defineChain({
-  id: elysiumTestnet.id,
-  name: elysiumTestnet.name,
-  nativeCurrency: { ...elysiumTestnet.nativeCurrency },
-  rpcUrls: { default: { http: [...elysiumTestnet.rpcUrls] } },
-});
-
 const eventAbi = {
   CoinLaunched: parseAbiItem(
     "event CoinLaunched(bytes32 indexed poolId, address indexed coin, address indexed pair, uint8 mode, bool isPlatform, address feeRecipient, address teamWallet, uint256 teamAmount, uint256 startMcap)",
@@ -227,6 +220,12 @@ export async function pollOnce(client: PublicClient, store: Store, cfg: IndexerC
   });
 }
 
-export function publicClient(rpcUrl: string): PublicClient {
-  return createPublicClient({ chain, transport: http(rpcUrl) });
+export function publicClient(rpcUrl: string, chainId: number = elysiumTestnet.id): PublicClient {
+  const active = defineChain({
+    id: chainId,
+    name: chainId === elysiumTestnet.id ? elysiumTestnet.name : `Chain ${chainId}`,
+    nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
+    rpcUrls: { default: { http: [rpcUrl] } },
+  });
+  return createPublicClient({ chain: active, transport: http(rpcUrl) });
 }

@@ -9,7 +9,7 @@ const pair = "0x0000000000000000000000000000000000000a11" as Address;
 const alice = "0x00000000000000000000000000000000000000a1" as Address;
 const bob = "0x00000000000000000000000000000000000000b2" as Address;
 
-test("the gas reserve is capped at 2% and the rest is distributable", () => {
+test("the gas reserve is capped at 1% and the rest is distributable", () => {
   const plan = planGas({
     pot: 10_000n,
     holderCount: 1n,

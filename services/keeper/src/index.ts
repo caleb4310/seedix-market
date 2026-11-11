@@ -2,19 +2,23 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { createPublicClient, createWalletClient, defineChain, http, parseAbi, type Abi, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { elysiumTestnet } from "@seedix/shared";
-import { deployment99801 } from "./deployment.ts";
+import { configuredChainId, elysiumMainnet, elysiumTestnet, requiredAddress } from "@seedix/shared";
 import { assertKeyFile, keyFilePath, loadKey } from "./key.ts";
 import { preparePush, type Manifest } from "./merkle.ts";
-import { feeWithinCap, planCoinBuyback, planPlatformBuyback, pushBatches, pushReady } from "./plan.ts";
+import { buybacksStalled, feeWithinCap, planCoinBuyback, planPlatformBuyback, pushBatches, pushReady, shouldSeal } from "./plan.ts";
 import { revertLabel } from "./reason.ts";
+import { withinProRata } from "./verify.ts";
 
-const chain = defineChain({
-  id: elysiumTestnet.id,
-  name: elysiumTestnet.name,
-  nativeCurrency: { ...elysiumTestnet.nativeCurrency },
-  rpcUrls: { default: { http: [...elysiumTestnet.rpcUrls] } },
-});
+function chainOf(id: number) {
+  const known = id === elysiumMainnet.id ? elysiumMainnet : elysiumTestnet;
+  const rpc = process.env.RPC_URL && process.env.RPC_URL.length > 0 ? process.env.RPC_URL : known.rpcUrls[0];
+  return defineChain({
+    id,
+    name: id === known.id ? known.name : `Chain ${id}`,
+    nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
+    rpcUrls: { default: { http: [rpc] } },
+  });
+}
 
 const executorAbi = parseAbi([
   "function buybackCoin(bytes32 id, uint256 amountIn, uint256 minOut) returns (uint256)",
@@ -50,11 +54,35 @@ const distributorAbi = parseAbi([
   "function roundClosed(bytes32,uint64) view returns (bool)",
 ]);
 
-function envAddress(name: string, fallback: string): Address {
-  const raw = process.env[name];
-  const value = raw && raw.length > 0 ? raw : fallback;
-  if (!/^0x[0-9a-fA-F]{40}$/.test(value)) throw new Error(`${name} is not an address`);
-  return value as Address;
+const balanceAbi = parseAbi(["function balanceOf(address) view returns (uint256)"]);
+
+async function confirmedHolders(
+  client: { readContract: (args: { address: Address; abi: typeof balanceAbi; functionName: "balanceOf"; args: readonly [Address] }) => Promise<bigint> },
+  manifest: Manifest,
+): Promise<{ account: string; balance: bigint }[] | null> {
+  const api = process.env.API_URL;
+  if (!api) return null;
+  const response = await fetch(`${api}/coins/${manifest.poolId}/holders?limit=5000`);
+  if (!response.ok) return null;
+  const body = (await response.json()) as { holders?: { account?: string; balance?: string }[] };
+  const out: { account: string; balance: bigint }[] = [];
+  for (const row of body.holders ?? []) {
+    if (!row.account) continue;
+    const indexed = BigInt(row.balance ?? "0");
+    const paying = manifest.claims.some((claim) => claim.account.toLowerCase() === row.account?.toLowerCase());
+    if (!paying) {
+      out.push({ account: row.account, balance: indexed });
+      continue;
+    }
+    const onchain = await client.readContract({
+      address: manifest.coin,
+      abi: balanceAbi,
+      functionName: "balanceOf",
+      args: [row.account as Address],
+    });
+    out.push({ account: row.account, balance: onchain < indexed ? onchain : indexed });
+  }
+  return out;
 }
 
 function scrub(err: unknown, key: Hex): string {
@@ -117,11 +145,11 @@ export function parseManifest(text: string): Manifest | null {
       pair?: string;
       claims?: { account?: string; amount?: string }[];
     };
-    if (!raw.poolId || !raw.epoch || !raw.distributor || !raw.coin || !raw.pair || !raw.claims?.length) return null;
+    if (!raw.poolId || !raw.epoch || raw.chainId == null || !raw.distributor || !raw.coin || !raw.pair || !raw.claims?.length) return null;
     return {
       poolId: raw.poolId as Hex,
       epoch: BigInt(raw.epoch),
-      chainId: BigInt(raw.chainId ?? elysiumTestnet.id),
+      chainId: BigInt(raw.chainId ?? 0),
       distributor: raw.distributor as Hex,
       coin: raw.coin as Hex,
       pair: raw.pair as Hex,
@@ -142,10 +170,21 @@ export async function main(): Promise<void> {
   assertKeyFile(keyFile, info.mode, info.uid);
   const key = loadKey(await readFile(keyFile, "utf8"));
   const account = privateKeyToAccount(key);
-  const rpc = process.env.RPC_URL && process.env.RPC_URL.length > 0 ? process.env.RPC_URL : elysiumTestnet.rpcUrls[0];
-  const hook = envAddress("HOOK_ADDRESS", deployment99801.hook);
-  const executor = envAddress("BUYBACK_EXECUTOR", deployment99801.buybackExecutor);
-  const distributor = envAddress("KICKBACK_DISTRIBUTOR", deployment99801.kickbackDistributor);
+  let hook: Address;
+  let executor: Address;
+  let distributor: Address;
+  let chainId: number;
+  try {
+    chainId = configuredChainId();
+    hook = requiredAddress("HOOK_ADDRESS");
+    executor = requiredAddress("BUYBACK_EXECUTOR");
+    distributor = requiredAddress("KICKBACK_DISTRIBUTOR");
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : "keeper config");
+    return;
+  }
+  const chain = chainOf(chainId);
+  const rpc = chain.rpcUrls.default.http[0];
   const pollMs = Number(process.env.KEEPER_POLL_MS ?? 60_000);
   const manifestDir = process.env.KICKBACK_MANIFEST_DIR ?? "";
   const maxFeeGwei = process.env.KEEPER_MAX_FEE_GWEI && process.env.KEEPER_MAX_FEE_GWEI.length > 0 ? process.env.KEEPER_MAX_FEE_GWEI : "100";
@@ -277,7 +316,12 @@ export async function main(): Promise<void> {
           args: [platformPool],
         });
         let sentPlatform = false;
-        for (const pair of deployment99801.pairs) {
+        const pairs = (process.env.PLATFORM_PAIRS ?? "")
+          .split(",")
+          .map((item) => item.trim())
+          .filter((item) => /^0x[0-9a-fA-F]{40}$/.test(item));
+        if (pairs.length === 0) console.log("keeper: PLATFORM_PAIRS is empty, platform buybacks stay off");
+        for (const pair of pairs) {
           if (sentPlatform) break;
           const pot = await publicClient.readContract({
             address: hook,
@@ -337,6 +381,16 @@ export async function main(): Promise<void> {
             console.log(`skip push ${manifest.poolId} epoch ${manifest.epoch}: root does not match`);
             continue;
           }
+          const funded = asRecord(epoch, 0, "funded");
+          const holders = await confirmedHolders(publicClient, manifest);
+          if (
+            !holders ||
+            !withinProRata({ claims: manifest.claims, holders, pot: funded, gasBps: 100n })
+          ) {
+            metrics.skips += 1;
+            console.log(`alert kickback root ${manifest.poolId} epoch ${manifest.epoch} does not match holder balances`);
+            continue;
+          }
           const batches = pushBatches(
             prepared.accounts.map((account, i) => ({
               account,
@@ -344,6 +398,7 @@ export async function main(): Promise<void> {
               proof: prepared.proofs[i] ?? [],
             })),
           );
+          const results: boolean[] = [];
           for (const batch of batches) {
             const ok = await send(distributor, distributorAbi, "push", [
               manifest.poolId,
@@ -352,7 +407,12 @@ export async function main(): Promise<void> {
               batch.map((row) => row.amount),
               batch.map((row) => row.proof),
             ]);
+            results.push(ok);
             if (ok) metrics.pushes += 1;
+          }
+          if (!shouldSeal(results)) {
+            console.log(`alert push incomplete for ${manifest.poolId} epoch ${manifest.epoch}; leaving it open`);
+            continue;
           }
           const sealed = await send(distributor, distributorAbi, "seal", [manifest.poolId, manifest.epoch]);
           if (sealed) metrics.seals += 1;
@@ -361,6 +421,9 @@ export async function main(): Promise<void> {
       console.log(
         `keeper poll buybacks=${metrics.buybacks} pushes=${metrics.pushes} seals=${metrics.seals} skips=${metrics.skips} errors=${metrics.errors}`,
       );
+      if (buybacksStalled(metrics.buybacks, metrics.skips)) {
+        console.log(`alert keeper buybacks stalled skips=${metrics.skips}`);
+      }
     } catch (err) {
       metrics.errors += 1;
       console.error(`keeper poll failed: ${scrub(err, key)}`);

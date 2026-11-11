@@ -3,7 +3,7 @@ import {
   LOGO_EXPIRY_SECONDS,
   LOGO_RATE_LIMIT,
   LOGO_RATE_WINDOW_MS,
-  elysiumTestnet,
+  configuredChainId,
   logoAttachTypes,
   logoDomainName,
   logoUploadTypes,
@@ -57,7 +57,7 @@ export async function verifyUpload(input: {
   let signer: Address;
   try {
     signer = await recoverTypedDataAddress({
-      domain: domain(elysiumTestnet.id),
+      domain: domain(configuredChainId()),
       types: logoUploadTypes,
       primaryType: "LogoUpload",
       message: { contentHash: keccak256(input.bytes), nonce: input.nonce, expiry: input.expiry },
@@ -85,7 +85,7 @@ export async function verifyAttach(input: {
   let signer: Address;
   try {
     signer = await recoverTypedDataAddress({
-      domain: domain(elysiumTestnet.id),
+      domain: domain(configuredChainId()),
       types: logoAttachTypes,
       primaryType: "LogoAttach",
       message: { poolId: input.poolId, url: input.url, nonce: input.nonce, expiry: input.expiry },

@@ -1,8 +1,8 @@
 import { buildRound, buildTree, leaf, type Claim, type Holder, type Round } from "./round.ts";
 import type { Address, Hex } from "viem";
 
-/** Matches KickbackDistributor.MAX_GAS_CAP_BPS. 200 / 10_000 = 2%. */
-export const GAS_CAP_BPS = 200n;
+/** Matches KickbackDistributor.MAX_GAS_CAP_BPS. 100 / 10_000 = 1%. */
+export const GAS_CAP_BPS = 100n;
 export const BPS = 10_000n;
 export const MAX_BATCH = 32n;
 /** One HYPE, in wei. A WHYPE reward uses this as reward-per-HYPE. */

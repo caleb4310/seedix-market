@@ -4,7 +4,8 @@ import { describe, it } from "node:test";
 import { assertKeyFile, keyFilePath, loadKey } from "./key.ts";
 import { buildTree, kickbackLeaf, preparePush, verifyProof, type Manifest } from "./merkle.ts";
 import { parseManifest } from "./index.ts";
-import { amountSteps, feeWithinCap, planCoinBuyback, pushBatches, pushReady } from "./plan.ts";
+import { amountSteps, buybacksStalled, feeWithinCap, planCoinBuyback, pushBatches, pushReady, shouldSeal } from "./plan.ts";
+import { withinProRata } from "./verify.ts";
 import { revertLabel } from "./reason.ts";
 
 const distributor = "0x1111111111111111111111111111111111111111" as const;
@@ -89,5 +90,19 @@ describe("kickback manifest", () => {
     assert.equal(prepared?.accounts.length, 3);
     assert.equal(preparePush(manifest, `0x${"00".repeat(32)}`), null);
     assert.equal(parseManifest("{"), null);
+  });
+
+  it("seals only when every batch succeeded, and rejects a payout above the holder's share", () => {
+    assert.equal(shouldSeal([true, true]), true);
+    assert.equal(shouldSeal([true, false]), false);
+    assert.equal(shouldSeal([]), false);
+    assert.equal(buybacksStalled(0, 3), true);
+    assert.equal(buybacksStalled(1, 3), false);
+    const holders = [
+      { account: a, balance: 9n },
+      { account: b, balance: 1n },
+    ];
+    assert.equal(withinProRata({ claims: [{ account: a, amount: 8n }], holders, pot: 100n, gasBps: 100n }), true);
+    assert.equal(withinProRata({ claims: [{ account: a, amount: 100n }], holders, pot: 100n, gasBps: 100n }), false);
   });
 });

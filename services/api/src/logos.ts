@@ -77,7 +77,9 @@ export function logoDir(): string {
 export async function shrinkLogo(bytes: Buffer): Promise<Buffer | null> {
   if (!imageKind(bytes)) return null;
   const sharp = (await import("sharp")).default;
-  let image = sharp(bytes, { failOn: "error", limitInputPixels: 40_000_000 }).rotate();
+  sharp.cache(false);
+  sharp.concurrency(1);
+  let image = sharp(bytes, { failOn: "error", limitInputPixels: 8_000_000, sequentialRead: true }).rotate();
   const meta = await image.metadata();
   if ((meta.width ?? 0) > 512 || (meta.height ?? 0) > 512) {
     image = image.resize(512, 512, { fit: "inside", withoutEnlargement: true });

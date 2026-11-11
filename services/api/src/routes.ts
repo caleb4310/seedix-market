@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { elysiumTestnet, cleanSocials, LAUNCH_SUPPLY, marketCapFromSpot } from "@seedix/shared";
+import { cleanSocials, configuredChainId, LAUNCH_SUPPLY, marketCapFromSpot } from "@seedix/shared";
 import { attachLogo, logoFor } from "./logos.ts";
 import { peekNonce } from "./logoAuth.ts";
 import { claimsForPool } from "./claims.ts";
@@ -258,7 +258,7 @@ export async function handleRequest(
     return { status: 200, json: cleanSocials(record) };
   }
   if (method !== "GET") return { status: 405, json: { error: "GET only" } };
-  const chainId = elysiumTestnet.id;
+  const chainId = configuredChainId();
   if (path === "/health") return { status: 200, json: { ok: true, chainId } };
   if (path === "/price/hype") {
     const quote = await hypeQuote();
