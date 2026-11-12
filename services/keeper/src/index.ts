@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { createPublicClient, createWalletClient, defineChain, http, parseAbi, type Abi, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { elysiumTestnet } from "@seedix/shared";
+import { elysiumTestnet, priorityFloorWei, transactionFees, type TxFees } from "@seedix/shared";
 import { deployment99801 } from "./deployment.ts";
 import { assertKeyFile, keyFilePath, loadKey } from "./key.ts";
 import { preparePush, type Manifest } from "./merkle.ts";
@@ -156,6 +156,25 @@ export async function main(): Promise<void> {
   const wallet = createWalletClient({ account, chain, transport: http(rpc) });
   console.log(`keeper ${account.address} on chain ${chain.id}`);
 
+  const quoteFees = async (): Promise<TxFees> => {
+    const block = await publicClient.getBlock();
+    const priorityFloor = priorityFloorWei(process.env.KEEPER_PRIORITY_FEE_WEI);
+    if (block.baseFeePerGas == null) {
+      return transactionFees({
+        baseFeePerGas: null,
+        legacyGasPrice: await publicClient.getGasPrice(),
+        priorityFloor,
+      });
+    }
+    let rpcTip = 0n;
+    try {
+      rpcTip = await publicClient.estimateMaxPriorityFeePerGas();
+    } catch {
+      rpcTip = 0n;
+    }
+    return transactionFees({ baseFeePerGas: block.baseFeePerGas, rpcTip, priorityFloor });
+  };
+
   const metrics = { buybacks: 0, pushes: 0, seals: 0, skips: 0, errors: 0 };
 
   const send = async (address: Address, abi: Abi, functionName: string, args: readonly unknown[]) => {
@@ -168,14 +187,13 @@ export async function main(): Promise<void> {
       console.log(`skip ${functionName}: ${revertLabel(err)}`);
       return false;
     }
-    const fees = await publicClient.estimateFeesPerGas();
-    const maxFee = fees.maxFeePerGas ?? fees.gasPrice ?? 0n;
+    const fees = await quoteFees();
+    const maxFee = "gasPrice" in fees ? fees.gasPrice : fees.maxFeePerGas;
     if (!feeWithinCap(gas, maxFee, maxFeeCap, maxGas)) {
       metrics.skips += 1;
       console.log(`skip ${functionName}: gas ${gas} fee ${maxFee} is above the cap`);
       return false;
     }
-    const priority = fees.maxPriorityFeePerGas ?? maxFee / 10n;
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
         const hash = await wallet.writeContract({
@@ -185,8 +203,7 @@ export async function main(): Promise<void> {
           args,
           account,
           gas: (gas * 12n) / 10n,
-          maxFeePerGas: maxFee,
-          maxPriorityFeePerGas: priority > maxFee ? maxFee : priority,
+          ...fees,
         });
         console.log(`${functionName} ${hash}`);
         return true;
@@ -250,6 +267,7 @@ export async function main(): Promise<void> {
               functionName: "buybackCoin",
               args: [poolId, amount, 0n],
               account,
+              ...(await quoteFees()),
             });
             console.log(`buybackCoin ${poolId} ${hash}`);
             metrics.buybacks += 1;
@@ -301,6 +319,7 @@ export async function main(): Promise<void> {
                 functionName: "buybackPlatform",
                 args: [pair as Address, amount, 1n, 1n],
                 account,
+                ...(await quoteFees()),
               });
               console.log(`buybackPlatform ${pair} ${hash}`);
               metrics.buybacks += 1;
