@@ -4,22 +4,23 @@ import { elysiumTestnet } from "@seedix/shared";
 import { createPublicClient, http, parseAbi, type Address, type Hex } from "viem";
 import { deployment99801 } from "@seedix/shared";
 import { verifyAttach, verifyUpload } from "./logoAuth.ts";
-import { publicLogoUrl, readLogo, saveLogo, shrinkLogo } from "./logos.ts";
+import { publicLogoUrl, readLogo, rememberPending, saveLogo, shrinkLogo } from "./logos.ts";
 import { handleRequest } from "./routes.ts";
 
 const hookConfigAbi = parseAbi([
   "function config(bytes32) view returns (address coin, address pair, bool coinIsToken0, uint8 mode, bool isPlatform, uint40 launchTime, address feeRecipient)",
 ]);
 
-async function feeRecipientOf(poolId: Hex): Promise<Address | null> {
+async function poolCreator(poolId: Hex): Promise<{ feeRecipient: Address; launchTime: number } | null> {
   const client = createPublicClient({
     transport: http(process.env.RPC_URL || "https://testnet-rpc.elysium.kinetiq.xyz"),
   });
   const hook = (process.env.HOOK_ADDRESS || deployment99801.hook) as Address;
   const row = await client.readContract({ address: hook, abi: hookConfigAbi, functionName: "config", args: [poolId] });
   const recipient = row[6];
-  if (!recipient || /^0x0{40}$/i.test(recipient)) return null;
-  return recipient;
+  const launchTime = Number(row[5]);
+  if (!recipient || /^0x0{40}$/i.test(recipient) || !Number.isFinite(launchTime) || launchTime <= 0) return null;
+  return { feeRecipient: recipient, launchTime };
 }
 
 export const apiConfig = {
@@ -85,16 +86,20 @@ export async function main(): Promise<void> {
             }
             const shrunk = await shrinkLogo(body);
             if (!shrunk) return null;
-            return saveLogo(shrunk);
+            const saved = await saveLogo(shrunk);
+            if (!saved) return null;
+            const url = publicLogoUrl(saved.file);
+            rememberPending(auth.signer, url);
+            return url;
           })
-          .then((saved) => {
+          .then((url) => {
             if (res.writableEnded) return;
-            if (!saved) {
+            if (!url) {
               res.writeHead(415, { "content-type": "application/json; charset=utf-8" });
               res.end(JSON.stringify({ error: "png, jpeg, or webp under 1mb" }));
               return;
             }
-            const payload = JSON.stringify({ url: publicLogoUrl(saved.file) });
+            const payload = JSON.stringify({ url });
             res.writeHead(201, { "content-type": "application/json; charset=utf-8" });
             res.end(payload);
           })
@@ -120,7 +125,7 @@ export async function main(): Promise<void> {
           }
           let creator: Address | null;
           try {
-            creator = await feeRecipientOf(input.poolId as Hex);
+            creator = (await poolCreator(input.poolId as Hex))?.feeRecipient ?? null;
           } catch {
             return { ok: false, status: 503, error: "chain unavailable" };
           }
@@ -135,6 +140,7 @@ export async function main(): Promise<void> {
           });
           return auth.ok ? { ok: true } : { ok: false, status: auth.error === "rate limited" ? 429 : 401, error: auth.error };
         },
+        resolvePool: (poolId) => poolCreator(poolId as Hex),
       })
         .then((result) => {
           const payload = JSON.stringify(result.json);

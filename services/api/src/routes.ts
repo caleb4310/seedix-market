@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { elysiumTestnet, cleanSocials, LAUNCH_SUPPLY, marketCapFromSpot } from "@seedix/shared";
-import { attachLogo, logoFor } from "./logos.ts";
+import { attachLogo, bindPendingLogos, claimPending, logoFor } from "./logos.ts";
 import { peekNonce } from "./logoAuth.ts";
 import { claimsForPool } from "./claims.ts";
 import { bucketSeconds, candles, type ChartPoint } from "./chart.ts";
@@ -139,6 +139,35 @@ function liveMarketCap(row: CoinRow): string | null {
   return marketCapFromSpot(row.price, supply, pairDecimals);
 }
 
+/** Attach a logo that was uploaded by this pool's fee recipient shortly before launch. */
+function bindListed(rows: CoinRow[]): void {
+  const launches: Array<{ poolId: string; feeRecipient: string; launchTime: number }> = [];
+  for (const row of rows) {
+    const poolId = prefixed(row.pool_id);
+    const feeRecipient = prefixed(row.fee_recipient);
+    const launchTime = Number(row.launch_time);
+    if (!poolId || !feeRecipient) continue;
+    launches.push({ poolId, feeRecipient, launchTime });
+  }
+  if (launches.length > 0) bindPendingLogos(launches);
+}
+
+async function creatorFromDb(db: Db, poolId: string): Promise<{ feeRecipient: string; launchTime: number } | null> {
+  const id = poolId.replace(/^0x/, "");
+  if (!POOL.test(id)) return null;
+  const res = await db.query<{ fee_recipient: string; launch_time: string }>(
+    `SELECT encode(fee_recipient, 'hex') AS fee_recipient, extract(epoch from launch_time) AS launch_time
+     FROM coins WHERE chain_id = $1 AND pool_id = $2`,
+    [elysiumTestnet.id, hexParam(id)],
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+  const feeRecipient = prefixed(row.fee_recipient);
+  const launchTime = Number(row.launch_time);
+  if (!feeRecipient || !Number.isFinite(launchTime)) return null;
+  return { feeRecipient, launchTime };
+}
+
 function coinJson(row: CoinRow, overlay: Map<string, OverlayToken>) {
   const pair = prefixed(row.pair);
   const backing = prefixed(row.backing);
@@ -198,6 +227,8 @@ export type RequestExtras = {
     expiry: bigint;
     signature: string;
   }) => Promise<{ ok: true } | { ok: false; status: number; error: string }>;
+  /** On-chain fee recipient and launch time, used when the indexer has not stored the pool yet. */
+  resolvePool?: (poolId: string) => Promise<{ feeRecipient: string; launchTime: number } | null>;
 };
 
 let hypeCache: { at: number; usd: number | null } = { at: 0, usd: null };
@@ -250,8 +281,28 @@ export async function handleRequest(
     if (!extras.authorizeAttach || !signature) return { status: 401, json: { error: "signature required" } };
     const auth = await extras.authorizeAttach({ poolId, url, nonce, expiry, signature });
     if (!auth.ok) return { status: auth.status, json: { error: auth.error } };
-    attachLogo(poolId, url);
+    if (!attachLogo(poolId, url)) return { status: 400, json: { error: "bad pool or logo" } };
     return { status: 200, json: { ok: true } };
+  }
+  if (method === "POST" && path === "/logos/claim") {
+    const record = extras.body && typeof extras.body === "object" ? (extras.body as Record<string, unknown>) : {};
+    const poolId = typeof record.poolId === "string" ? record.poolId : "";
+    if (!/^0x[0-9a-fA-F]{64}$/.test(poolId)) return { status: 400, json: { error: "bad pool" } };
+    const known = await creatorFromDb(db, poolId);
+    let resolved = known;
+    if (!resolved && extras.resolvePool) {
+      try {
+        resolved = await extras.resolvePool(poolId);
+      } catch {
+        return { status: 503, json: { error: "chain unavailable" } };
+      }
+    }
+    if (!resolved) return { status: 404, json: { error: "unknown coin" } };
+    // The fee recipient comes from the chain or the indexer, never from the request body.
+    if (!claimPending({ poolId, feeRecipient: resolved.feeRecipient, launchTime: resolved.launchTime })) {
+      return { status: 409, json: { error: "no pending logo" } };
+    }
+    return { status: 200, json: { ok: true, image: logoFor(poolId) } };
   }
   if (method === "POST" && path === "/metadata") {
     const record = extras.body && typeof extras.body === "object" ? (extras.body as Record<string, unknown>) : {};
@@ -314,6 +365,13 @@ export async function handleRequest(
       params.push(`%${q.replace(/[%_]/g, "")}%`);
       filters.push(`(c.symbol ILIKE $${params.length} OR c.name ILIKE $${params.length})`);
     }
+    const recipient = query.get("feeRecipient") ?? "";
+    if (recipient) {
+      const raw = recipient.replace(/^0x/, "");
+      if (!ADDR.test(raw)) return { status: 400, json: { error: "bad address" } };
+      params.push(hexParam(raw));
+      filters.push(`c.fee_recipient = $${params.length}`);
+    }
     const sort = query.get("sort");
     const order = sort === "holders" ? "holders DESC" : sort === "mcap" ? "c.start_mcap DESC" : "c.launch_time DESC";
     params.push(limitOf(query));
@@ -321,6 +379,7 @@ export async function handleRequest(
       `${coinSelect} WHERE ${filters.join(" AND ")} ORDER BY ${order} LIMIT $${params.length}`,
       params,
     );
+    bindListed(res.rows);
     const overlay = tokenOverlay(extras.tokenListPath);
     return { status: 200, json: { coins: res.rows.map((row) => coinJson(row, overlay)) } };
   }
@@ -443,6 +502,7 @@ export async function handleRequest(
     const res = await db.query<CoinRow>(`${coinSelect} WHERE c.chain_id = $1 AND c.pool_id = $2`, [chainId, pool]);
     const row = res.rows[0];
     if (!row) return { status: 404, json: { error: "not found" } };
+    bindListed([row]);
     return { status: 200, json: coinJson(row, tokenOverlay(extras.tokenListPath)) };
   }
   if (tail === "/chart") {
