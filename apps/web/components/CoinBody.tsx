@@ -7,6 +7,7 @@ import { explorerAddress } from "@/lib/deployment";
 import { useHypeUsd } from "@/lib/hype";
 import { logoSrc } from "@/lib/logoUrl";
 import { formatUsdCompact } from "@/lib/startCap";
+import { AddLogo } from "@/components/AddLogo";
 import { Price } from "@/components/Price";
 import { Chart } from "@/components/Chart";
 import { Kickbacks } from "@/components/Kickbacks";
@@ -27,23 +28,37 @@ export function CoinBody({ coin, trade }: { coin: Coin; trade?: ReactNode }) {
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   const [copied, setCopied] = useState(false);
   const [broken, setBroken] = useState(false);
+  const [added, setAdded] = useState<string | null>(null);
   const hypeUsd = useHypeUsd();
   useEffect(() => {
     const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 30_000);
     return () => window.clearInterval(id);
   }, []);
+  useEffect(() => {
+    setAdded(null);
+    setBroken(false);
+  }, [coin.poolId]);
   const age = coin.launchTime !== undefined ? coinAge(coin, now) : coin.ageSec;
   const contract = coin.tokenAddress;
   const backing = backingLabel({ mode: coin.mode, pair: coin.pair, backingSymbol: coin.backingSymbol });
-  const image = logoSrc(coin.image);
+  const image = logoSrc(added ?? coin.image);
   const letter = (coin.ticker || coin.name).trim().slice(0, 1).toUpperCase();
   const usd = coin.mcap !== undefined && hypeUsd != null ? coin.mcap * hypeUsd : coin.mcapUsd;
   const category = coin.mode === "burn" ? "Burn" : coin.category ? categoryLabel[coin.category] : null;
   return (
     <>
       <section className="coin-stage">
-        <div className="coin-poster">
-          {image && !broken ? <img src={image} alt="" onError={() => setBroken(true)} /> : <span className="stripes">{letter}</span>}
+        <div className="poster-column">
+          <div className="coin-poster">
+            {image && !broken ? <img src={image} alt="" onError={() => setBroken(true)} /> : <span className="stripes">{letter}</span>}
+          </div>
+          <AddLogo
+            poolId={coin.poolId}
+            creator={coin.creator}
+            recipient={coin.recipient}
+            image={image}
+            onAdded={setAdded}
+          />
         </div>
         <div className="coin-facts">
           <h1 className="ticker-hero">${coin.ticker}</h1>

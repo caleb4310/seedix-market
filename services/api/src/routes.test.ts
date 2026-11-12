@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import { candles } from "./chart.ts";
 import { cleanSocials } from "@seedix/shared";
+import { logoFor, rememberPending } from "./logos.ts";
 import { handleRequest, type Db } from "./routes.ts";
 
 const pool = "11".repeat(32);
@@ -66,7 +67,7 @@ describe("chart", () => {
   });
 });
 
-describe("api", () => {
+describe("api", { concurrency: false }, () => {
   it("rejects a pool id that is not 32 bytes before querying", async () => {
     const db = new FakeDb();
     const res = await handleRequest(db, "GET", "/api/coins/0xnot-a-pool", new URLSearchParams());
@@ -210,6 +211,97 @@ describe("api", () => {
     } finally {
       if (previous === undefined) delete process.env.KICKBACK_MANIFEST_DIR;
       else process.env.KICKBACK_MANIFEST_DIR = previous;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a logo that does not belong on the pool", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "seedix-logos-"));
+    const previous = process.env.LOGOS_DIR;
+    process.env.LOGOS_DIR = dir;
+    const creator = "44".repeat(20);
+    const stranger = "55".repeat(20);
+    const launch = 1_700_000_000;
+    const url = "/api/logos/abc.png";
+    const db = new FakeDb();
+    db.query = async <T>(sql: string) => {
+      db.calls.push(sql);
+      if (sql.includes("encode(fee_recipient")) {
+        return { rows: [{ fee_recipient: stranger, launch_time: String(launch) }] as T[], rowCount: 1 };
+      }
+      if (sql.includes("FROM coins c") && !sql.includes("pool_id = $2")) {
+        return {
+          rows: [
+            {
+              pool_id: pool,
+              coin: "22".repeat(20),
+              pair: "33".repeat(20),
+              name: "Example",
+              symbol: "EX",
+              pair_symbol: "WHYPE",
+              mode: 0,
+              is_platform: false,
+              fee_recipient: creator,
+              launch_time: String(launch),
+              price: null,
+              holders: "1",
+              start_mcap: "10",
+            },
+            {
+              pool_id: "ab".repeat(32),
+              coin: "22".repeat(20),
+              pair: "33".repeat(20),
+              name: "Other",
+              symbol: "OTH",
+              pair_symbol: "WHYPE",
+              mode: 0,
+              is_platform: false,
+              fee_recipient: stranger,
+              launch_time: String(launch),
+              price: null,
+              holders: "1",
+              start_mcap: "10",
+            },
+          ] as T[],
+          rowCount: 2,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    };
+    try {
+      const bad = await handleRequest(db, "POST", "/logos/attach", new URLSearchParams(), {
+        body: {
+          poolId: `0x${pool}`,
+          url: "https://evil.example/logo.png",
+          nonce: "0",
+          expiry: "9999999999",
+          signature: "0xabc",
+        },
+        authorizeAttach: async () => ({ ok: true as const }),
+      });
+      assert.equal(bad.status, 400);
+      assert.equal(logoFor(`0x${pool}`), null);
+
+      rememberPending(`0x${creator}`, url, (launch - 30) * 1000);
+      const stolen = await handleRequest(db, "POST", "/logos/claim", new URLSearchParams(), {
+        body: { poolId: `0x${"ab".repeat(32)}`, feeRecipient: `0x${creator}`, url },
+      });
+      assert.equal(stolen.status, 409);
+      assert.equal(logoFor(`0x${"ab".repeat(32)}`), null);
+
+      const list = await handleRequest(db, "GET", "/coins", new URLSearchParams(`feeRecipient=0x${creator}`));
+      assert.equal(list.status, 200);
+      const sql = db.calls.at(-1) ?? "";
+      assert.match(sql, /c\.fee_recipient = \$/);
+      const coins = (list.json as { coins: { poolId: string; image: string | null; symbol: string }[] }).coins;
+      const own = coins.find((coin) => coin.symbol === "EX");
+      const other = coins.find((coin) => coin.symbol === "OTH");
+      assert.equal(own?.image, url);
+      assert.equal(other?.image, null);
+      assert.equal(logoFor(`0x${"ab".repeat(32)}`), null);
+    } finally {
+      if (previous === undefined) delete process.env.LOGOS_DIR;
+      else process.env.LOGOS_DIR = previous;
       await rm(dir, { recursive: true, force: true });
     }
   });

@@ -959,6 +959,8 @@ details.advanced summary { cursor: pointer; color: var(--ink-soft); min-height: 
   gap: var(--space-8);
   align-items: start;
 }
+.poster-column { display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-start; min-width: 0; }
+.poster-column .coin-poster { width: 100%; }
 .coin-poster {
   aspect-ratio: 1;
   border-radius: var(--r-card);

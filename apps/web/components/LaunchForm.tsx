@@ -13,7 +13,8 @@ import type { Mode } from "@/lib/coin";
 import { coinMetadataAddress, executorAddress, explorerAddress, feeWallet, sameAddress } from "@/lib/deployment";
 import { buildLaunchParams } from "@/lib/launch";
 import { launchSuccess } from "@/lib/launchSuccess";
-import { attachTyped, fetchLogoNonce, logoExpiry, uploadTyped } from "@/lib/logoSign";
+import { bindLaunchLogo } from "@/lib/logoRetry";
+import { fetchLogoNonce, logoExpiry, uploadTyped } from "@/lib/logoSign";
 import { logoAttachPath, logoSrc } from "@/lib/logoUrl";
 import { launchedCoin } from "@/lib/onchain";
 import { DEAD } from "@/lib/protocol";
@@ -339,28 +340,11 @@ export function LaunchForm() {
     const success = launchSuccess(launched.poolId);
     const path = image ? logoAttachPath(image, apiUrl) : null;
     const logoSigner = (recipient.trim() || address).toLowerCase();
-    if (apiUrl && path && address.toLowerCase() === logoSigner) {
-      try {
-        const nonce = await fetchLogoNonce(address);
-        const expiry = logoExpiry();
-        const signature = await signTypedDataAsync(attachTyped(launched.poolId, path, nonce, expiry));
-        const attached = await fetch(`${apiUrl}/logos/attach`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            poolId: launched.poolId,
-            url: path,
-            nonce: nonce.toString(),
-            expiry: expiry.toString(),
-            signature,
-          }),
-        });
-        if (!attached.ok) toast("The logo was not attached. The fee recipient has to sign it.", "error");
-      } catch {
-        toast("The logo signature was rejected.", "error");
-      }
-    } else if (apiUrl && path) {
+    if (apiUrl && path && address.toLowerCase() !== logoSigner) {
       toast("Connect the fee recipient wallet to attach the logo.", "error");
+    } else if (apiUrl && path) {
+      // The upload is already signed. Claiming does not ask for a second signature and keeps running if this page closes.
+      void bindLaunchLogo({ apiUrl, poolId: launched.poolId, feeRecipient: logoSigner }).catch(() => undefined);
     }
     if (success) {
       window.setTimeout(() => {

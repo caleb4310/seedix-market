@@ -5,13 +5,56 @@ import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { CoinBody } from "@/components/CoinBody";
 import { TradePanel } from "@/components/TradePanel";
+import { apiUrl } from "@/lib/api";
 import { elysiumTestnet } from "@/lib/chain";
 import type { Coin } from "@/lib/coin";
 import { readLaunchedCoin } from "@/lib/launched";
+import { logoSrc } from "@/lib/logoUrl";
 import type { Side } from "@/lib/quote";
 import { useBoard } from "@/lib/board";
 
 const poolId = /^0x[0-9a-fA-F]{64}$/;
+
+/** The on-chain coin has no image until the API binds the upload. Keep asking until it does. */
+function useBoundLogo(id: string | undefined, known: string | null | undefined): string | null {
+  const [found, setFound] = useState<string | null>(null);
+  useEffect(() => {
+    setFound(null);
+  }, [id]);
+  useEffect(() => {
+    if (!apiUrl || !id || known) return;
+    let cancel = false;
+    let tries = 0;
+    let settled = false;
+    async function pull() {
+      tries += 1;
+      try {
+        const response = await fetch(`${apiUrl}/coins/${id}`);
+        if (!response.ok) return;
+        const body = (await response.json()) as { image?: string | null };
+        const src = logoSrc(body.image);
+        if (cancel) return;
+        if (src) setFound(src);
+        settled = true;
+      } catch {
+        /* the indexer may not have this coin yet */
+      }
+    }
+    void pull();
+    const timer = window.setInterval(() => {
+      if (settled || tries >= 15) {
+        window.clearInterval(timer);
+        return;
+      }
+      void pull();
+    }, 4_000);
+    return () => {
+      cancel = true;
+      window.clearInterval(timer);
+    };
+  }, [id, known]);
+  return known || found;
+}
 
 export function CoinScreen({ id, side }: { id: string; side: Side }) {
   const board = useBoard();
@@ -50,10 +93,12 @@ export function CoinScreen({ id, side }: { id: string; side: Side }) {
   }, [listed, id, client]);
 
   const coin = listed ?? live;
-  if (coin) {
+  const image = useBoundLogo(coin?.poolId, coin?.image);
+  const shown = coin && image && image !== coin.image ? { ...coin, image } : coin;
+  if (shown) {
     return (
       <div className="coin-page">
-        <CoinBody coin={coin} trade={<TradePanel coin={coin} initialSide={side} />} />
+        <CoinBody coin={shown} trade={<TradePanel coin={shown} initialSide={side} />} />
       </div>
     );
   }
