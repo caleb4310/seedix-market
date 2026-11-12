@@ -12,7 +12,7 @@ import {
   type WalletClient,
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
-import { elysiumTestnet } from "@seedix/shared";
+import { capTransactionFees, elysiumTestnet, priorityFloorWei, transactionFees, type TxFees } from "@seedix/shared";
 import {
   artifactName,
   claimSum,
@@ -173,10 +173,18 @@ async function saveRound(dir: string, poolId: Hex, round: Round, plan: GasPlan):
   await writeFile(path.join(dir, artifactName(poolId, round.epoch)), JSON.stringify(body));
 }
 
-function fee(): { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } {
-  const cap = maxFeeWei();
-  const tip = 1n * 10n ** 9n;
-  return { maxFeePerGas: cap > tip ? cap : tip, maxPriorityFeePerGas: tip > cap ? cap : tip };
+async function chainFees(client: PublicClient): Promise<TxFees> {
+  const block = await client.getBlock();
+  const priorityFloor = priorityFloorWei(process.env.KICKBACK_PRIORITY_FEE_WEI);
+  const quoted =
+    block.baseFeePerGas == null
+      ? transactionFees({ baseFeePerGas: null, legacyGasPrice: await client.getGasPrice(), priorityFloor })
+      : transactionFees({
+          baseFeePerGas: block.baseFeePerGas,
+          rpcTip: await client.estimateMaxPriorityFeePerGas().catch(() => 0n),
+          priorityFloor,
+        });
+  return capTransactionFees(quoted, maxFeeWei(), block.baseFeePerGas);
 }
 
 async function broadcast(
@@ -186,8 +194,9 @@ async function broadcast(
   poolId: Hex,
   step: Exclude<Step, { op: "skip" }>,
   round: Round | null,
+  fees: TxFees,
 ): Promise<Hex> {
-  const base = { account, address: distributor, abi: distributorAbi, chain, ...fee() } as const;
+  const base = { account, address: distributor, abi: distributorAbi, chain, ...fees } as const;
   if (step.op === "fund") {
     return wallet.writeContract({ ...base, functionName: "fund", args: [poolId, step.amount] });
   }
@@ -418,8 +427,9 @@ async function onePool(input: {
       throw new Error("posted manifest does not match the round");
     }
   }
+  const fees = await chainFees(input.publicClient);
   const hash = await withRetry(
-    () => broadcast(input.wallet, input.account as PrivateKeyAccount, input.distributor, poolId, step, round),
+    () => broadcast(input.wallet, input.account as PrivateKeyAccount, input.distributor, poolId, step, round, fees),
     [2_000, 4_000, 8_000],
     (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   );

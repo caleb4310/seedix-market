@@ -152,6 +152,11 @@ test("error mapping decodes custom errors and wallet failures", async () => {
   assert.match(explainTxError(priceLimit), /price limit stopped/i);
   assert.doesNotMatch(explainTxError(new Error("execution reverted: out of gas inside the hook")), /enough HYPE/i);
   assert.equal(explainTxError(new Error("429 Rate Limit Exceeded")), "The network is busy, try again.");
+  assert.equal(
+    explainTxError(new Error("max fee per gas less than block base fee: maxFeePerGas: 100000000")),
+    "Network fee moved, please try again.",
+  );
+  assert.equal(isRetryableTxError(new Error("max fee per gas less than block base fee")), true);
   assert.equal(isRetryableTxError(new Error("429 Rate Limit Exceeded")), true);
   assert.equal(isRetryableTxError(new Error("request timed out")), true);
   assert.equal(isRetryableTxError(new Error("ERC20: insufficient allowance")), true);

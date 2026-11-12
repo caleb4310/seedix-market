@@ -10,6 +10,7 @@ import {
   type TransactionReceipt,
   type WalletClient,
 } from "viem";
+import { priorityFloorWei, transactionFees, type TxFees } from "@seedix/shared";
 import { actionAbis } from "./abi";
 import { elysiumTestnet } from "./chain";
 import { MAX_UINT256 } from "./protocol";
@@ -224,6 +225,9 @@ export function explainTxError(err: unknown): string {
   if (/insufficient funds for gas \* price \+ value|exceeds the balance of the account/i.test(brief)) {
     return "The wallet does not have enough HYPE to cover this transaction and its gas.";
   }
+  if (/max fee per gas less than block base fee/i.test(`${brief}\n${blob}`)) {
+    return "Network fee moved, please try again.";
+  }
   if (/insufficient allowance/i.test(brief)) return "The router is not approved for this amount.";
   if (/transfer amount exceeds balance|insufficient balance/i.test(brief)) {
     return "The wallet does not have enough of this token.";
@@ -266,6 +270,7 @@ export function isRetryableTxError(err: unknown): boolean {
   const blob = `${briefText(err)}\n${errorText(err)}`;
   if (/rate limit|too many requests|\b429\b/i.test(blob)) return true;
   if (/timeout|timed out|network request failed|failed to fetch|ECONNRESET|ETIMEDOUT|HttpRequestError|TimeoutError/i.test(blob)) return true;
+  if (/max fee per gas less than block base fee/i.test(blob)) return true;
   if (/insufficient allowance/i.test(blob)) return true;
   const selector = revertSelector(err);
   return selector === selectorOf("ERC20InsufficientAllowance(address,uint256,uint256)");
@@ -289,6 +294,22 @@ export async function runWithRetry<T>(
 }
 
 const retryWaits = [300, 800, 1600];
+
+async function feeOverrides(publicClient: PublicClient): Promise<TxFees> {
+  const block = await publicClient.getBlock();
+  const priorityFloor = priorityFloorWei(process.env.NEXT_PUBLIC_PRIORITY_FEE_WEI);
+  if (block.baseFeePerGas == null) {
+    const legacyGasPrice = await publicClient.getGasPrice();
+    return transactionFees({ baseFeePerGas: null, legacyGasPrice, priorityFloor });
+  }
+  let rpcTip = 0n;
+  try {
+    rpcTip = await publicClient.estimateMaxPriorityFeePerGas();
+  } catch {
+    rpcTip = 0n;
+  }
+  return transactionFees({ baseFeePerGas: block.baseFeePerGas, rpcTip, priorityFloor });
+}
 
 type ChainRequest = {
   request: (args: { method: "wallet_addEthereumChain"; params: readonly [Record<string, unknown>] }) => Promise<unknown>;
@@ -357,7 +378,14 @@ export async function sendContractSteps(input: {
         }
       }, retryWaits);
       input.onState({ status: "awaiting_signature", action: step.action });
-      hash = await input.walletClient.writeContract(simulated.request);
+      const fees = await feeOverrides(input.publicClient);
+      const request = {
+        ...simulated.request,
+        ...("gasPrice" in fees
+          ? { type: "legacy" as const, gasPrice: fees.gasPrice, maxFeePerGas: undefined, maxPriorityFeePerGas: undefined }
+          : { type: "eip1559" as const, ...fees, gasPrice: undefined }),
+      };
+      hash = await input.walletClient.writeContract(request as Parameters<WalletClient["writeContract"]>[0]);
       input.onState({ status: "pending", action: step.action, hash });
       const receipt = await input.publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") {

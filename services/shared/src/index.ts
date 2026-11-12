@@ -56,6 +56,8 @@ export const deployment99801 = {
   publisher: "0x6071b00861a449dfA741055F1E54343DDf7C1a42",
 } as const;
 
+export { capTransactionFees, priorityFloorWei, PRIORITY_FLOOR_WEI, transactionFees, type Eip1559Fees, type LegacyFees, type TxFees } from "./fees.ts";
+
 export const pins = {
   v4Core: "59d3ecf53afa9264a16bba0e38f4c5d2231f80bc",
   v4Periphery: "c6e4754dab11bd38c6f08ac51c3c868569e93d64",
