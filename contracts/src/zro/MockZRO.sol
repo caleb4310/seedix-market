@@ -9,7 +9,11 @@ import {OFT} from "@layerzerolabs/oft-evm/contracts/OFT.sol";
 ///         The owner and the LayerZero delegate are constructor arguments. They are the multisig, not a
 ///         hardcoded EOA. `mint` exists only so a testnet pool can be seeded.
 contract MockZRO is OFT {
-    constructor(address endpoint, address delegate) OFT("Mock ZRO", "ZRO", endpoint, delegate) Ownable(delegate) {}
+    /// @param initialOwner Can mint, then hand ownership to the multisig. The LayerZero delegate is separate.
+    constructor(address endpoint, address delegate, address initialOwner)
+        OFT("Mock ZRO", "ZRO", endpoint, delegate)
+        Ownable(initialOwner)
+    {}
 
     function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);

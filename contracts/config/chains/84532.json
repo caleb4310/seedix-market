@@ -12,9 +12,13 @@
   "stateView": "0x571291b572ed32ce6751a2cb2486ebee8defb9b4",
   "weth": "0x4200000000000000000000000000000000000006",
   "lzEndpoint": "0x6edce65403992e310a62460808c4b910d972f10f",
+  "safeProxyFactory": "0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67",
+  "safeSingleton": "0x29fcB43b46531BcA003ddC8FCB67FFE91900C762",
+  "safeFallbackHandler": "0xfd0732Dc9E303f09fCEf3a7388Ad10A83459Ec99",
   "sources": {
     "uniswapV4": "https://docs.uniswap.org/contracts/v4/deployments",
     "layerZeroMetadata": "https://metadata.layerzero-api.com/v1/metadata",
-    "baseWeth": "https://docs.base.org/base-chain/network-information/base-contracts"
+    "baseWeth": "https://docs.base.org/base-chain/network-information/base-contracts",
+    "safe": "https://github.com/safe-global/safe-deployments/tree/main/src/assets/v1.4.1"
   }
 }

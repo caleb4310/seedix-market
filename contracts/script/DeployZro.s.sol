@@ -42,7 +42,9 @@ contract DeployZro is ZroChain {
         vm.startBroadcast(pk);
         address endpoint = chain.lzEndpoint;
         if (endpoint == address(0)) endpoint = address(new MockLzEndpoint());
-        MockZRO zro = new MockZRO(endpoint, delegate);
+        MockZRO zro = new MockZRO(endpoint, delegate, broadcaster);
+        uint256 mintAmount = vm.envOr("SEED_ZRO_AMOUNT", uint256(0));
+        if (mintAmount > 0) zro.mint(broadcaster, mintAmount);
         if (zro.owner() != owner) zro.transferOwnership(owner);
 
         ZroWeightTracker tracker = new ZroWeightTracker(broadcaster, hookAddr, chain.router, chain.poolManager);

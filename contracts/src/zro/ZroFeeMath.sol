@@ -19,6 +19,10 @@ library ZroFeeMath {
     uint16 internal constant DEFAULT_PROTOCOL_FEE_BPS = 100;
     uint16 internal constant MAX_EFFECTIVE_TAX_BPS = 1_000;
     uint16 internal constant MAX_CREATOR_TAX_BPS = MAX_EFFECTIVE_TAX_BPS - MAX_PROTOCOL_FEE_BPS;
+    /// @dev One Kickback round. The hook and the harvester must use the same length.
+    uint256 internal constant ROUND_SECONDS = 1 hours;
+    /// @dev A harvest transaction pays at most this many closed hours, then the next call continues.
+    uint256 internal constant MAX_HARVEST_ROUNDS = 8;
 
     function effective(uint16 creatorBps, uint16 protocolBps, uint8 mode) internal pure returns (uint16) {
         uint256 sum = mode == ON_TOP ? uint256(creatorBps) + protocolBps : uint256(creatorBps);

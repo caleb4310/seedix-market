@@ -19,6 +19,7 @@ import {OracleLib} from "../libraries/OracleLib.sol";
 import {TwapGuard} from "../libraries/TwapGuard.sol";
 import {LaunchHook} from "../hook/LaunchHook.sol";
 import {ZroRewardVault} from "./ZroRewardVault.sol";
+import {ZroRoundSplit} from "./ZroRoundSplit.sol";
 
 /// @notice Swaps the creator-tax pot to ZRO outside the hook's swap callback.
 ///         The keeper calls `harvest` in its own transaction. The hook only escrows the tax.
@@ -48,6 +49,8 @@ contract ZroTaxSwapper is IUnlockCallback {
     uint256 public constant BPS = 10_000;
     uint256 public constant MAX_DEVIATION_BPS = 500;
     uint256 public constant ROUND_SECONDS = 1 hours;
+    /// @dev Keep this equal to `ZroFeeMath.MAX_HARVEST_ROUNDS`.
+    uint256 public constant MAX_ROUNDS = 8;
 
     LaunchHook public immutable hook;
     ZroRewardVault public immutable vault;
@@ -63,6 +66,8 @@ contract ZroTaxSwapper is IUnlockCallback {
     bool public poolSet;
     PoolKey public poolKey;
     OracleLib.State internal _oracle;
+    /// @notice Next closed hour to settle. Zero means "start at the pool's launch hour".
+    mapping(PoolId => uint64) public nextHarvestEpoch;
     uint256 private _entered;
 
     event PoolRegistered(PoolId indexed poolId);
@@ -172,36 +177,97 @@ contract ZroTaxSwapper is IUnlockCallback {
         (lower, upper) = _band(twapOut, floor);
     }
 
-    /// @notice Pull the escrowed tax, pay the protocol share in the pair token, swap the holder share
-    ///         to ZRO, and fund the vault for the latest closed hour.
+    /// @notice Swap the pair-token tax accrued in the next closed hours, at most `MAX_ROUNDS` of them.
+    ///         ZRO out is split by each hour's accrued holder tax. The remainder of that split goes to
+    ///         the last hour in the batch. Call again to continue through hours this call did not reach.
     function harvest(PoolId poolId, uint256 minOut) external nonReentrant returns (uint256 zroOut) {
         if (keeper == address(0) || msg.sender != keeper) revert NotKeeper();
         if (paused || !poolSet) revert Paused();
         (, Currency pair,,,,,) = hook.config(poolId);
         if (Currency.unwrap(pair) != weth) revert BadPool();
-        uint256 holderIn = hook.zroHolderPot(poolId);
-        if (holderIn == 0) revert Nothing();
-        if (block.timestamp < ROUND_SECONDS) revert Nothing();
-        uint64 epoch = uint64(block.timestamp / ROUND_SECONDS) - 1;
-        if (block.timestamp < (uint256(epoch) + 1) * ROUND_SECONDS) revert Nothing();
 
-        (int24 twap, int24 spot, bool zeroForOne) = _guard(holderIn);
-        TwapGuard.assertBand(spot, twap);
-        uint256 twapOut = _rawOut(holderIn, twap, zeroForOne);
-        uint256 floor = TwapGuard.minOut(holderIn, twap, zeroForOne);
-        (uint256 lower, uint256 upper) = _band(twapOut, floor);
-        if (minOut < lower || minOut > upper) revert Slippage();
-        uint256 limitOut = minOut > floor ? minOut : floor;
-        uint160 priceLimit = _priceLimit(zeroForOne, twap);
+        (uint64 from, uint64 to, uint64 lastClosed) = _harvestSpan(poolId);
+        uint256 span = uint256(to - from) + 1;
+        uint64[] memory epochs = new uint64[](span);
+        uint256[] memory weights = new uint256[](span);
+        for (uint256 i; i < span; ++i) {
+            uint64 epoch = from + uint64(i);
+            epochs[i] = epoch;
+            weights[i] = hook.zroHolderEpoch(poolId, epoch);
+        }
 
-        uint256 protocolOut = hook.zroProtocolPot(poolId);
-        if (protocolOut > 0) hook.debitZroProtocol(poolId, protocolOut, protocolRecipient);
-        hook.debitZroHolder(poolId, holderIn, address(this));
+        uint256 holderIn = 0;
+        for (uint256 i; i < span; ++i) {
+            holderIn += weights[i];
+        }
+        if (holderIn == 0 && _protocolInSpan(poolId, epochs) == 0) {
+            nextHarvestEpoch[poolId] = to + 1;
+            if (to < lastClosed) return 0;
+            revert Nothing();
+        }
 
-        zroOut = _swap(zeroForOne, holderIn, limitOut, priceLimit);
-        IERC20(zro).forceApprove(address(vault), zroOut);
-        vault.fund(poolId, epoch, zroOut);
-        emit Harvested(poolId, epoch, holderIn, zroOut, protocolOut);
+        bool zeroForOne = false;
+        uint160 priceLimit = 0;
+        uint256 limitOut = 0;
+        if (holderIn > 0) {
+            (int24 twap, int24 spot, bool direction) = _guard(holderIn);
+            zeroForOne = direction;
+            TwapGuard.assertBand(spot, twap);
+            uint256 twapOut = _rawOut(holderIn, twap, zeroForOne);
+            uint256 floor = TwapGuard.minOut(holderIn, twap, zeroForOne);
+            (uint256 lower, uint256 upper) = _band(twapOut, floor);
+            if (minOut < lower || minOut > upper) revert Slippage();
+            limitOut = minOut > floor ? minOut : floor;
+            priceLimit = _priceLimit(zeroForOne, twap);
+        }
+
+        nextHarvestEpoch[poolId] = to + 1;
+        (uint256 pulled, uint256 protocolOut) = hook.debitZroEpochs(poolId, epochs, protocolRecipient);
+        if (pulled != holderIn) revert Nothing();
+        if (pulled > 0) {
+            zroOut = _swap(zeroForOne, pulled, limitOut, priceLimit);
+            uint256[] memory parts = ZroRoundSplit.shares(zroOut, weights);
+            IERC20(zro).forceApprove(address(vault), zroOut);
+            for (uint256 i; i < span; ++i) {
+                if (parts[i] == 0) continue;
+                vault.fund(poolId, epochs[i], parts[i]);
+            }
+        }
+        emit Harvested(poolId, from, pulled, zroOut, protocolOut);
+    }
+
+    /// @notice Holder-tax still inside the next harvest batch. Quote `minOut` against this amount.
+    function nextHolderIn(PoolId poolId) external view returns (uint256 holderIn, uint64 fromEpoch, uint64 toEpoch) {
+        (uint64 from, uint64 to,) = _harvestSpan(poolId);
+        fromEpoch = from;
+        toEpoch = to;
+        uint256 span = uint256(to - from) + 1;
+        for (uint256 i; i < span; ++i) {
+            holderIn += hook.zroHolderEpoch(poolId, from + uint64(i));
+        }
+    }
+
+    /// @dev `from` is the next unsettled hour. `to` is at most `MAX_ROUNDS` later and not past the
+    ///      latest hour that has already ended. The open hour is never included.
+    function _harvestSpan(PoolId poolId) internal view returns (uint64 from, uint64 to, uint64 lastClosed) {
+        uint64 current = uint64(block.timestamp / ROUND_SECONDS);
+        if (current == 0) revert Nothing();
+        lastClosed = current - 1;
+        from = nextHarvestEpoch[poolId];
+        if (from == 0) {
+            (,,,,, uint40 launchTime,) = hook.config(poolId);
+            from = uint64(uint256(launchTime) / ROUND_SECONDS);
+        }
+        if (from > lastClosed) revert Nothing();
+        uint64 capped = from + uint64(MAX_ROUNDS) - 1;
+        to = capped > lastClosed ? lastClosed : capped;
+    }
+
+    function _protocolInSpan(PoolId poolId, uint64[] memory epochs) internal view returns (uint256 sum) {
+        uint256 n = epochs.length;
+        for (uint256 i; i < n; ++i) {
+            sum += hook.zroProtocolEpoch(poolId, epochs[i]);
+        }
     }
 
     function unlockCallback(bytes calldata data) external returns (bytes memory) {

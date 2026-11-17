@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {Test} from "forge-std/Test.sol";
 import {Fixture} from "../utils/Fixture.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {LaunchHook} from "../../src/hook/LaunchHook.sol";
+import {Launcher} from "../../src/launch/Launcher.sol";
 import {ZroFeeMath} from "../../src/zro/ZroFeeMath.sol";
+import {ZroRoundSplit} from "../../src/zro/ZroRoundSplit.sol";
 
 contract ZroFeeMathTest {
     function test_defaultIsOnTop() public pure {
@@ -139,6 +143,27 @@ contract ZroFeeHookTest is Fixture {
         d.hook.setProtocolFeeBps(100);
     }
 
+    function test_zeroCreatorTaxCannotOptIn() public {
+        deployer.setZroAdmin(d.hook, admin, address(d.timelock));
+        vm.warp(2 days);
+        vm.expectRevert(Launcher.CreatorTaxZero.selector);
+        d.launcher.launchWithZroTax(_params(address(whype), 0, 0, address(0)), 0);
+        (, PoolId id) = _launch(0);
+        vm.expectRevert(LaunchHook.CreatorTaxZero.selector);
+        vm.prank(creator);
+        d.hook.setCreatorTax(id, 0);
+        vm.expectRevert(LaunchHook.CreatorTaxZero.selector);
+        vm.prank(admin);
+        d.hook.setCreatorTax(id, 0);
+        vm.expectRevert(LaunchHook.CreatorTaxZero.selector);
+        vm.prank(address(d.timelock));
+        d.hook.setCreatorTax(id, 0);
+        vm.expectRevert(LaunchHook.CreatorTaxZero.selector);
+        vm.prank(address(d.launcher));
+        d.hook.setCreatorTaxFromLauncher(id, 0);
+        assertFalse(d.hook.zroTaxSet(id));
+    }
+
     function test_unsetPoolChargesNothingExtra() public {
         (, PoolId id) = _launch(0);
         _buy(id, 100 ether);
@@ -146,5 +171,25 @@ contract ZroFeeHookTest is Fixture {
         assertEq(d.hook.zroProtocolPot(id), 0);
         Currency pair = Currency.wrap(address(whype));
         assertEq(d.hook.accounted(pair), d.hook.sumPots(pair));
+    }
+}
+
+contract ZroSplitTest is Test {
+    function testFuzz_sharesSumToTheTotal(uint128 total, uint8 count, uint256 salt) public pure {
+        uint256 n = bound(uint256(count), 1, 8);
+        uint256[] memory weights = new uint256[](n);
+        bool any;
+        for (uint256 i; i < n; ++i) {
+            salt = uint256(keccak256(abi.encode(salt, i)));
+            weights[i] = salt % 50;
+            if (weights[i] > 0) any = true;
+        }
+        uint256[] memory parts = ZroRoundSplit.shares(total, weights);
+        uint256 sum;
+        for (uint256 i; i < n; ++i) {
+            if (weights[i] == 0) assertEq(parts[i], 0);
+            sum += parts[i];
+        }
+        assertEq(sum, any ? uint256(total) : 0);
     }
 }

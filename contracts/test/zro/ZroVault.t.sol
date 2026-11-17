@@ -29,7 +29,7 @@ contract ZroVaultTest is Fixture {
         vm.prank(coin);
         tracker.onTransfer(address(0), bob, 1 ether);
         vm.warp(block.timestamp + 1 hours);
-        zro = new MockZRO(address(new MockLzEndpoint()), address(this));
+        zro = new MockZRO(address(new MockLzEndpoint()), address(this), address(this));
         vault =
             new ZroRewardVault(address(this), address(this), address(d.timelock), address(this), zro, d.hook, tracker);
         vault.setSwapper(address(this));

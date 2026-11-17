@@ -16,6 +16,9 @@ contract ZroConfigTest is Test {
         assertTrue(vm.parseJsonAddress(json, ".router") != address(0));
         assertTrue(vm.parseJsonAddress(json, ".weth") != address(0));
         assertTrue(vm.parseJsonAddress(json, ".lzEndpoint") != address(0));
+        assertTrue(vm.parseJsonAddress(json, ".safeProxyFactory") != address(0));
+        assertTrue(vm.parseJsonAddress(json, ".safeSingleton") != address(0));
+        assertTrue(vm.parseJsonAddress(json, ".safeFallbackHandler") != address(0));
         assertEq(vm.parseJsonString(json, ".sources.uniswapV4"), "https://docs.uniswap.org/contracts/v4/deployments");
         assertEq(
             vm.parseJsonString(json, ".sources.layerZeroMetadata"), "https://metadata.layerzero-api.com/v1/metadata"

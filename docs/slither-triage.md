@@ -87,3 +87,8 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - unused-return ZroTaxSwapper.harvest | `config` is read for the pair currency, which must be WETH. The coin, the mode, and the recipient are not the swapped asset.
 - unused-return ZroRewardVault.fund | `config` is read for the coin whose time-weight funds this round. The pair and the fee fields are not the weight.
 - unused-return ZroRewardVault._account | The claim reads the same coin from `config` so the weight matches the funded round. The other fields are not a payout amount.
+- incorrect-equality ZroTaxSwapper._harvestSpan | `current == 0` is the first unix hour, where the previous hour does not exist. `from == 0` means this pool has not harvested yet, so the cursor starts at the launch hour.
+- incorrect-equality ZroTaxSwapper.harvest | `holderIn == 0` together with an empty protocol span is a batch with no tax, so the cursor advances and nothing is swapped. `parts[i] == 0` skips a fund of a zero ZRO share. Neither compares a token balance.
+- incorrect-equality ZroTaxSwapper._guard | `amountIn == 0` refuses a TWAP quote of an empty holder batch. It is not a balance comparison.
+- incorrect-equality ZroTaxSwapper._rawOut | The same empty input returns no output. The equality skips the quote math.
+- unused-return ZroTaxSwapper._harvestSpan | `config` is read for `launchTime`, which is the first hour a harvest may settle. The coin, the pair, and the fee fields are not the cursor.

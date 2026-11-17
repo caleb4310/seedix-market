@@ -14,21 +14,24 @@ contract ZroHandler is Test {
     ZroRewardVault internal vault;
     PoolId internal id;
     uint64 internal epoch;
+    uint64 internal epoch2;
     address internal alice;
     address internal bob;
 
-    constructor(ZroRewardVault vault_, PoolId id_, uint64 epoch_, address alice_, address bob_) {
+    constructor(ZroRewardVault vault_, PoolId id_, uint64 epoch_, uint64 epoch2_, address alice_, address bob_) {
         vault = vault_;
         id = id_;
         epoch = epoch_;
+        epoch2 = epoch2_;
         alice = alice_;
         bob = bob_;
     }
 
     function claim(uint256 salt) external {
         address who = salt % 2 == 0 ? alice : bob;
+        uint64 which = salt % 3 == 0 ? epoch2 : epoch;
         vm.prank(who);
-        try vault.claim(id, epoch) {} catch {}
+        try vault.claim(id, which) {} catch {}
     }
 }
 
@@ -47,16 +50,18 @@ contract ZroInvariantTest is StdInvariant, Fixture {
         tracker.onTransfer(address(0), alice, 5 ether);
         vm.prank(coin);
         tracker.onTransfer(address(0), bob, 7 ether);
-        uint64 epoch = uint64(block.timestamp / 1 hours);
-        vm.warp(block.timestamp + 1 hours);
-        zro = new MockZRO(address(new MockLzEndpoint()), address(this));
+        uint64 epoch = uint64(vm.getBlockTimestamp() / 1 hours);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
+        zro = new MockZRO(address(new MockLzEndpoint()), address(this), address(this));
         vault =
             new ZroRewardVault(address(this), address(this), address(d.timelock), address(this), zro, d.hook, tracker);
         vault.setSwapper(address(this));
         zro.mint(address(this), 100 ether);
         zro.approve(address(vault), 100 ether);
-        vault.fund(id, epoch, 100 ether);
-        targetContract(address(new ZroHandler(vault, id, epoch, alice, bob)));
+        vault.fund(id, epoch, 60 ether);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
+        vault.fund(id, epoch + 1, 40 ether);
+        targetContract(address(new ZroHandler(vault, id, epoch, epoch + 1, alice, bob)));
     }
 
     function invariant_claimedNeverExceedsFunded() public view {

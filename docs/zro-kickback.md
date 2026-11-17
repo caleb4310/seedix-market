@@ -8,7 +8,7 @@ This phase is testnet only. The live Elysium deployment is not changed and is no
 
 ## Formula
 
-Rates are in basis points. `10_000 = 100%`. The protocol fee defaults to `100` (1%). The creator rate cannot exceed `900` (9%). The trader's effective rate cannot exceed `1_000` (10%).
+Rates are in basis points. `10_000 = 100%`. The protocol fee defaults to `100` (1%). The creator rate has to be above zero and cannot exceed `900` (9%). A zero rate reverts `CreatorTaxZero` from `launchWithZroTax`, `setCreatorTax`, and `setCreatorTaxFromLauncher`. The trader's effective rate cannot exceed `1_000` (10%).
 
 `ON_TOP` (default, mode `1`):
 
@@ -47,7 +47,7 @@ The zero address, the hook, the router, and the pool (the PoolManager that holds
 
 Rounding dust is `funded - sum(payouts)`. It stays in the vault. When the last unit of weight is claimed, the dust moves to `pendingDust` and the next round pays it. A round with zero weight rolls the whole deposit into `pendingDust` immediately. `totalClaimed <= totalFunded`.
 
-The keeper should harvest once, after each hour closes. A late harvest attributes the whole escrowed pot to the latest closed hour.
+The hook records the holder and protocol tax on the hour it was taken. `harvest` settles at most 8 closed hours. ZRO out is split by each hour's accrued holder tax, and the rounding remainder stays on the last hour in that batch. Call `harvest` again to continue. An hour with no tax is skipped and does not consume a ZRO fund. The open hour is never settled.
 
 ## Where the swap runs
 
@@ -97,7 +97,28 @@ Pinned npm packages, installed from `contracts/` so Foundry can compile them: `o
 
 Do not broadcast to a public RPC with a key you use anywhere else. Do not merge this into a mainnet deploy. The Elysium script still refuses chain 84532.
 
-1. Confirm `contracts/config/chains/84532.json` still matches the two docs above.
+Right after merge, one script deploys the test owner, the timelock, MockZRO, and the ZRO/WETH pool. If the Safe factory in the chain file has code, the owner is a 1-of-1 Safe whose only signer is the deployer. Otherwise it is `TestOwner`, which is labeled TEST and is not a multisig. The timelock delay defaults to 60 seconds. The deployer is the proposer and the executor. The admin of the timelock is the owner contract. The same owner is the ZRO delegate.
+
+From `contracts/`, simulation first. Add `--broadcast` only for a throwaway testnet key:
+
+```bash
+cd contracts
+PRIVATE_KEY=0xDeployerSimulationKey \
+SEED_ZRO_AMOUNT=1000000000000000000000 \
+SEED_WETH_AMOUNT=1000000000000000000000 \
+TIMELOCK_DELAY=60 \
+HOOK_ADDRESS=0xNewHook \
+LAUNCHER_ADDRESS=0xNewLauncher \
+LOCKER_ADDRESS=0xNewLocker \
+KEEPER=0xKeeper \
+forge script script/DeployBaseSepoliaZro.s.sol --rpc-url "$BASE_SEPOLIA_RPC_URL"
+```
+
+`HOOK_ADDRESS` is optional for this script. Without it, MockZRO and the pool are deployed and the vault waits until a new hook exists. The broadcaster needs enough ETH to wrap `SEED_WETH_AMOUNT`. The script logs `owner`, `timelock`, and `zro`. It does not log the key. `safe 1` means a Safe was created. `safe 0` means `TestOwner`.
+
+The separate scripts are the same steps with addresses you already have:
+
+1. Confirm `contracts/config/chains/84532.json` still matches the docs above, including the Safe v1.4.1 factory from https://github.com/safe-global/safe-deployments/tree/main/src/assets/v1.4.1.
 2. Deploy a fresh Seedix hook with the new bytecode. The deployer key has to remain the hook initializer until the wiring calls below. Do not reuse the 99801 hook.
 3. From `contracts/`, simulation first (no `--broadcast`):
 
@@ -128,7 +149,7 @@ forge script script/SeedZroWethPool.s.sol --rpc-url "$BASE_SEPOLIA_RPC_URL"
 The broadcaster must hold both tokens. The pool is hookless ZRO/WETH on the configured PoolManager.
 
 5. The owner registers that pool on `ZroTaxSwapper.registerPool` and sets the keeper. `poke` for 30 minutes before the first harvest, then `harvest(poolId, minOut)` once an hour.
-6. A creator turns the tax on with `launchWithZroTax` or `setCreatorTax`. The UI shows creator + 1% and refuses a total above 10%.
+6. A creator turns the tax on with `launchWithZroTax` or `setCreatorTax` and a rate above zero. The UI shows creator + 1% and refuses a total above 10%. An empty form field stays on the plain `launch` call.
 
 Environment variables for that deploy:
 
@@ -138,8 +159,9 @@ Environment variables for that deploy:
 | `ZRO_OWNER` | yes | Multisig. Vault owner and, after the script, tracker and swapper owner |
 | `ZRO_DELEGATE` | yes | Multisig. OFT delegate and the vault's delegate |
 | `ZRO_TIMELOCK` | yes | Timelock that can switch the fee mode |
-| `HOOK_ADDRESS` | yes on 84532 | New hook. The deployer key must be its initializer |
-| `LAUNCHER_ADDRESS` | no | Receives the weight tracker |
+| `HOOK_ADDRESS` | required for `DeployZro` on 84532, optional for `DeployBaseSepoliaZro` | New hook. The deployer key must be its initializer when it is set |
+| `TIMELOCK_DELAY` | no | Seconds. `DeployBaseSepoliaZro` uses 60 when this is unset or 0 |
+| `LAUNCHER_ADDRESS` | no | Receives the weight tracker. The deployer key must still be the launcher initializer |
 | `LOCKER_ADDRESS` | no | Excluded from rewards |
 | `KEEPER` | no | Harvest keeper |
 | `UNISWAP_V4_POOL_MANAGER` | no | Overrides the config file |
@@ -163,7 +185,7 @@ A graduated token becomes an OFT. The tax stays only on Seedix's own v4 pools (t
 
 ## Open questions
 
-- A late harvest assigns the whole escrowed pot to the latest closed hour. Splitting the pot across missed hours needs a timestamp on each accrual or a per-hour checkpoint inside the hook.
+- A gap of many empty hours still has to be walked eight hours at a time. Each empty batch is one transaction and moves no ZRO.
 - Exclusion of the locker and the launcher is an owner call. It has to happen before those addresses hold a balance, or `eligibleSupply` and the checkpoints diverge.
-- `ON_TOP` with a creator tax of 0 still charges the 1% protocol fee once the pool has opted in. The launch UI only opts in when the creator rate is greater than zero.
 - The ZRO pool oracle is the swapper's own 30-minute ring. It is not the Seedix hook oracle. The first harvest has to wait until that window is covered.
+- `DeployBaseSepoliaZro` uses `TestOwner` when the Safe factory has no code. That contract is a single key. Replace it with a real multisig before any value that matters.

@@ -54,6 +54,8 @@ contract LaunchHook is IHooks, IUnlockCallback {
     error NotTimelock();
     error NotZroAdmin();
     error TaxBound();
+    error CreatorTaxZero();
+    error Batch();
 
     uint8 internal constant ACTION_PAY = 1;
     uint8 internal constant ACTION_PULL = 2;
@@ -131,6 +133,9 @@ contract LaunchHook is IHooks, IUnlockCallback {
     mapping(PoolId => bool) public zroTaxSet;
     mapping(PoolId => uint128) public zroHolderPot;
     mapping(PoolId => uint128) public zroProtocolPot;
+    /// @notice Pair-token tax accrued during one hour. The harvester consumes these in order.
+    mapping(PoolId => mapping(uint64 epoch => uint128)) public zroHolderEpoch;
+    mapping(PoolId => mapping(uint64 epoch => uint128)) public zroProtocolEpoch;
 
     mapping(PoolId => CoinConfig) public config;
     /// @notice Backing token for Keep and Kickback. Zero means fees stay in WHYPE (Burn, or a WHYPE launch).
@@ -552,7 +557,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
         zroSwapper = next;
     }
 
-    /// @notice Creator, owner, or timelock. The creator rate cannot exceed 9%, so ON_TOP stays within 10%.
+    /// @notice Creator, owner, or timelock. The rate has to be non-zero and cannot exceed 9%.
     function setCreatorTax(PoolId id, uint16 bps) external {
         if (config[id].launchTime == 0) revert UnknownPool();
         address recipient = config[id].feeRecipient;
@@ -602,6 +607,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
 
     function _setCreatorTax(PoolId id, uint16 bps) internal {
         if (config[id].launchTime == 0) revert UnknownPool();
+        if (bps == 0) revert CreatorTaxZero();
         if (bps > ZroFeeMath.MAX_CREATOR_TAX_BPS) revert TaxBound();
         creatorTaxBps[id] = bps;
         zroTaxSet[id] = true;
@@ -627,10 +633,59 @@ contract LaunchHook is IHooks, IUnlockCallback {
         }
         taken = holderAmt + protocolAmt;
         if (taken == 0) return 0;
-        if (holderAmt > 0) zroHolderPot[id] = _asUint128(uint256(zroHolderPot[id]) + holderAmt);
-        if (protocolAmt > 0) zroProtocolPot[id] = _asUint128(uint256(zroProtocolPot[id]) + protocolAmt);
+        uint64 epoch = uint64(block.timestamp / ZroFeeMath.ROUND_SECONDS);
+        if (holderAmt > 0) {
+            zroHolderEpoch[id][epoch] = _asUint128(uint256(zroHolderEpoch[id][epoch]) + holderAmt);
+            zroHolderPot[id] = _asUint128(uint256(zroHolderPot[id]) + holderAmt);
+        }
+        if (protocolAmt > 0) {
+            zroProtocolEpoch[id][epoch] = _asUint128(uint256(zroProtocolEpoch[id][epoch]) + protocolAmt);
+            zroProtocolPot[id] = _asUint128(uint256(zroProtocolPot[id]) + protocolAmt);
+        }
         _credit(cfg.pair, taken);
         emit ZroTaxTaken(id, holderAmt, protocolAmt);
+    }
+
+    /// @notice Keeper harvest of at most 8 closed hours. Zeros those hour buckets and pays the pair
+    ///         token out: the holder share to the swapper, the protocol share to `protocolTo`.
+    function debitZroEpochs(PoolId id, uint64[] calldata epochs, address protocolTo)
+        external
+        returns (uint256 holderAmt, uint256 protocolAmt)
+    {
+        if (msg.sender != zroSwapper) revert NotDistributor();
+        uint256 n = epochs.length;
+        if (n == 0 || n > ZroFeeMath.MAX_HARVEST_ROUNDS) revert Batch();
+        uint64 prev = 0;
+        for (uint256 i; i < n; ++i) {
+            uint64 epoch = epochs[i];
+            if (i > 0 && epoch <= prev) revert Batch();
+            prev = epoch;
+            uint256 h = zroHolderEpoch[id][epoch];
+            uint256 p = zroProtocolEpoch[id][epoch];
+            if (h > 0) {
+                zroHolderEpoch[id][epoch] = 0;
+                holderAmt += h;
+            }
+            if (p > 0) {
+                zroProtocolEpoch[id][epoch] = 0;
+                protocolAmt += p;
+            }
+        }
+        if (holderAmt == 0 && protocolAmt == 0) return (0, 0);
+        if (protocolAmt > 0 && protocolTo == address(0)) revert Amount();
+        _openMove();
+        Currency c = config[id].pair;
+        if (holderAmt > 0) {
+            zroHolderPot[id] -= uint128(holderAmt);
+            _debitAccount(c, holderAmt);
+        }
+        if (protocolAmt > 0) {
+            zroProtocolPot[id] -= uint128(protocolAmt);
+            _debitAccount(c, protocolAmt);
+        }
+        if (holderAmt > 0) _payout(c, msg.sender, holderAmt);
+        if (protocolAmt > 0) _payout(c, protocolTo, protocolAmt);
+        _closeMove();
     }
 
     function _debitZro(PoolId id, uint256 amount, address to, bool holder) internal {
