@@ -76,6 +76,18 @@ export {
   type Socials,
 } from "./metadata.ts";
 export {
+  MAX_CREATOR_TAX_BPS,
+  MAX_EFFECTIVE_TAX_BPS,
+  PROTOCOL_FEE_BPS,
+  creatorBpsFromPercent,
+  formatTaxBps,
+  reportedZroTax,
+  zroFeeMode,
+  zroTaxLabel,
+  type ZroFeeMode,
+  type ZroTax,
+} from "./zroTax.ts";
+export {
   LOGO_EXPIRY_SECONDS,
   LOGO_MAX_BYTES,
   LOGO_RATE_LIMIT,

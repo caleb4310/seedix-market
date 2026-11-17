@@ -1,0 +1,20 @@
+{
+  "chainId": 84532,
+  "name": "base-sepolia",
+  "lzEid": 40245,
+  "feeMode": "on_top",
+  "protocolFeeBps": 100,
+  "maxEffectiveTaxBps": 1000,
+  "poolManager": "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
+  "positionManager": "0x4b2c77d209d3405f41a037ec6c77f7f5b8e2ca80",
+  "router": "0x492e6456d9528771018deb9e87ef7750ef184104",
+  "quoter": "0x5e6B8B8AFA7e5CEF6C09dd2A67aBA9FB12C75623",
+  "stateView": "0x571291b572ed32ce6751a2cb2486ebee8defb9b4",
+  "weth": "0x4200000000000000000000000000000000000006",
+  "lzEndpoint": "0x6edce65403992e310a62460808c4b910d972f10f",
+  "sources": {
+    "uniswapV4": "https://docs.uniswap.org/contracts/v4/deployments",
+    "layerZeroMetadata": "https://metadata.layerzero-api.com/v1/metadata",
+    "baseWeth": "https://docs.base.org/base-chain/network-information/base-contracts"
+  }
+}

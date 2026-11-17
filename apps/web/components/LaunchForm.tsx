@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAccount, usePublicClient, useReadContract, useSignTypedData } from "wagmi";
 import { isAddress } from "viem";
-import { cleanSocials } from "@seedix/shared";
+import { cleanSocials, creatorBpsFromPercent, reportedZroTax, zroTaxLabel } from "@seedix/shared";
 import { erc20Abi, launcherAbi, metadataAbi } from "@/lib/abi";
 import { apiUrl } from "@/lib/api";
 import { elysiumTestnet } from "@/lib/chain";
@@ -86,6 +86,7 @@ export function LaunchForm() {
   const [ack, setAck] = useState(false);
   const [mode, setMode] = useState<Mode>("keep");
   const [team, setTeam] = useState(0);
+  const [holderTax, setHolderTax] = useState("");
   const [recipient, setRecipient] = useState("");
   const [description, setDescription] = useState("");
   const [website, setWebsite] = useState("");
@@ -267,6 +268,7 @@ export function LaunchForm() {
     setAck(false);
     setMode("keep");
     setTeam(0);
+    setHolderTax("");
     setDescription("");
     setWebsite("");
     setXHandle("");
@@ -317,13 +319,19 @@ export function LaunchForm() {
       setHolding(0);
       return;
     }
+    const tax = creatorBpsFromPercent(holderTax);
+    if (!tax.ok) {
+      toast(tax.message, "error");
+      setHolding(0);
+      return;
+    }
     const receipt = await tx.send([
       {
         action: "Launch",
         address: launcherAddress,
         abi: launcherAbi,
-        functionName: "launch",
-        args: [params],
+        functionName: tax.bps > 0 ? "launchWithZroTax" : "launch",
+        args: tax.bps > 0 ? [params, tax.bps] : [params],
       },
     ]);
     if (!receipt) {
@@ -382,6 +390,12 @@ export function LaunchForm() {
     }
   }
 
+  const parsedTax = creatorBpsFromPercent(holderTax);
+  const zroReadback = parsedTax.ok
+    ? parsedTax.bps === 0
+      ? "ZRO holder tax is off. Turning it on adds that rate plus a 1% Seedix fee, capped at 10%."
+      : zroTaxLabel(reportedZroTax({ enabled: true, creatorTaxBps: parsedTax.bps }))
+    : parsedTax.message;
   const preview = <LaunchPreview face={face} cap={cap} backing={backingName} />;
   const liquidity =
     typeof depth.data === "bigint" && depth.data > 0n
@@ -521,6 +535,15 @@ export function LaunchForm() {
               );
             })}
           </div>
+          <Field label="ZRO holder tax" hint="0–9%. Traders also pay 1% Seedix. Total cap 10%.">
+            <input
+              inputMode="decimal"
+              value={holderTax}
+              onChange={(e) => setHolderTax(e.target.value)}
+              placeholder="0"
+            />
+          </Field>
+          <p className="note">{zroReadback}</p>
         </div>
         </section>
         <section className="poster">
@@ -631,7 +654,7 @@ export function LaunchForm() {
             <p>
               <strong>{name.trim() || "Name"}</strong> ${ticker.trim() || "TICKER"} · {backingName} · {modes.find((item) => item.id === mode)?.title} · {cap}
             </p>
-            <p className="note">Platform 1%, split 50/50. Hook fee 80% to 1% over 10s. LP 0.1%.</p>
+            <p className="note">Platform 1%, split 50/50. Hook fee 80% to 1% over 10s. LP 0.1%. {zroReadback}</p>
           </section>
         ) : null}
         <button

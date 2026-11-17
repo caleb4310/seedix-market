@@ -28,6 +28,8 @@ export type CoinRow = {
   category?: number;
   pairStatus?: number;
   launcher?: Hex | null;
+  creatorTaxBps?: number;
+  zroEnabled?: boolean;
   description?: string | null;
   website?: string | null;
   xUrl?: string | null;
@@ -127,6 +129,8 @@ export interface Store {
     poolId: Hex,
     socials: { description: string | null; website: string | null; xUrl: string | null; telegram: string | null },
   ): Promise<void>;
+  setZroTax(chainId: number, poolId: Hex, creatorTaxBps: number, enabled: boolean): Promise<void>;
+  setZroPolicy(chainId: number, feeMode: number, protocolFeeBps: number): Promise<void>;
   noteTeam(chainId: number, poolId: Hex, team: Hex): Promise<void>;
   addCarry(chainId: number, poolId: Hex, epoch: bigint, amount: bigint, blockNumber: bigint): Promise<void>;
   sealEpoch(chainId: number, poolId: Hex, epoch: bigint, rolled: bigint): Promise<void>;
@@ -256,6 +260,21 @@ export class PgStore implements Store {
     await this.db.query(
       `UPDATE coins SET description = $3, website = $4, x_url = $5, telegram = $6 WHERE chain_id = $1 AND pool_id = $2`,
       [chainId, toBuffer(poolId), socials.description, socials.website, socials.xUrl, socials.telegram],
+    );
+  }
+
+  async setZroTax(chainId: number, poolId: Hex, creatorTaxBps: number, enabled: boolean): Promise<void> {
+    await this.db.query(
+      `UPDATE coins SET creator_tax_bps = $3, zro_enabled = $4 WHERE chain_id = $1 AND pool_id = $2`,
+      [chainId, toBuffer(poolId), creatorTaxBps, enabled],
+    );
+  }
+
+  async setZroPolicy(chainId: number, feeMode: number, protocolFeeBps: number): Promise<void> {
+    await this.db.query(
+      `INSERT INTO zro_policy (chain_id, fee_mode, protocol_fee_bps) VALUES ($1, $2, $3)
+       ON CONFLICT (chain_id) DO UPDATE SET fee_mode = EXCLUDED.fee_mode, protocol_fee_bps = EXCLUDED.protocol_fee_bps`,
+      [chainId, feeMode, protocolFeeBps],
     );
   }
 

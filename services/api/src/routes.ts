@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { elysiumTestnet, cleanSocials, LAUNCH_SUPPLY, marketCapFromSpot } from "@seedix/shared";
+import { elysiumTestnet, cleanSocials, LAUNCH_SUPPLY, marketCapFromSpot, reportedZroTax } from "@seedix/shared";
 import { attachLogo, logoFor } from "./logos.ts";
 import { peekNonce } from "./logoAuth.ts";
 import { claimsForPool } from "./claims.ts";
@@ -99,6 +99,10 @@ type CoinRow = {
   website?: string | null;
   x_url?: string | null;
   telegram?: string | null;
+  creator_tax_bps?: number | string | null;
+  zro_enabled?: boolean | null;
+  zro_fee_mode?: number | string | null;
+  protocol_fee_bps?: number | string | null;
 };
 
 const CATEGORY = ["crypto", "stock", "preipo"] as const;
@@ -174,6 +178,12 @@ function coinJson(row: CoinRow, overlay: Map<string, OverlayToken>) {
     website: row.website ?? null,
     x: row.x_url ?? null,
     telegram: row.telegram ?? null,
+    zroTax: reportedZroTax({
+      enabled: Boolean(row.zro_enabled),
+      creatorTaxBps: Number(row.creator_tax_bps ?? 0),
+      protocolFeeBps: Number(row.protocol_fee_bps ?? 100),
+      feeMode: row.zro_fee_mode == null ? 1 : Number(row.zro_fee_mode),
+    }),
   };
 }
 
@@ -184,8 +194,11 @@ const coinSelect = `SELECT encode(c.pool_id, 'hex') AS pool_id, encode(c.coin, '
   (SELECT s.price::text FROM swaps s WHERE s.pool_id = c.pool_id ORDER BY s.block_time DESC, s.log_index DESC LIMIT 1) AS price,
   (SELECT COALESCE(SUM(h.balance), 0)::text FROM holders h WHERE h.pool_id = c.pool_id) AS supply,
   (SELECT COALESCE(SUM(s.amount_in), 0)::text FROM swaps s WHERE s.pool_id = c.pool_id AND s.block_time > now() - interval '1 day' AND ((c.coin_is_token0 AND NOT s.zero_for_one) OR (NOT c.coin_is_token0 AND s.zero_for_one))) AS volume_24h,
-  (SELECT count(*) FROM holders h WHERE h.pool_id = c.pool_id AND h.balance > 0) AS holders
-  FROM coins c`;
+  (SELECT count(*) FROM holders h WHERE h.pool_id = c.pool_id AND h.balance > 0) AS holders,
+  COALESCE(c.creator_tax_bps, 0) AS creator_tax_bps, COALESCE(c.zro_enabled, false) AS zro_enabled,
+  COALESCE(p.fee_mode, 1) AS zro_fee_mode, COALESCE(p.protocol_fee_bps, 100) AS protocol_fee_bps
+  FROM coins c
+  LEFT JOIN zro_policy p ON p.chain_id = c.chain_id`;
 
 export type RequestExtras = {
   body?: unknown;

@@ -31,6 +31,10 @@ const eventAbi = {
   FeesTaken: parseAbiItem(
     "event FeesTaken(bytes32 indexed poolId, address indexed sender, bool pairSide, uint24 hookFeePips, uint256 hookAmt, uint256 platformAmt)",
   ),
+  CreatorTaxSet: parseAbiItem(
+    "event CreatorTaxSet(bytes32 indexed poolId, uint16 creatorTaxBps, uint16 effectiveTaxBps, uint8 feeMode)",
+  ),
+  ZroFeeModeSet: parseAbiItem("event ZroFeeModeSet(uint8 mode, uint16 protocolFeeBps, address indexed by)"),
   BuybackExecuted: parseAbiItem("event BuybackExecuted(bytes32 indexed poolId, uint256 amountIn, uint256 coinBurned)"),
   KickbackFunded: parseAbiItem("event KickbackFunded(bytes32 indexed poolId, uint64 indexed epoch, uint256 amount)"),
   RootPosted: parseAbiItem(
@@ -191,6 +195,8 @@ export async function pollOnce(client: PublicClient, store: Store, cfg: IndexerC
         ? [pull(client, cfg.metadata, eventAbi.MetadataPinned, "MetadataPinned", range.from, range.to)]
         : []),
       pull(client, cfg.hook, eventAbi.FeesTaken, "FeesTaken", range.from, range.to),
+      pull(client, cfg.hook, eventAbi.CreatorTaxSet, "CreatorTaxSet", range.from, range.to),
+      pull(client, cfg.hook, eventAbi.ZroFeeModeSet, "ZroFeeModeSet", range.from, range.to),
       pull(client, cfg.poolManager, eventAbi.Swap, "Swap", range.from, range.to),
       pull(client, cfg.buybackExecutor, eventAbi.BuybackExecuted, "BuybackExecuted", range.from, range.to),
     ];
@@ -202,6 +208,8 @@ export async function pollOnce(client: PublicClient, store: Store, cfg: IndexerC
         name === "PairClassified" ||
         name === "MetadataPinned" ||
         name === "FeesTaken" ||
+        name === "CreatorTaxSet" ||
+        name === "ZroFeeModeSet" ||
         name === "Swap" ||
         name === "BuybackExecuted" ||
         name === "Transfer"

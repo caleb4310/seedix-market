@@ -72,6 +72,12 @@ export function CoinBody({ coin, trade }: { coin: Coin; trade?: ReactNode }) {
               <dt>By</dt>
               <dd>{coin.creator ? shortAddress(coin.creator) : shortAddress(coin.recipient)}</dd>
             </div>
+            {coin.zroTaxBps ? (
+              <div>
+                <dt>ZRO tax</dt>
+                <dd>{coin.zroTaxLabel}</dd>
+              </div>
+            ) : null}
           </dl>
           {trade}
           {contract ? (

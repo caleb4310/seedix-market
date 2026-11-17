@@ -25,6 +25,32 @@
     ]
   },
   {
+    "type": "function",
+    "name": "launchWithZroTax",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      {
+        "name": "params",
+        "type": "tuple",
+        "components": [
+          { "name": "name", "type": "string" },
+          { "name": "symbol", "type": "string" },
+          { "name": "pair", "type": "address" },
+          { "name": "mode", "type": "uint8" },
+          { "name": "feeRecipient", "type": "address" },
+          { "name": "teamWallet", "type": "address" },
+          { "name": "teamBps", "type": "uint16" },
+          { "name": "startMcapInPair", "type": "uint256" }
+        ]
+      },
+      { "name": "creatorTaxBps", "type": "uint16" }
+    ],
+    "outputs": [
+      { "name": "coin", "type": "address" },
+      { "name": "id", "type": "bytes32" }
+    ]
+  },
+  {
     "type": "event",
     "name": "CoinLaunched",
     "inputs": [
