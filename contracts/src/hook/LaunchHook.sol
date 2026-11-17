@@ -23,6 +23,7 @@ interface IHasRoles {
 }
 import {FeeMath} from "../libraries/FeeMath.sol";
 import {OracleLib} from "../libraries/OracleLib.sol";
+import {ZroFeeMath} from "../zro/ZroFeeMath.sol";
 
 /// @notice Ownerless fee hook. Pots are ERC-6909 claims. Spending them is a per-pot debit.
 ///         The cumulative accrues on every swap. Ring writes stay on a 30 second cadence.
@@ -51,6 +52,10 @@ contract LaunchHook is IHooks, IUnlockCallback {
     error Overflow();
     error FeeTooLarge();
     error NotTimelock();
+    error NotZroAdmin();
+    error TaxBound();
+    error CreatorTaxZero();
+    error Batch();
 
     uint8 internal constant ACTION_PAY = 1;
     uint8 internal constant ACTION_PULL = 2;
@@ -104,6 +109,9 @@ contract LaunchHook is IHooks, IUnlockCallback {
         uint256 hookAmt,
         uint256 platformAmt
     );
+    event CreatorTaxSet(PoolId indexed poolId, uint16 creatorTaxBps, uint16 effectiveTaxBps, uint8 feeMode);
+    event ZroFeeModeSet(uint8 mode, uint16 protocolFeeBps, address indexed by);
+    event ZroTaxTaken(PoolId indexed poolId, uint256 holderAmt, uint256 protocolAmt);
 
     IPoolManager public immutable poolManager;
     address public immutable buybackExecutor;
@@ -114,6 +122,20 @@ contract LaunchHook is IHooks, IUnlockCallback {
 
     address public launcher;
     address public locker;
+    /// @notice ZRO tax admin. Set once from the deploy initializer. A multisig, not a hardcoded EOA.
+    address public zroOwner;
+    address public zroTimelock;
+    address public zroSwapper;
+    /// @notice 0 = protocol fee comes out of the creator tax. 1 = ON_TOP, the default.
+    uint8 public zroFeeMode = ZroFeeMath.ON_TOP;
+    uint16 public protocolFeeBps = ZroFeeMath.DEFAULT_PROTOCOL_FEE_BPS;
+    mapping(PoolId => uint16) public creatorTaxBps;
+    mapping(PoolId => bool) public zroTaxSet;
+    mapping(PoolId => uint128) public zroHolderPot;
+    mapping(PoolId => uint128) public zroProtocolPot;
+    /// @notice Pair-token tax accrued during one hour. The harvester consumes these in order.
+    mapping(PoolId => mapping(uint64 epoch => uint128)) public zroHolderEpoch;
+    mapping(PoolId => mapping(uint64 epoch => uint128)) public zroProtocolEpoch;
 
     mapping(PoolId => CoinConfig) public config;
     /// @notice Backing token for Keep and Kickback. Zero means fees stay in WHYPE (Burn, or a WHYPE launch).
@@ -196,7 +218,10 @@ contract LaunchHook is IHooks, IUnlockCallback {
         for (uint256 i; i < n; ++i) {
             CoinConfig memory cfg = config[pools[i]];
             Pots memory p = pots[pools[i]];
-            if (cfg.pair == c) s += uint256(p.creatorPair) + p.kickbackPair + p.burnPair;
+            if (cfg.pair == c) {
+                s += uint256(p.creatorPair) + p.kickbackPair + p.burnPair + zroHolderPot[pools[i]]
+                + zroProtocolPot[pools[i]];
+            }
             if (Currency.wrap(cfg.coin) == c) s += uint256(p.creatorCoin) + p.burnCoin;
         }
     }
@@ -366,7 +391,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
         OracleLib.onSwap(_oracle[id], uint32(block.timestamp), tick);
 
         // Exemption is the PoolManager sender. The executor must call the manager itself, not a router.
-        if (sender == buybackExecutor) {
+        if (sender == buybackExecutor || (zroSwapper != address(0) && sender == zroSwapper)) {
             _tstore(META_SLOT, META_EXEMPT);
             return (IHooks.beforeSwap.selector, toBeforeSwapDelta(0, 0), 0);
         }
@@ -384,7 +409,7 @@ contract LaunchHook is IHooks, IUnlockCallback {
             _routeHook(id, cfg, true, hookAmt, pips);
             _routePlatform(cfg, platAmt);
             _remember(hookAmt, platAmt);
-            uint256 total = hookAmt + platAmt;
+            uint256 total = hookAmt + platAmt + _accrueZro(id, cfg, specified, false);
             _mint(cfg.pair, total);
             specifiedDelta = _asInt128(total);
         } else if (exactIn && !buy) {
@@ -397,8 +422,9 @@ contract LaunchHook is IHooks, IUnlockCallback {
             (, uint256 platAmt) = FeeMath.grossUp(specified, C.PLATFORM_FEE);
             _routePlatform(cfg, platAmt);
             _remember(0, platAmt);
-            _mint(cfg.pair, platAmt);
-            specifiedDelta = _asInt128(platAmt);
+            uint256 zroTaken = _accrueZro(id, cfg, specified, true);
+            _mint(cfg.pair, platAmt + zroTaken);
+            specifiedDelta = _asInt128(platAmt + zroTaken);
         }
 
         return (IHooks.beforeSwap.selector, toBeforeSwapDelta(specifiedDelta, 0), 0);
@@ -519,6 +545,161 @@ contract LaunchHook is IHooks, IUnlockCallback {
         _closeMove();
     }
 
+    function setZroAdmin(address owner_, address timelock_) external {
+        if (msg.sender != initializer || zroOwner != address(0)) revert NotInitializer();
+        if (owner_ == address(0) || timelock_ == address(0)) revert NotZroAdmin();
+        zroOwner = owner_;
+        zroTimelock = timelock_;
+    }
+
+    function setZroSwapper(address next) external {
+        if (msg.sender != initializer || zroSwapper != address(0) || next == address(0)) revert NotInitializer();
+        zroSwapper = next;
+    }
+
+    /// @notice Creator, owner, or timelock. The rate has to be non-zero and cannot exceed 9%.
+    function setCreatorTax(PoolId id, uint16 bps) external {
+        if (config[id].launchTime == 0) revert UnknownPool();
+        address recipient = config[id].feeRecipient;
+        if (msg.sender != recipient && !_zroAdmin(msg.sender)) revert NotZroAdmin();
+        _setCreatorTax(id, bps);
+    }
+
+    function setCreatorTaxFromLauncher(PoolId id, uint16 bps) external {
+        if (msg.sender != launcher) revert NotLauncher();
+        _setCreatorTax(id, bps);
+    }
+
+    /// @notice ON_TOP is 1. FROM_CREATOR_TAX is 0. Only the owner or the timelock.
+    function setZroFeeMode(uint8 mode) external {
+        if (!_zroAdmin(msg.sender) || mode > ZroFeeMath.ON_TOP) revert NotZroAdmin();
+        zroFeeMode = mode;
+        emit ZroFeeModeSet(mode, protocolFeeBps, msg.sender);
+    }
+
+    function setProtocolFeeBps(uint16 bps) external {
+        if (!_zroAdmin(msg.sender) || bps > ZroFeeMath.MAX_PROTOCOL_FEE_BPS) revert TaxBound();
+        protocolFeeBps = bps;
+        emit ZroFeeModeSet(zroFeeMode, bps, msg.sender);
+    }
+
+    function zroTax(PoolId id)
+        external
+        view
+        returns (bool enabled, uint16 creatorBps, uint16 protocolBps, uint8 mode, uint16 effectiveBps)
+    {
+        enabled = zroTaxSet[id];
+        creatorBps = creatorTaxBps[id];
+        protocolBps = protocolFeeBps;
+        mode = zroFeeMode;
+        effectiveBps = enabled ? ZroFeeMath.effective(creatorBps, protocolBps, mode) : 0;
+    }
+
+    function debitZroHolder(PoolId id, uint256 amount, address to) external {
+        if (msg.sender != zroSwapper) revert NotDistributor();
+        _debitZro(id, amount, to, true);
+    }
+
+    function debitZroProtocol(PoolId id, uint256 amount, address to) external {
+        if (msg.sender != zroSwapper) revert NotDistributor();
+        _debitZro(id, amount, to, false);
+    }
+
+    function _setCreatorTax(PoolId id, uint16 bps) internal {
+        if (config[id].launchTime == 0) revert UnknownPool();
+        if (bps == 0) revert CreatorTaxZero();
+        if (bps > ZroFeeMath.MAX_CREATOR_TAX_BPS) revert TaxBound();
+        creatorTaxBps[id] = bps;
+        zroTaxSet[id] = true;
+        emit CreatorTaxSet(id, bps, ZroFeeMath.effective(bps, protocolFeeBps, zroFeeMode), zroFeeMode);
+    }
+
+    function _zroAdmin(address account) internal view returns (bool) {
+        if (zroOwner != address(0) && account == zroOwner) return true;
+        address tl =
+            zroTimelock != address(0) ? zroTimelock : address(IHasRoles(kickbackDistributor).roles().timelock());
+        return account == tl;
+    }
+
+    /// @dev Pair-token ZRO tax. Zero when the pool has not opted in, so existing swaps are unchanged.
+    function _accrueZro(PoolId id, CoinConfig memory cfg, uint256 base, bool grossUp) internal returns (uint256 taken) {
+        if (!zroTaxSet[id] || base == 0) return 0;
+        uint256 holderAmt;
+        uint256 protocolAmt;
+        if (grossUp) {
+            (holderAmt, protocolAmt) = ZroFeeMath.splitExactOut(base, creatorTaxBps[id], protocolFeeBps, zroFeeMode);
+        } else {
+            (holderAmt, protocolAmt) = ZroFeeMath.splitExactIn(base, creatorTaxBps[id], protocolFeeBps, zroFeeMode);
+        }
+        taken = holderAmt + protocolAmt;
+        if (taken == 0) return 0;
+        uint64 epoch = uint64(block.timestamp / ZroFeeMath.ROUND_SECONDS);
+        if (holderAmt > 0) {
+            zroHolderEpoch[id][epoch] = _asUint128(uint256(zroHolderEpoch[id][epoch]) + holderAmt);
+            zroHolderPot[id] = _asUint128(uint256(zroHolderPot[id]) + holderAmt);
+        }
+        if (protocolAmt > 0) {
+            zroProtocolEpoch[id][epoch] = _asUint128(uint256(zroProtocolEpoch[id][epoch]) + protocolAmt);
+            zroProtocolPot[id] = _asUint128(uint256(zroProtocolPot[id]) + protocolAmt);
+        }
+        _credit(cfg.pair, taken);
+        emit ZroTaxTaken(id, holderAmt, protocolAmt);
+    }
+
+    /// @notice Keeper harvest of at most 8 closed hours. Zeros those hour buckets and pays the pair
+    ///         token out: the holder share to the swapper, the protocol share to `protocolTo`.
+    function debitZroEpochs(PoolId id, uint64[] calldata epochs, address protocolTo)
+        external
+        returns (uint256 holderAmt, uint256 protocolAmt)
+    {
+        if (msg.sender != zroSwapper) revert NotDistributor();
+        uint256 n = epochs.length;
+        if (n == 0 || n > ZroFeeMath.MAX_HARVEST_ROUNDS) revert Batch();
+        uint64 prev = 0;
+        for (uint256 i; i < n; ++i) {
+            uint64 epoch = epochs[i];
+            if (i > 0 && epoch <= prev) revert Batch();
+            prev = epoch;
+            uint256 h = zroHolderEpoch[id][epoch];
+            uint256 p = zroProtocolEpoch[id][epoch];
+            if (h > 0) {
+                zroHolderEpoch[id][epoch] = 0;
+                holderAmt += h;
+            }
+            if (p > 0) {
+                zroProtocolEpoch[id][epoch] = 0;
+                protocolAmt += p;
+            }
+        }
+        if (holderAmt == 0 && protocolAmt == 0) return (0, 0);
+        if (protocolAmt > 0 && protocolTo == address(0)) revert Amount();
+        _openMove();
+        Currency c = config[id].pair;
+        if (holderAmt > 0) {
+            zroHolderPot[id] -= uint128(holderAmt);
+            _debitAccount(c, holderAmt);
+        }
+        if (protocolAmt > 0) {
+            zroProtocolPot[id] -= uint128(protocolAmt);
+            _debitAccount(c, protocolAmt);
+        }
+        if (holderAmt > 0) _payout(c, msg.sender, holderAmt);
+        if (protocolAmt > 0) _payout(c, protocolTo, protocolAmt);
+        _closeMove();
+    }
+
+    function _debitZro(PoolId id, uint256 amount, address to, bool holder) internal {
+        _openMove();
+        uint128 pot = holder ? zroHolderPot[id] : zroProtocolPot[id];
+        if (amount == 0 || amount > pot) revert Amount();
+        if (holder) zroHolderPot[id] = pot - uint128(amount);
+        else zroProtocolPot[id] = pot - uint128(amount);
+        Currency c = config[id].pair;
+        _debitAccount(c, amount);
+        _payout(c, to, amount);
+        _closeMove();
+    }
+
     /// @notice Stray ERC-20 sent to this hook. Pots are ERC-6909 claims on the PoolManager, not this balance.
     ///         A rebase of tokens inside the PoolManager is not visible here and is not recoverable.
     function recoverToken(address token, address to) external {
@@ -592,15 +773,16 @@ contract LaunchHook is IHooks, IUnlockCallback {
             uint256 platAmt = FeeMath.feeDown(net, C.PLATFORM_FEE);
             _routePlatform(cfg, platAmt);
             _remember(0, platAmt);
-            _mint(unspecified, platAmt);
-            return _asInt128(platAmt);
+            uint256 zroTaken = _accrueZro(id, cfg, net, false);
+            _mint(unspecified, platAmt + zroTaken);
+            return _asInt128(platAmt + zroTaken);
         }
         if (!exactIn && buy) {
             (uint256 hookAmt, uint256 platAmt) = FeeMath.splitGross(net, pips);
             _routeHook(id, cfg, true, hookAmt, pips);
             _routePlatform(cfg, platAmt);
             _remember(hookAmt, platAmt);
-            uint256 total = hookAmt + platAmt;
+            uint256 total = hookAmt + platAmt + _accrueZro(id, cfg, net, false);
             _mint(unspecified, total);
             return _asInt128(total);
         }

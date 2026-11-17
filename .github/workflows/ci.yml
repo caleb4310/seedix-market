@@ -15,6 +15,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: LayerZero OFT packages
+        working-directory: contracts
+        run: npm ci
       - uses: foundry-rs/foundry-toolchain@v1
       - name: Format
         run: forge fmt --check
@@ -42,6 +48,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: LayerZero OFT packages
+        working-directory: contracts
+        run: npm ci
       - uses: foundry-rs/foundry-toolchain@v1
       - name: Install Slither
         run: pipx install slither-analyzer

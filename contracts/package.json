@@ -1,0 +1,12 @@
+{
+  "name": "seedix-contracts",
+  "private": true,
+  "description": "Pinned LayerZero OFT sources for Foundry. Not a workspace package.",
+  "dependencies": {
+    "@layerzerolabs/lz-evm-messagelib-v2": "3.0.148",
+    "@layerzerolabs/lz-evm-protocol-v2": "3.0.148",
+    "@layerzerolabs/oapp-evm": "0.4.1",
+    "@layerzerolabs/oft-evm": "4.0.1",
+    "solidity-bytes-utils": "0.8.3"
+  }
+}

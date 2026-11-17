@@ -66,6 +66,14 @@ export async function ingest(store: Store, chainId: number, logs: RawLog[], read
   for (const log of ordered) {
     const time = await readers.blockTime(log.blockNumber);
     const base = { chainId, txHash: log.transactionHash, logIndex: log.logIndex, blockTime: time };
+    if (log.eventName === "CreatorTaxSet") {
+      await store.setZroTax(chainId, asHex(log.args.poolId), asNumber(log.args.creatorTaxBps), true);
+      continue;
+    }
+    if (log.eventName === "ZroFeeModeSet") {
+      await store.setZroPolicy(chainId, asNumber(log.args.mode), asNumber(log.args.protocolFeeBps));
+      continue;
+    }
     if (log.eventName === "CoinLaunched") {
       const poolId = asHex(log.args.poolId);
       const coin = asHex(log.args.coin);

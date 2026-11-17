@@ -24,6 +24,7 @@ export class MemoryStore implements Store {
   }
 
   readonly pairs = new Map<string, { status: number; category: number }>();
+  readonly policy = new Map<number, { feeMode: number; protocolFeeBps: number }>();
 
   async setBacking(): Promise<void> {}
 
@@ -50,6 +51,16 @@ export class MemoryStore implements Store {
       xUrl: socials.xUrl,
       telegram: socials.telegram,
     });
+  }
+
+  async setZroTax(chainId: number, poolId: Hex, creatorTaxBps: number, enabled: boolean): Promise<void> {
+    const coin = this.coins.get(lower(poolId));
+    if (!coin || coin.chainId !== chainId) return;
+    this.coins.set(lower(poolId), { ...coin, creatorTaxBps, zroEnabled: enabled });
+  }
+
+  async setZroPolicy(chainId: number, feeMode: number, protocolFeeBps: number): Promise<void> {
+    this.policy.set(chainId, { feeMode, protocolFeeBps });
   }
 
   async upsertCoin(row: CoinRow): Promise<void> {

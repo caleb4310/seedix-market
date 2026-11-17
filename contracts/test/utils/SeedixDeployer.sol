@@ -83,4 +83,16 @@ contract SeedixDeployer {
         d.locker.wire(d.hook, address(d.launcher), address(d.executor));
         d.distributor.wire(d.hook, address(p.poolManager), address(d.locker), address(d.vault), address(d.executor));
     }
+
+    function setZroAdmin(LaunchHook hook, address owner_, address timelock_) external {
+        hook.setZroAdmin(owner_, timelock_);
+    }
+
+    function setZroSwapper(LaunchHook hook, address swapper) external {
+        hook.setZroSwapper(swapper);
+    }
+
+    function setWeightTracker(Launcher launcher, address tracker) external {
+        launcher.setZroWeightTracker(tracker);
+    }
 }

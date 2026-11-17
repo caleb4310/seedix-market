@@ -69,3 +69,26 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - unused-return BuybackExecutor.convertAccrued | `pots` and `config` are tuples. Conversion needs the mode pot, the mode, and the fee recipient. The other fields are a different budget. `getSlot0` contributes the tick to the route TWAP. The sqrt price and the fee fields are not the band check.
 - unused-return BuybackExecutor.pokeRoute | `onSwap` reports whether it wrote a ring slot. The cumulative is updated either way, and the caller does not branch on the write.
 - unused-return BuybackExecutor._storeRoute | `getSlot0` contributes the tick that starts the external oracle. The sqrt price and the fee fields are not stored.
+- incorrect-equality LaunchHook.setCreatorTax | `launchTime == 0` means this pool id was never configured, so there is no creator tax to set.
+- incorrect-equality LaunchHook._setCreatorTax | The same unset-pool sentinel. A tax write is refused until the pool has been launched.
+- incorrect-equality ZroTaxSwapper._band | A zero TWAP quote means the price math produced no output, so there is no floor to compare with the keeper's minOut.
+- reentrancy-no-eth LaunchHook.beforeSwap | The PoolManager is the caller. Pot updates are written before the single ERC-6909 mint back into that PoolManager. A user token cannot start a second swap while the hook lock is held.
+- reentrancy-no-eth LaunchHook._takeUnspecified | Same hook callback. The ZRO tax is accounted before the one mint of the unspecified delta. The PoolManager cannot be replaced by an outside caller.
+- reentrancy-no-eth LaunchToken._notify | The notify lock is set before the tracker call and cleared after it. A tracker callback that reenters transfer, mint, or burn reverts. The only write after the call clears that lock.
+- reentrancy-no-eth LaunchToken.initialize | Both mints notify the tracker under the same lock. A callback cannot move balances until initialize has finished, and a revert rolls the partial mint back with the transaction.
+- uninitialized-local ZroWeightTracker._at | `lo` starts at zero, which is the low end of the binary search. Slither drops the explicit zero in the IR.
+- uninitialized-local ZroWeightTracker._push | `integral` starts at zero for the first checkpoint. Later checkpoints add the previous integral before the new point is stored.
+- unused-return ZroTaxSwapper.registerPool | `getSlot0` is read for a non-zero sqrt price and the tick that starts the oracle. The two fee fields are not the existence check.
+- unused-return ZroTaxSwapper._settle | `settle` returns the amount this contract just transferred. The swap delta already fixed that amount.
+- unused-return ZroTaxSwapper.poke | `getSlot0` contributes the live tick. `onSwap` reports whether it wrote a ring slot. The cumulative is updated either way.
+- unused-return ZroTaxSwapper._guard | `getSlot0` contributes the spot tick to the TWAP. `onSwap` accrues that tick. The sqrt price and the fee fields are not the band check.
+- unused-return ZroTaxSwapper._twap | The same spot tick is the live tail of the quote. The other `getSlot0` fields are not inputs to `OracleLib.consult`.
+- unused-return ZroTaxSwapper._priceLimit | `getSlot0` contributes the current sqrt price so the limit is on the tradable side of it. The tick and the fee fields are not that comparison.
+- unused-return ZroTaxSwapper.harvest | `config` is read for the pair currency, which must be WETH. The coin, the mode, and the recipient are not the swapped asset.
+- unused-return ZroRewardVault.fund | `config` is read for the coin whose time-weight funds this round. The pair and the fee fields are not the weight.
+- unused-return ZroRewardVault._account | The claim reads the same coin from `config` so the weight matches the funded round. The other fields are not a payout amount.
+- incorrect-equality ZroTaxSwapper._harvestSpan | `current == 0` is the first unix hour, where the previous hour does not exist. `from == 0` means this pool has not harvested yet, so the cursor starts at the launch hour.
+- incorrect-equality ZroTaxSwapper.harvest | `holderIn == 0` together with an empty protocol span is a batch with no tax, so the cursor advances and nothing is swapped. `parts[i] == 0` skips a fund of a zero ZRO share. Neither compares a token balance.
+- incorrect-equality ZroTaxSwapper._guard | `amountIn == 0` refuses a TWAP quote of an empty holder batch. It is not a balance comparison.
+- incorrect-equality ZroTaxSwapper._rawOut | The same empty input returns no output. The equality skips the quote math.
+- unused-return ZroTaxSwapper._harvestSpan | `config` is read for `launchTime`, which is the first hour a harvest may settle. The coin, the pair, and the fee fields are not the cursor.

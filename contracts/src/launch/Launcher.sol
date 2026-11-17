@@ -44,6 +44,7 @@ contract Launcher {
     error RouteNotReady();
     error FeeOnTransfer();
     error Reentered();
+    error CreatorTaxZero();
 
     uint8 public constant STATUS_UNKNOWN = 0;
     uint8 public constant STATUS_VETTED = 1;
@@ -114,6 +115,8 @@ contract Launcher {
     address public immutable initializer;
 
     bool public launchesPaused;
+    /// @notice Optional. Coins launched after this is set report holding time to the ZRO tracker.
+    address public zroWeightTracker;
     bool public platformLaunched;
     bool public categoriesBootstrapped;
     mapping(PoolId => address) public creatorOf;
@@ -259,6 +262,22 @@ contract Launcher {
             categoryOf[tokens[i]] = categories[i];
             emit PairClassified(tokens[i], STATUS_VETTED, categories[i]);
         }
+    }
+
+    function setZroWeightTracker(address next) external {
+        if (msg.sender != initializer || zroWeightTracker != address(0) || next == address(0)) revert NotInitializer();
+        zroWeightTracker = next;
+    }
+
+    /// @notice Same launch, then the creator tax is enabled. The rate has to be above zero.
+    ///         ON_TOP adds the 1% Seedix fee on top of that rate.
+    function launchWithZroTax(LaunchParams calldata params, uint16 creatorTaxBps)
+        external
+        returns (address coin, PoolId id)
+    {
+        if (creatorTaxBps == 0) revert CreatorTaxZero();
+        (coin, id) = _launch(params, false);
+        hook.setCreatorTaxFromLauncher(id, creatorTaxBps);
     }
 
     function setMaxLaunchesPerHour(uint256 next) external {

@@ -104,6 +104,11 @@ describe("api", () => {
     assert.equal(one.status, 200);
     assert.equal((one.json as { symbol: string }).symbol, "EX");
     assert.equal((one.json as { mode: string }).mode, "kickback");
+    const zro = (one.json as { zroTax: { enabled: boolean; feeMode: string; effectiveTaxBps: number; protocolFeeBps: number } }).zroTax;
+    assert.equal(zro.enabled, false);
+    assert.equal(zro.feeMode, "on_top");
+    assert.equal(zro.protocolFeeBps, 100);
+    assert.equal(zro.effectiveTaxBps, 0);
     const chart = await handleRequest(db, "GET", `/api/coins/0x${pool}/chart`, new URLSearchParams("bucket=5m"));
     assert.equal(chart.status, 200);
     const body = chart.json as { candles: { volume: string }[] };
@@ -126,6 +131,46 @@ describe("api", () => {
     assert.ok(all);
     assert.match(all ?? "", /coin_is_token0 AND NOT s\.zero_for_one/);
     assert.doesNotMatch(all ?? "", /coin_burned/);
+  });
+
+  it("shows creator tax plus the 1% Seedix fee when ZRO rewards are on", async () => {
+    const db = new FakeDb();
+    db.query = async <T>(sql: string) => {
+      db.calls.push(sql);
+      if (sql.includes("FROM coins c") && sql.includes("pool_id = $2")) {
+        return {
+          rows: [
+            {
+              pool_id: pool,
+              coin: "22".repeat(20),
+              pair: "33".repeat(20),
+              name: "Example",
+              symbol: "EX",
+              pair_symbol: "WHYPE",
+              mode: 1,
+              is_platform: false,
+              fee_recipient: "44".repeat(20),
+              team_wallet: null,
+              launch_time: "1700000000",
+              price: "4",
+              holders: "1",
+              start_mcap: "10",
+              creator_tax_bps: 500,
+              zro_enabled: true,
+              zro_fee_mode: 1,
+              protocol_fee_bps: 100,
+            },
+          ] as T[],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    };
+    const res = await handleRequest(db, "GET", `/coins/0x${pool}`, new URLSearchParams());
+    assert.equal(res.status, 200);
+    const tax = (res.json as { zroTax: { effectiveTaxBps: number; feeMode: string } }).zroTax;
+    assert.equal(tax.feeMode, "on_top");
+    assert.equal(tax.effectiveTaxBps, 600);
   });
 
   it("filters and sorts the coin list in the query", async () => {

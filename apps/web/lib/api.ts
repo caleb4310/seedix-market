@@ -1,3 +1,4 @@
+import { reportedZroTax, zroTaxLabel, type ZroTax } from "@seedix/shared";
 import { marketCapFromRaw, marketCapUsd } from "./amounts";
 import { logoSrc } from "./logoUrl";
 import type { Coin, Mode } from "./coin";
@@ -34,6 +35,7 @@ export type ApiCoin = {
   pairDecimals?: number;
   coinIsToken0?: boolean;
   pairUsd?: number | null;
+  zroTax?: ZroTax;
 };
 
 export type Candle = { t: number; open: string; high: string; low: string; close: string; volume: string };
@@ -128,6 +130,8 @@ export function coinFromApi(row: ApiCoin, hook?: `0x${string}`): Coin {
     pairAddress: row.pair as `0x${string}`,
     hooks: hook,
     poolId: row.poolId as `0x${string}`,
+    zroTaxBps: reportedZroTax(row.zroTax ?? {}).effectiveTaxBps,
+    zroTaxLabel: zroTaxLabel(reportedZroTax(row.zroTax ?? {})),
   };
 }
 

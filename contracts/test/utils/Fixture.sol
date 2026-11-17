@@ -29,6 +29,7 @@ contract Fixture is Test {
     address internal admin = address(0xA11CE);
     address internal publisher = address(0xB0B);
     address internal creator = address(0xC0FFEE);
+    SeedixDeployer internal deployer;
 
     function setUp() public virtual {
         pm = new PoolManager(address(0));
@@ -36,20 +37,20 @@ contract Fixture is Test {
         whype = new MockXStock("Wrapped HYPE", "WHYPE", 18, address(this));
         address[] memory pairs = new address[](1);
         pairs[0] = address(whype);
-        d = new SeedixDeployer()
-            .deploy(
-                SeedixDeployer.Params({
-                    admin: admin,
-                    poolManager: pm,
-                    timelockDelay: 48 hours,
-                    feeWallet: C.FEE_WALLET,
-                    publisher: publisher,
-                    whype: Currency.wrap(address(whype)),
-                    roundCap: 1_000_000 ether,
-                    hourlyCap: 10_000_000 ether,
-                    pairs: pairs
-                })
-            );
+        deployer = new SeedixDeployer();
+        d = deployer.deploy(
+            SeedixDeployer.Params({
+                admin: admin,
+                poolManager: pm,
+                timelockDelay: 48 hours,
+                feeWallet: C.FEE_WALLET,
+                publisher: publisher,
+                whype: Currency.wrap(address(whype)),
+                roundCap: 1_000_000 ether,
+                hourlyCap: 10_000_000 ether,
+                pairs: pairs
+            })
+        );
         whype.approve(address(router), type(uint256).max);
         vm.startPrank(admin);
         d.executor.setKeeper(address(this));

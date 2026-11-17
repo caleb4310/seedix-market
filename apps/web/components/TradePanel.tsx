@@ -261,6 +261,12 @@ export function TradePanel({ coin, initialSide = "buy" }: { coin: Coin; initialS
           <dt>Platform 1%</dt>
           <dd>{side === "sell" ? "From the output" : `${formatAmount(gross * 0.01)} ${spendName}`}</dd>
         </div>
+        {coin.zroTaxBps ? (
+          <div>
+            <dt>{coin.zroTaxLabel ?? "ZRO tax"}</dt>
+            <dd>{formatAmount(gross * (coin.zroTaxBps / 10_000))} {spendName}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Hook {pct(hook)}</dt>
           <dd>

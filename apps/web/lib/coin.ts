@@ -34,6 +34,8 @@ export type Coin = {
   pairLogo?: string | null;
   pairTest?: boolean;
   mcapUsd?: number | null;
+  zroTaxBps?: number;
+  zroTaxLabel?: string;
 };
 
 export function modeLabel(mode: Mode): string {

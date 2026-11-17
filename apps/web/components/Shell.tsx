@@ -64,7 +64,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <main className="main">{children}</main>
       <footer className="footer">
         <span>Testnet only. Gas is HYPE. USD marks use the CoinGecko hyperliquid price when it is available.</span>
-        <span>Fees: 1% platform, hook 80% to 1%, LP 0.1%.</span>
+        <span>Fees: 1% platform, hook 80% to 1%, LP 0.1%. ZRO holder tax, when on, is the creator rate plus 1% Seedix (10% cap).</span>
       </footer>
     </div>
   );
