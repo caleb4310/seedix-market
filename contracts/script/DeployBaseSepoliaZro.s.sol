@@ -93,8 +93,14 @@ contract DeployBaseSepoliaZro is ZroChain {
         RouteSeeder seeder = new RouteSeeder();
         IERC20(address(zro)).approve(address(seeder), zroAmount);
         IERC20(chain.weth).approve(address(seeder), wethAmount);
+        // Pre-fund the seeder so `seedWide` can measure WETH spent (it only counts
+        // the drop in its own balance, not transferFrom from the payer).
+        IERC20(address(zro)).transfer(address(seeder), zroAmount);
+        IERC20(chain.weth).transfer(address(seeder), wethAmount);
+        int24 widthSteps = int24(int256(vm.envOr("SEED_WIDTH_STEPS", uint256(1))));
+        if (widthSteps < 1) widthSteps = 1;
         (PoolKey memory key, uint256 spent) =
-            seeder.seedWide(IPoolManager(chain.poolManager), chain.weth, address(zro), wethAmount, 20);
+            seeder.seedWide(IPoolManager(chain.poolManager), chain.weth, address(zro), wethAmount, widthSteps);
         if (spent == 0) revert SeedShort();
 
         vm.stopBroadcast();
