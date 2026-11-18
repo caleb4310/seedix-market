@@ -97,7 +97,9 @@ Pinned npm packages, installed from `contracts/` so Foundry can compile them: `o
 
 Do not broadcast to a public RPC with a key you use anywhere else. Do not merge this into a mainnet deploy. The Elysium script still refuses chain 84532.
 
-Right after merge, one script deploys the test owner, the timelock, MockZRO, and the ZRO/WETH pool. If the Safe factory in the chain file has code, the owner is a 1-of-1 Safe whose only signer is the deployer. Otherwise it is `TestOwner`, which is labeled TEST and is not a multisig. The timelock delay defaults to 60 seconds. The deployer is the proposer and the executor. The admin of the timelock is the owner contract. The same owner is the ZRO delegate.
+`Deploy.s.sol` still refuses chain 84532. `DeployBaseSepoliaSeedix.s.sol` deploys the launch stack on the PoolManager and WETH from the chain file and leaves the deployer as the hook initializer. Then `DeployBaseSepoliaZro.s.sol` deploys the test owner, the timelock, MockZRO, and the ZRO/WETH pool. If the Safe factory in the chain file has code, the owner is a 1-of-1 Safe whose only signer is the deployer. Otherwise it is `TestOwner`, which is labeled TEST and is not a multisig. The timelock delay defaults to 60 seconds. The deployer is the proposer and the executor. The admin of the timelock is the owner contract. The same owner is the ZRO delegate.
+
+The live testnet addresses, transaction hashes, and the ZRO/WETH pool id are in `deployments/base-sepolia.json`.
 
 From `contracts/`, simulation first. Add `--broadcast` only for a throwaway testnet key:
 
@@ -111,15 +113,16 @@ HOOK_ADDRESS=0xNewHook \
 LAUNCHER_ADDRESS=0xNewLauncher \
 LOCKER_ADDRESS=0xNewLocker \
 KEEPER=0xKeeper \
+SEED_WIDTH_STEPS=1 \
 forge script script/DeployBaseSepoliaZro.s.sol --rpc-url "$BASE_SEPOLIA_RPC_URL"
 ```
 
-`HOOK_ADDRESS` is optional for this script. Without it, MockZRO and the pool are deployed and the vault waits until a new hook exists. The broadcaster needs enough ETH to wrap `SEED_WETH_AMOUNT`. The script logs `owner`, `timelock`, and `zro`. It does not log the key. `safe 1` means a Safe was created. `safe 0` means `TestOwner`.
+`HOOK_ADDRESS` is optional for this script. Without it, MockZRO and the pool are deployed and the vault waits until a new hook exists. The broadcaster needs enough ETH to wrap `SEED_WETH_AMOUNT`. The script transfers that WETH and the ZRO into `RouteSeeder` before `seedWide`, because the seeder only counts WETH that leaves its own balance. `SEED_WIDTH_STEPS` defaults to 1. The script logs `owner`, `timelock`, and `zro`. It does not log the key. `safe 1` means a Safe was created. `safe 0` means `TestOwner`. `SafeRegisterZroPool.s.sol` then registers the pool from the 1-of-1 Safe. `SmokeLaunch`, `SmokeSwap`, and `SmokeHarvest` are the testnet checks.
 
 The separate scripts are the same steps with addresses you already have:
 
 1. Confirm `contracts/config/chains/84532.json` still matches the docs above, including the Safe v1.4.1 factory from https://github.com/safe-global/safe-deployments/tree/main/src/assets/v1.4.1.
-2. Deploy a fresh Seedix hook with the new bytecode. The deployer key has to remain the hook initializer until the wiring calls below. Do not reuse the 99801 hook.
+2. Deploy the launch stack with `forge script script/DeployBaseSepoliaSeedix.s.sol`. The deployer key has to remain the hook initializer until the wiring calls below. Do not reuse the 99801 hook.
 3. From `contracts/`, simulation first (no `--broadcast`):
 
 ```bash
@@ -143,10 +146,11 @@ PRIVATE_KEY=0xDeployerSimulationKey \
 ZRO_TOKEN=0xMockZro \
 SEED_ZRO_AMOUNT=1000000000000000000000 \
 SEED_WETH_AMOUNT=1000000000000000000000 \
+SEED_WIDTH_STEPS=1 \
 forge script script/SeedZroWethPool.s.sol --rpc-url "$BASE_SEPOLIA_RPC_URL"
 ```
 
-The broadcaster must hold both tokens. The pool is hookless ZRO/WETH on the configured PoolManager.
+The broadcaster must hold both tokens. The script transfers them to the seeder before `seedWide`. The pool is hookless ZRO/WETH on the configured PoolManager.
 
 5. The owner registers that pool on `ZroTaxSwapper.registerPool` and sets the keeper. `poke` for 30 minutes before the first harvest, then `harvest(poolId, minOut)` once an hour.
 6. A creator turns the tax on with `launchWithZroTax` or `setCreatorTax` and a rate above zero. The UI shows creator + 1% and refuses a total above 10%. An empty form field stays on the plain `launch` call.
@@ -172,7 +176,8 @@ Environment variables for that deploy:
 | `LZ_EID` | no | Overrides 40245 |
 | `ZRO_TOKEN` | seed script | MockZRO from step 3 |
 | `SEED_ZRO_AMOUNT` | seed script | ZRO wei to approve |
-| `SEED_WETH_AMOUNT` | seed script | WETH wei passed to the seeder |
+| `SEED_WETH_AMOUNT` | seed script | WETH wei transferred to the seeder before `seedWide` |
+| `SEED_WIDTH_STEPS` | no | Tick spacings each side of zero. Defaults to 1 |
 | `BASE_SEPOLIA_RPC_URL` | script invocation | Public Base Sepolia RPC. No key |
 
 ## Phase 2
