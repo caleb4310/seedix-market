@@ -191,8 +191,18 @@ contract ZroRewardVault {
         emit Claimed(poolId, epoch, msg.sender, amount);
     }
 
+    /// @notice LayerZero native fee for sending `amount` of ZRO to `to` on `dstEid`.
+    function quoteRemote(address to, uint256 amount, uint32 dstEid, bytes calldata options)
+        external
+        view
+        returns (uint256 nativeFee)
+    {
+        if (payoutModule == address(0)) revert NoModule();
+        nativeFee = IZroPayout(payoutModule).quote(address(zro), to, amount, dstEid, options);
+    }
+
     /// @notice Phase 2. Same accounting as `claim`. The module sends ZRO through the OFT.
-    ///         `msg.value` is the LayerZero fee and is paid by the holder.
+    ///         `msg.value` covers the LayerZero fee. The module refunds anything above the quote.
     function claimRemote(PoolId poolId, uint64 epoch, uint32 dstEid, bytes calldata options)
         external
         payable

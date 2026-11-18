@@ -32,12 +32,15 @@ contract ZroWeightTracker {
     }
 
     address public owner;
+    /// @notice May exclude addresses, which is how graduation keeps a locked OFT adapter out of the weight.
+    address public excluder;
     mapping(address account => bool) public excluded;
     mapping(address token => mapping(address account => Point[])) internal _points;
     mapping(address token => Point[]) internal _supplyPoints;
     mapping(address token => uint256) public eligibleSupply;
 
     event ExcludedSet(address indexed account, bool excluded);
+    event ExcluderSet(address indexed previous, address indexed next);
     event OwnerSet(address indexed previous, address indexed next);
 
     constructor(address owner_, address hook_, address router_, address poolManager_) {
@@ -55,9 +58,16 @@ contract ZroWeightTracker {
         owner = next;
     }
 
+    /// @notice One extra caller, set by the owner, that may exclude addresses. Graduation uses it.
+    function setExcluder(address next) external {
+        if (msg.sender != owner) revert NotOwner();
+        emit ExcluderSet(excluder, next);
+        excluder = next;
+    }
+
     /// @notice The zero address stays excluded. Other protocol contracts can be added by the owner.
     function setExcluded(address account, bool isExcluded) external {
-        if (msg.sender != owner) revert NotOwner();
+        if (msg.sender != owner && msg.sender != excluder) revert NotOwner();
         if (account == address(0) && !isExcluded) revert ZeroAddress();
         _setExcluded(account, isExcluded);
     }

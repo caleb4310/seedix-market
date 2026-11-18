@@ -92,3 +92,6 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - incorrect-equality ZroTaxSwapper._guard | `amountIn == 0` refuses a TWAP quote of an empty holder batch. It is not a balance comparison.
 - incorrect-equality ZroTaxSwapper._rawOut | The same empty input returns no output. The equality skips the quote math.
 - unused-return ZroTaxSwapper._harvestSpan | `config` is read for `launchTime`, which is the first hour a harvest may settle. The coin, the pair, and the fee fields are not the cursor.
+- reentrancy-eth ZroPayout.payout | `_locked` is set before the OFT send and the refund. A reentrant `payout` hits that lock. The only write after the calls clears it. The vault has already marked the claim and is non-reentrant, so a second claim in the refund cannot pay twice.
+- reentrancy-no-eth ZroGraduation.graduate | `_locked` is set before the adapter is created. A callback from the endpoint constructor cannot start a second graduation. `adapterOf` is written with the adapter that was just created, before that adapter is excluded.
+- unused-return ZroPayout.payout | `send` returns the LayerZero messaging receipt and the OFT receipt. The payout uses the OFT receipt to return dust. The messaging guid is not an input to the vault's claim accounting.

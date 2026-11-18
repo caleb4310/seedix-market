@@ -182,11 +182,15 @@ Environment variables for that deploy:
 
 ## Phase 2
 
-Claim on any chain. The holder calls `claimRemote(poolId, epoch, dstEid, options)` and pays the LayerZero fee in `msg.value`. The owner sets `payoutModule` to a contract that calls `OFT.send` on MockZRO (or real ZRO later). The vault already approves the module for the claimed amount and clears the allowance after. No vault redeploy. Peers, DVNs, and gas options are configured on the OFT by the delegate, not on the vault.
+A holder calls `quoteRemote(to, amount, dstEid, options)` and then `claimRemote(poolId, epoch, dstEid, options)` with at least that native fee in `msg.value`. `ZroPayout` is the module. It pulls the claimed ZRO, calls `OFT.send`, and refunds `msg.value` above the quote to the holder. The OFT names the same holder as the endpoint refund address. The vault marks the claim before the send. A revert, including a short fee, rolls that mark back, so the claim cannot be taken twice and a failed send does not burn it. The vault is non-reentrant, and the module refuses a reentrant `payout`.
+
+`LaunchToken` stays a clone. A clone cannot run an OFT constructor, so graduation deploys `ZroCoinAdapter`, which locks the coin and bridges that balance. `ZroGraduation` takes the LayerZero endpoint as a constructor argument from chain config. It does not set peers. The Safe (`owner`) or the timelock calls `setPeer` and `setEnforcedOptions` on the adapter. Destination ids are arguments, not literals. If the graduation contract is the tracker's `excluder`, the adapter is excluded so locked coins do not earn weight.
+
+The tax still applies only on Seedix's own v4 pools. DVN selection stays an endpoint config made by the delegate. It is not a value in these contracts. The delegate is the Safe.
 
 ## Phase 3
 
-A graduated token becomes an OFT. The tax stays only on Seedix's own v4 pools (the hook never runs on other pools). The send path uses at least two DVNs, including one that is not run by LayerZero Labs. Owner and delegate are the same multisig. That wiring is on the OFT and the endpoint, using the delegate already stored on `MockZRO` and on the vault.
+The send path should require at least two DVNs, including one that is not run by LayerZero Labs. That configuration is on the endpoint, by the same Safe delegate. The adapter and the payout module do not need a redeploy for it.
 
 ## Open questions
 
