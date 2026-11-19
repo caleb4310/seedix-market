@@ -1,4 +1,5 @@
 import { keccak256, toBytes, type Hex } from "viem";
+import { activeChain } from "@seedix/shared";
 import type { Round } from "./round.ts";
 
 export type EpochState = {
@@ -55,7 +56,7 @@ export function nextStep(input: {
   carry?: bigint;
 }): Step {
   if (input.paused) return { op: "skip", reason: "paused" };
-  if (input.unpriced) return { op: "skip", reason: "reward token has no HYPE price" };
+  if (input.unpriced) return { op: "skip", reason: `reward token has no ${activeChain().nativeCurrency.symbol} price` };
   const allocated = input.round ? claimSum(input.round) : 0n;
   const open =
     input.latest && !input.latest.cancelled && input.latest.funded > 0n && input.latest.postedAt === 0n

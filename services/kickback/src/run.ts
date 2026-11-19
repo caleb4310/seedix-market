@@ -12,7 +12,7 @@ import {
   type WalletClient,
 } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
-import { capTransactionFees, elysiumTestnet, priorityFloorWei, transactionFees, type TxFees } from "@seedix/shared";
+import { activeChain, capTransactionFees, priorityFloorWei, transactionFees, type TxFees } from "@seedix/shared";
 import {
   artifactName,
   claimSum,
@@ -31,12 +31,16 @@ const REVIEW_SECONDS = 60 * 60;
 const ZERO = "0x0000000000000000000000000000000000000000";
 const DEAD = "0x000000000000000000000000000000000000dead";
 
-const chain = defineChain({
-  id: elysiumTestnet.id,
-  name: elysiumTestnet.name,
-  nativeCurrency: { ...elysiumTestnet.nativeCurrency },
-  rpcUrls: { default: { http: [...elysiumTestnet.rpcUrls] } },
-});
+function viemChain() {
+  const selected = activeChain();
+  return defineChain({
+    id: selected.id,
+    name: selected.name,
+    nativeCurrency: { ...selected.nativeCurrency },
+    rpcUrls: { default: { http: [...selected.rpcUrls] } },
+  });
+}
+const chain = viemChain();
 
 const hookAbi = parseAbi([
   "function pots(bytes32) view returns (uint128, uint128, uint128, uint128, uint128)",

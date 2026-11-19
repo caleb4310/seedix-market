@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { backingLabel } from "@/lib/backing";
+import { chainName, nativeSymbol } from "@/lib/chain";
 import type { Coin, Mode } from "@/lib/coin";
 import { apiUrl } from "@/lib/api";
 import { useBoard } from "@/lib/board";
@@ -17,7 +18,7 @@ type Kind = "all" | PairCategory;
 function money(raw: string | undefined, hypeUsd: number | null): string {
   if (!raw || !/^\d+$/.test(raw)) return "—";
   const hype = Number(BigInt(raw) / 10n ** 15n) / 1000;
-  if (!(hypeUsd != null && hypeUsd > 0)) return hype === 0 ? "0 HYPE" : `${hype.toLocaleString("en-US", { maximumFractionDigits: 4 })} HYPE`;
+  if (!(hypeUsd != null && hypeUsd > 0)) return hype === 0 ? `0 ${nativeSymbol}` : `${hype.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${nativeSymbol}`;
   return formatUsdCompact(hype * hypeUsd);
 }
 
@@ -204,7 +205,7 @@ export function CoinTable() {
         <div className="empty">
           <p className="lede">
             {kind === "preipo" && board.coins.length === 0
-              ? "No pre-IPO tokens on Elysium yet."
+              ? `No pre-IPO tokens on ${chainName} yet.`
               : board.coins.length === 0
                 ? "No coins yet. Launch the first one."
                 : "No coins in this filter."}
@@ -261,7 +262,7 @@ function WallCard({ coin, pairs, hypeUsd }: { coin: Coin; pairs: ListedPair[]; h
           {usd != null && Number.isFinite(usd) && usd > 0
             ? `${formatUsdCompact(usd)} MC`
             : coin.mcap !== undefined
-              ? `${coin.mcap.toLocaleString("en-US", { maximumFractionDigits: 0 })} HYPE`
+              ? `${coin.mcap.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${nativeSymbol}`
               : "Market cap"}
         </strong>
         <span className="wall-meta">

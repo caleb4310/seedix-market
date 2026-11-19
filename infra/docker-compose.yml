@@ -34,8 +34,25 @@ services:
       args:
         NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ${NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID:-}
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
-        NEXT_PUBLIC_RPC_URL: ${NEXT_PUBLIC_RPC_URL:-https://testnet-rpc.elysium.kinetiq.xyz}
+        NEXT_PUBLIC_CHAIN_ID: ${NEXT_PUBLIC_CHAIN_ID:-84532}
+        NEXT_PUBLIC_CHAIN_NAME: ${NEXT_PUBLIC_CHAIN_NAME:-Base Sepolia}
+        NEXT_PUBLIC_NATIVE_SYMBOL: ${NEXT_PUBLIC_NATIVE_SYMBOL:-ETH}
+        NEXT_PUBLIC_RPC_URL: ${NEXT_PUBLIC_RPC_URL:-https://base-sepolia-rpc.publicnode.com}
         NEXT_PUBLIC_RPC_URLS: ${NEXT_PUBLIC_RPC_URLS:-}
+        NEXT_PUBLIC_EXPLORER_TX_URL_TEMPLATE: ${NEXT_PUBLIC_EXPLORER_TX_URL_TEMPLATE:-https://sepolia.basescan.org/tx/{hash}}
+        NEXT_PUBLIC_ZRO_TAX_ENABLED: ${NEXT_PUBLIC_ZRO_TAX_ENABLED:-true}
+        NEXT_PUBLIC_ZRO_REMOTE_CLAIM_ENABLED: ${NEXT_PUBLIC_ZRO_REMOTE_CLAIM_ENABLED:-false}
+        NEXT_PUBLIC_PRICE_ID: ${NEXT_PUBLIC_PRICE_ID:-ethereum}
+        NEXT_PUBLIC_LAUNCHER: ${NEXT_PUBLIC_LAUNCHER:-0xb0F9D152e76D5232A13672EA531aD7BB223e81FB}
+        NEXT_PUBLIC_HOOK: ${NEXT_PUBLIC_HOOK:-0xF76b84C90c49a785322f110c66d1155bc26228cC}
+        NEXT_PUBLIC_ROUTER: ${NEXT_PUBLIC_ROUTER:-0xade24CcEb8309b22b9c74D90da93B7A3F1e06239}
+        NEXT_PUBLIC_QUOTER: ${NEXT_PUBLIC_QUOTER:-0x5e6B8B8AFA7e5CEF6C09dd2A67aBA9FB12C75623}
+        NEXT_PUBLIC_STATE_VIEW: ${NEXT_PUBLIC_STATE_VIEW:-0x571291b572ed32ce6751a2cb2486ebee8defb9b4}
+        NEXT_PUBLIC_KICKBACK: ${NEXT_PUBLIC_KICKBACK:-0xd6CfAfb4f77F7f62602ea861027eA55667fd4840}
+        NEXT_PUBLIC_WETH: ${NEXT_PUBLIC_WETH:-0x4200000000000000000000000000000000000006}
+        NEXT_PUBLIC_COIN_METADATA: ${NEXT_PUBLIC_COIN_METADATA:-0xE54B8640a61dC7Ef741b0Ca0A06be885A4Ee6118}
+        NEXT_PUBLIC_EXECUTOR: ${NEXT_PUBLIC_EXECUTOR:-0x1885501719d334A7f193aed6F1038b15b42075d3}
+        NEXT_PUBLIC_INDEXER_START_BLOCK: ${NEXT_PUBLIC_INDEXER_START_BLOCK:-60147699}
     image: seedix-web:local
     working_dir: /app
     command: ["npm", "run", "start", "-w", "@seedix/web", "--", "--hostname", "0.0.0.0", "--port", "3000"]
@@ -61,7 +78,11 @@ services:
       API_HOST: 0.0.0.0
       API_PORT: "3001"
       LOGOS_DIR: /var/lib/seedix/logos
-      RPC_URL: ${RPC_URL:-https://testnet-rpc.elysium.kinetiq.xyz}
+      HOOK_ADDRESS: ${HOOK_ADDRESS:-0xF76b84C90c49a785322f110c66d1155bc26228cC}
+      CHAIN_ID: ${CHAIN_ID:-84532}
+      NATIVE_CURRENCY_SYMBOL: ${NATIVE_CURRENCY_SYMBOL:-ETH}
+      PRICE_COINGECKO_ID: ${PRICE_COINGECKO_ID:-ethereum}
+      RPC_URL: ${RPC_URL:-https://base-sepolia-rpc.publicnode.com}
     volumes:
       - ..:/app
       - /var/run/postgresql:/var/run/postgresql:ro
@@ -78,9 +99,13 @@ services:
     networks: [launchpad]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://launchpad@/launchpad?host=/var/run/postgresql}
-      RPC_URL: ${RPC_URL:-https://testnet-rpc.elysium.kinetiq.xyz}
+      CHAIN_ID: ${CHAIN_ID:-84532}
+      NATIVE_CURRENCY_SYMBOL: ${NATIVE_CURRENCY_SYMBOL:-ETH}
+      PRICE_COINGECKO_ID: ${PRICE_COINGECKO_ID:-ethereum}
+      RPC_URL: ${RPC_URL:-https://base-sepolia-rpc.publicnode.com}
       INDEXER_CONFIRMATIONS: ${INDEXER_CONFIRMATIONS:-12}
-      INDEXER_START_BLOCK: ${INDEXER_START_BLOCK:-}
+      INDEXER_START_BLOCK: ${INDEXER_START_BLOCK:-60147699}
+      DEPLOYMENT_FILE: ${DEPLOYMENT_FILE:-deployments/base-sepolia.json}
       INDEXER_POLL_MS: ${INDEXER_POLL_MS:-}
       LAUNCHER_ADDRESS: ${LAUNCHER_ADDRESS:-}
       HOOK_ADDRESS: ${HOOK_ADDRESS:-}
@@ -103,7 +128,10 @@ services:
     networks: [launchpad]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://launchpad@/launchpad?host=/var/run/postgresql}
-      RPC_URL: ${RPC_URL:-https://testnet-rpc.elysium.kinetiq.xyz}
+      CHAIN_ID: ${CHAIN_ID:-84532}
+      NATIVE_CURRENCY_SYMBOL: ${NATIVE_CURRENCY_SYMBOL:-ETH}
+      PRICE_COINGECKO_ID: ${PRICE_COINGECKO_ID:-ethereum}
+      RPC_URL: ${RPC_URL:-https://base-sepolia-rpc.publicnode.com}
       PUBLISHER_PRIVATE_KEY: /run/secrets/publisher_key
       KICKBACK_MANIFEST_DIR: ${KICKBACK_MANIFEST_DIR:-/var/lib/seedix/manifests}
       KICKBACK_DRY_RUN: ${KICKBACK_DRY_RUN:-}
@@ -132,10 +160,14 @@ services:
       KICKBACK_MANIFEST_DIR: ${KICKBACK_MANIFEST_DIR:-/var/lib/seedix/manifests}
       KEEPER_MAX_FEE_GWEI: ${KEEPER_MAX_FEE_GWEI:-100}
       KEEPER_MAX_GAS: ${KEEPER_MAX_GAS:-12000000}
-      RPC_URL: ${RPC_URL:-https://testnet-rpc.elysium.kinetiq.xyz}
+      CHAIN_ID: ${CHAIN_ID:-84532}
+      NATIVE_CURRENCY_SYMBOL: ${NATIVE_CURRENCY_SYMBOL:-ETH}
+      PRICE_COINGECKO_ID: ${PRICE_COINGECKO_ID:-ethereum}
+      RPC_URL: ${RPC_URL:-https://base-sepolia-rpc.publicnode.com}
       HOOK_ADDRESS: ${HOOK_ADDRESS:-}
       BUYBACK_EXECUTOR: ${BUYBACK_EXECUTOR:-}
       KICKBACK_DISTRIBUTOR: ${KICKBACK_DISTRIBUTOR:-}
+      PAIR_ADDRESSES: ${PAIR_ADDRESSES:-0x4200000000000000000000000000000000000006}
     secrets:
       - keeper_key
     volumes:

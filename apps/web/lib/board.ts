@@ -8,6 +8,7 @@ import { apiUrl, coinFromApi, getCoins } from "./api";
 import type { Coin, Mode } from "./coin";
 import { decimalsAbi, erc20Abi, launcherLegacyAbi } from "./abi";
 import type { PublicClient } from "viem";
+import { getLogsChunked } from "./logs";
 import { hookAddress, hookConfigAbi, indexerStartBlock, launcherAbi, launcherAddress, stateViewAddress, tokenMetaAbi } from "./trade";
 
 export type Board = {
@@ -96,16 +97,15 @@ export function useBoard(): Board {
           const event = abi.find((item) => item.type === "event" && item.name === "CoinLaunched");
           return event && event.type === "event" ? [event] : [];
         });
+        const head = await client.getBlockNumber();
         const batches = await Promise.all(
           events.map((event) =>
-            client
-              .getLogs({
-                address: launcherAddress,
-                event: event as never,
-                fromBlock: indexerStartBlock,
-                toBlock: "latest",
-              })
-              .catch(() => []),
+            getLogsChunked(
+              client,
+              { address: launcherAddress, event },
+              BigInt(indexerStartBlock),
+              head,
+            ),
           ),
         );
         const logs = batches.flat() as {

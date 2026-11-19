@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { CoinBody } from "@/components/CoinBody";
 import { TradePanel } from "@/components/TradePanel";
-import { elysiumTestnet } from "@/lib/chain";
+import { appChain } from "@/lib/chain";
 import type { Coin } from "@/lib/coin";
 import { readLaunchedCoin } from "@/lib/launched";
 import type { Side } from "@/lib/quote";
@@ -15,7 +15,7 @@ const poolId = /^0x[0-9a-fA-F]{64}$/;
 
 export function CoinScreen({ id, side }: { id: string; side: Side }) {
   const board = useBoard();
-  const client = usePublicClient({ chainId: elysiumTestnet.id });
+  const client = usePublicClient({ chainId: appChain.id });
   const listed = board.coins.find((item) => item.id === id || item.tokenAddress?.toLowerCase() === id.toLowerCase());
   const [live, setLive] = useState<Coin | null>(null);
   const [phase, setPhase] = useState<"wait" | "missing" | "error">("wait");

@@ -1,5 +1,5 @@
 import pg from "pg";
-import { elysiumTestnet, pins } from "@seedix/shared";
+import { activeChain, pins } from "@seedix/shared";
 import { loadDeployment } from "./deployment.ts";
 import type { Hex } from "./hex.ts";
 import { isAddress } from "./hex.ts";
@@ -18,11 +18,12 @@ function envAddress(name: string, fallback: string): Hex {
   return value;
 }
 
-const deployment = loadDeployment();
+const chain = activeChain();
+const deployment = loadDeployment(process.env.DEPLOYMENT_FILE, chain);
 
 export const indexerConfig: IndexerConfig & { databaseUrl: string; pollMs: number; v4Core: string } = {
-  chainId: elysiumTestnet.id,
-  rpcUrl: process.env.RPC_URL && process.env.RPC_URL.length > 0 ? process.env.RPC_URL : elysiumTestnet.rpcUrls[0],
+  chainId: chain.id,
+  rpcUrl: chain.rpcUrls[0],
   v4Core: pins.v4Core,
   databaseUrl: process.env.DATABASE_URL ?? "",
   pollMs: Number(envValue("INDEXER_POLL_MS", "12000")),

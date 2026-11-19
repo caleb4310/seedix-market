@@ -2,6 +2,8 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { backingLabel } from "@/lib/backing";
+import { nativeSymbol } from "@/lib/chain";
+import { zroTaxEnabled } from "@/lib/flags";
 import { coinAge, type Coin } from "@/lib/coin";
 import { explorerAddress } from "@/lib/deployment";
 import { useHypeUsd } from "@/lib/hype";
@@ -52,7 +54,7 @@ export function CoinBody({ coin, trade }: { coin: Coin; trade?: ReactNode }) {
           <dl className="fact-row">
             <div>
               <dt>Price</dt>
-              <dd>{coin.price !== undefined ? <Price value={coin.price} symbol="HYPE" usd={hypeUsd} /> : "—"}</dd>
+              <dd>{coin.price !== undefined ? <Price value={coin.price} symbol={nativeSymbol} usd={hypeUsd} /> : "—"}</dd>
             </div>
             <div>
               <dt>Market cap</dt>
@@ -60,7 +62,7 @@ export function CoinBody({ coin, trade }: { coin: Coin; trade?: ReactNode }) {
                 {usd != null && Number.isFinite(usd) && usd > 0
                   ? formatUsdCompact(usd)
                   : coin.mcap !== undefined
-                    ? `${coin.mcap.toLocaleString("en-US", { maximumFractionDigits: 0 })} HYPE`
+                    ? `${coin.mcap.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${nativeSymbol}`
                     : "—"}
               </dd>
             </div>
@@ -72,7 +74,7 @@ export function CoinBody({ coin, trade }: { coin: Coin; trade?: ReactNode }) {
               <dt>By</dt>
               <dd>{coin.creator ? shortAddress(coin.creator) : shortAddress(coin.recipient)}</dd>
             </div>
-            {coin.zroTaxBps ? (
+            {zroTaxEnabled() && coin.zroTaxBps ? (
               <div>
                 <dt>ZRO tax</dt>
                 <dd>{coin.zroTaxLabel}</dd>

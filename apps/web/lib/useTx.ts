@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import type { Address, Hex, PublicClient, TransactionReceipt, WalletClient } from "viem";
 import { getAccount, getPublicClient, getWalletClient, switchChain } from "wagmi/actions";
-import { elysiumTestnet } from "./chain";
+import { appChain } from "./chain";
 import { ensureElysiumChain, explainTxError, sendContractSteps, type TxState, type TxStep } from "./tx";
 import { wagmiConfig } from "./wagmi";
 
@@ -34,9 +34,9 @@ export function useContractTx() {
       setState({ status: "failed", message: "Connect a wallet to continue." });
       return null;
     }
-    const publicClient = getPublicClient(wagmiConfig, { chainId: elysiumTestnet.id });
+    const publicClient = getPublicClient(wagmiConfig, { chainId: appChain.id });
     if (!publicClient) {
-      setState({ status: "failed", message: "The Elysium RPC is not configured." });
+      setState({ status: "failed", message: "The RPC is not configured." });
       return null;
     }
     try {
@@ -45,9 +45,9 @@ export function useContractTx() {
       setState({ status: "failed", message: explainTxError(err) });
       return null;
     }
-    const walletClient = await getWalletClient(wagmiConfig, { chainId: elysiumTestnet.id }).catch(() => undefined);
+    const walletClient = await getWalletClient(wagmiConfig, { chainId: appChain.id }).catch(() => undefined);
     if (!walletClient) {
-      setState({ status: "failed", message: `The wallet is on the wrong network. Switch to Elysium testnet (${elysiumTestnet.id}).` });
+      setState({ status: "failed", message: `The wallet is on the wrong network. Switch to ${appChain.name} (${appChain.id}).` });
       return null;
     }
     return sendContractSteps({

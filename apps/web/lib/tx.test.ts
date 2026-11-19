@@ -139,7 +139,7 @@ test("error mapping decodes custom errors and wallet failures", async () => {
   });
   assert.match(explainTxError(paused), /not allowed/);
   assert.match(explainTxError(new Error("user rejected the request")), /rejected the request/);
-  assert.match(explainTxError(new Error("insufficient funds for gas * price + value")), /enough HYPE/);
+  assert.match(explainTxError(new Error("insufficient funds for gas * price + value")), /enough (ETH|HYPE)/);
   const mislabeled = new Error('function swap(uint160 sqrtPriceLimitX96) reverted');
   (mislabeled as { data?: string }).data = "0x7c9c6e8f0000000000000000000000000000000000000000000c184c1135aba4eaa68ea000000000000000000000000000000000000000000000000000000001000276a4";
   assert.doesNotMatch(explainTxError(mislabeled), /price limit stopped/i);
@@ -150,7 +150,7 @@ test("error mapping decodes custom errors and wallet failures", async () => {
     functionName: "swap",
   });
   assert.match(explainTxError(priceLimit), /price limit stopped/i);
-  assert.doesNotMatch(explainTxError(new Error("execution reverted: out of gas inside the hook")), /enough HYPE/i);
+  assert.doesNotMatch(explainTxError(new Error("execution reverted: out of gas inside the hook")), /enough (ETH|HYPE)/i);
   assert.equal(explainTxError(new Error("429 Rate Limit Exceeded")), "The network is busy, try again.");
   assert.equal(
     explainTxError(new Error("max fee per gas less than block base fee: maxFeePerGas: 100000000")),

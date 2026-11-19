@@ -1,7 +1,7 @@
 import { connectorsForWallets } from "@rainbow-me/rainbowkit";
 import { injectedWallet, metaMaskWallet, rainbowWallet, walletConnectWallet } from "@rainbow-me/rainbowkit/wallets";
 import { createConfig, fallback, http } from "wagmi";
-import { elysiumTestnet, rpcUrlList } from "./chain";
+import { appChain, rpcUrlList } from "./chain";
 import { walletConnectProjectId } from "./wallet";
 
 const projectId = walletConnectProjectId(process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID);
@@ -23,7 +23,7 @@ const rpcTransport = (() => {
 })();
 
 export const wagmiConfig = createConfig({
-  chains: [elysiumTestnet],
+  chains: [appChain],
   connectors: connectorsForWallets([{ groupName: "Wallets", wallets }], {
     appName: "Seedix",
     projectId: projectId || "seedix-injected-only",
@@ -31,7 +31,7 @@ export const wagmiConfig = createConfig({
   pollingInterval: 20_000,
   batch: { multicall: { wait: 32 } },
   transports: {
-    [elysiumTestnet.id]: rpcTransport,
+    [appChain.id]: rpcTransport,
   },
   ssr: true,
 });

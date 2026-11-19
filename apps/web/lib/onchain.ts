@@ -1,14 +1,14 @@
 import { decodeEventLog, type Address, type Hex, type TransactionReceipt } from "viem";
 import { getAccount, getPublicClient } from "wagmi/actions";
 import { erc20Abi, launcherAbi, launcherLegacyAbi, quoterAbi } from "./abi";
-import { elysiumTestnet } from "./chain";
+import { appChain } from "./chain";
 import { quoterAddress, routerAddress } from "./deployment";
 import { quoteParams, quotedAmount, type PoolKey, type SwapKind } from "./swap";
 import { wagmiConfig } from "./wagmi";
 
 function client() {
-  const publicClient = getPublicClient(wagmiConfig, { chainId: elysiumTestnet.id });
-  if (!publicClient) throw new Error("The Elysium RPC is not configured.");
+  const publicClient = getPublicClient(wagmiConfig, { chainId: appChain.id });
+  if (!publicClient) throw new Error("The RPC is not configured.");
   return publicClient;
 }
 

@@ -2,7 +2,7 @@
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useState } from "react";
-import { elysiumTestnet } from "@/lib/chain";
+import { appChain, chainName } from "@/lib/chain";
 import { useContractTx } from "@/lib/useTx";
 import { Button } from "@/components/ui/Button";
 
@@ -10,7 +10,7 @@ export function NoWalletHelp() {
   return (
     <div className="status" data-tone="error" role="alert">
       <strong>No wallet in this browser</strong>
-      <p className="note">Install a browser wallet, then reload this page. Seedix connects on Elysium testnet (99801).</p>
+      <p className="note">Install a browser wallet, then reload this page. Seedix connects on {chainName} ({appChain.id}).</p>
       <a className="text-link" href="https://metamask.io/download/">Install MetaMask</a>
     </div>
   );
@@ -59,7 +59,7 @@ export function WalletButton({ forceHelp = false, prominent = false }: { forceHe
           );
         }
 
-        if (chain?.unsupported || chain?.id !== elysiumTestnet.id) {
+        if (chain?.unsupported || chain?.id !== appChain.id) {
           return (
             <Button
               variant={prominent ? "accent" : "secondary"}
@@ -69,7 +69,7 @@ export function WalletButton({ forceHelp = false, prominent = false }: { forceHe
                 void ensureChain().catch(() => openChainModal());
               }}
             >
-              <span className="wide">Switch to Elysium testnet</span>
+              <span className="wide">Switch to {chainName}</span>
               <span className="narrow">Switch</span>
             </Button>
           );
