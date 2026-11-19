@@ -7,29 +7,25 @@ import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
 import {RouteSeeder} from "../../src/launch/RouteSeeder.sol";
 import {MockXStock} from "../../src/token/MockXStock.sol";
 
-/// @notice `seedWide` reports WETH spent only from the seeder's own balance. An approval pays the
-///         pool from the caller and the reported spend stays zero, which is the SeedShort revert.
+/// @notice `seedWide` is owner-only and reports the WETH the position actually took.
 contract ZroSeedTest is Test {
-    function test_seedWideSpendIsZeroUntilTheSeederIsPrefunded() public {
+    function test_seedWidePullsInTheSameCallAndIgnoresAStranger() public {
         PoolManager pm = new PoolManager(address(0));
         MockXStock weth = new MockXStock("WETH", "WETH", 18, address(this));
-        MockXStock approvedOnly = new MockXStock("ZRO", "ZRO", 18, address(this));
+        MockXStock zro = new MockXStock("ZRO", "ZRO", 18, address(this));
+        RouteSeeder seeder = new RouteSeeder();
+        weth.approve(address(seeder), type(uint256).max);
+        zro.approve(address(seeder), type(uint256).max);
 
-        RouteSeeder bare = new RouteSeeder();
-        weth.approve(address(bare), type(uint256).max);
-        approvedOnly.approve(address(bare), type(uint256).max);
-        (, uint256 bareSpent) =
-            bare.seedWide(IPoolManager(address(pm)), address(weth), address(approvedOnly), 1 ether, 1);
-        assertEq(bareSpent, 0);
+        vm.prank(address(0xBAD));
+        vm.expectRevert(RouteSeeder.NotOwner.selector);
+        seeder.seedWide(IPoolManager(address(pm)), address(weth), address(zro), 1 ether, 1);
 
-        MockXStock prefunded = new MockXStock("ZRO2", "ZRO2", 18, address(this));
-        RouteSeeder funded = new RouteSeeder();
-        weth.approve(address(funded), type(uint256).max);
-        prefunded.approve(address(funded), type(uint256).max);
-        weth.transfer(address(funded), 1 ether);
-        prefunded.transfer(address(funded), 1 ether);
-        (, uint256 spent) = funded.seedWide(IPoolManager(address(pm)), address(weth), address(prefunded), 1 ether, 1);
+        uint256 beforeWeth = weth.balanceOf(address(this));
+        (, uint256 spent) = seeder.seedWide(IPoolManager(address(pm)), address(weth), address(zro), 1 ether, 1);
         assertGt(spent, 0);
         assertLe(spent, 1 ether);
+        assertEq(beforeWeth - weth.balanceOf(address(this)), spent);
+        assertEq(weth.balanceOf(address(seeder)), 0);
     }
 }

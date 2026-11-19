@@ -86,6 +86,6 @@ contract ZroVaultTest is Fixture {
         vault.fund(id, epoch, 10 ether);
         vm.prank(alice);
         vm.expectRevert(ZroRewardVault.NoModule.selector);
-        vault.claimRemote(id, epoch, 40245, "");
+        vault.claimRemote(id, epoch, 40245, bytes32(uint256(uint160(alice))), "");
     }
 }

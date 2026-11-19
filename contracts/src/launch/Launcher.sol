@@ -121,6 +121,8 @@ contract Launcher {
     bool public categoriesBootstrapped;
     mapping(PoolId => address) public creatorOf;
     mapping(address => uint8) public statusOf;
+    /// @notice True for coins this launcher created. Graduation treats this as the coin registry.
+    mapping(address => bool) public isLaunchedCoin;
     mapping(address => uint8) public categoryOf;
     /// @notice Default starting market cap, in WHYPE wei. A launch still uses
     ///         `startMcapInPair`. 34 WHYPE is about $2,500 at $74.6 per HYPE.
@@ -323,6 +325,7 @@ contract Launcher {
         built.coin = Clones.cloneDeterministic(address(implementation), salt);
         LaunchToken(built.coin)
             .initialize(params.name, params.symbol, address(this), built.liqAmt, params.teamWallet, built.teamAmt);
+        isLaunchedCoin[built.coin] = true;
     }
 
     function _openPool(LaunchParams calldata params, bool isPlatform, Built memory built) internal returns (PoolId id) {

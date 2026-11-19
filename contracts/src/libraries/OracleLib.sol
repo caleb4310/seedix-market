@@ -22,6 +22,7 @@ library OracleLib {
         uint16 count;
         uint32 lastAccrual;
         int56 tickCumulative;
+        int24 lastTick;
     }
 
     function init(State storage s, uint32 time, int24 tick) internal {
@@ -30,6 +31,7 @@ library OracleLib {
         s.count = 1;
         s.lastAccrual = time;
         s.tickCumulative = 0;
+        s.lastTick = tick;
     }
 
     /// @dev Accrue the pre-swap tick across the elapsed time, then maybe snapshot the ring.
@@ -45,12 +47,38 @@ library OracleLib {
         s.obs[next] = Observation({timestamp: nowT, tickCumulative: s.tickCumulative, tick: preSwapTick});
         s.index = next;
         if (s.count < C.OBS_CARDINALITY) s.count += 1;
+        s.lastTick = preSwapTick;
         return true;
+    }
+
+    /// @dev Accrue the previously stored tick across the idle gap, then remember `newTick` for the
+    ///      next gap. A poke must not stamp the live tick over time when nobody was trading.
+    function accrueStored(State storage s, uint32 nowT, int24 newTick) internal returns (bool wrote) {
+        wrote = onSwap(s, nowT, s.lastTick);
+        s.lastTick = newTick;
     }
 
     /// @dev Reverts unless an observation exists at or before `now - window`.
     function consult(State storage s, uint32 nowT, uint32 window, int24 liveTick)
         internal
+        view
+        returns (int24 twapTick)
+    {
+        return _consult(s, nowT, window, liveTick, false);
+    }
+
+    /// @dev Same quote, but the observation at the start of the window cannot be more than one
+    ///      cadence late. The ZRO harvest uses this so a quiet pool cannot be interpolated.
+    function consultDense(State storage s, uint32 nowT, uint32 window, int24 liveTick)
+        internal
+        view
+        returns (int24 twapTick)
+    {
+        return _consult(s, nowT, window, liveTick, true);
+    }
+
+    function _consult(State storage s, uint32 nowT, uint32 window, int24 liveTick, bool dense)
+        private
         view
         returns (int24 twapTick)
     {
@@ -78,6 +106,9 @@ library OracleLib {
             }
         }
         if (!foundBefore) revert WindowNotCovered();
+        if (dense && target > beforeOrAt.timestamp && target - beforeOrAt.timestamp > C.OBS_CADENCE) {
+            revert WindowNotCovered();
+        }
 
         int256 cumThen;
         if (beforeOrAt.timestamp == target) {

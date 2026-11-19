@@ -117,7 +117,7 @@ SEED_WIDTH_STEPS=1 \
 forge script script/DeployBaseSepoliaZro.s.sol --rpc-url "$BASE_SEPOLIA_RPC_URL"
 ```
 
-`HOOK_ADDRESS` is optional for this script. Without it, MockZRO and the pool are deployed and the vault waits until a new hook exists. The broadcaster needs enough ETH to wrap `SEED_WETH_AMOUNT`. The script transfers that WETH and the ZRO into `RouteSeeder` before `seedWide`, because the seeder only counts WETH that leaves its own balance. `SEED_WIDTH_STEPS` defaults to 1. The script logs `owner`, `timelock`, and `zro`. It does not log the key. `safe 1` means a Safe was created. `safe 0` means `TestOwner`. `SafeRegisterZroPool.s.sol` then registers the pool from the 1-of-1 Safe. `SmokeLaunch`, `SmokeSwap`, and `SmokeHarvest` are the testnet checks.
+`HOOK_ADDRESS` is optional for this script. Without it, MockZRO and the pool are deployed and the vault waits until a new hook exists. The broadcaster needs enough ETH to wrap `SEED_WETH_AMOUNT`. `seedWide` is owner-only and pulls WETH and ZRO in that same call. Spend is the liquidity delta, not a balance drop. `SEED_WIDTH_STEPS` defaults to 1. The script logs `owner`, `timelock`, and `zro`. It does not log the key. `safe 1` means a Safe was created. `safe 0` means `TestOwner`. `SafeRegisterZroPool.s.sol` then registers the pool from the 1-of-1 Safe. `SmokeLaunch`, `SmokeSwap`, and `SmokeHarvest` are the testnet checks.
 
 The separate scripts are the same steps with addresses you already have:
 
@@ -176,7 +176,7 @@ Environment variables for that deploy:
 | `LZ_EID` | no | Overrides 40245 |
 | `ZRO_TOKEN` | seed script | MockZRO from step 3 |
 | `SEED_ZRO_AMOUNT` | seed script | ZRO wei to approve |
-| `SEED_WETH_AMOUNT` | seed script | WETH wei transferred to the seeder before `seedWide` |
+| `SEED_WETH_AMOUNT` | seed script | WETH wei `seedWide` pulls from the owner in the same call |
 | `SEED_WIDTH_STEPS` | no | Tick spacings each side of zero. Defaults to 1 |
 | `BASE_SEPOLIA_RPC_URL` | script invocation | Public Base Sepolia RPC. No key |
 
@@ -184,7 +184,7 @@ Environment variables for that deploy:
 
 A holder calls `quoteRemote(to, amount, dstEid, options)` and then `claimRemote(poolId, epoch, dstEid, options)` with at least that native fee in `msg.value`. `ZroPayout` is the module. It pulls the claimed ZRO, calls `OFT.send`, and refunds `msg.value` above the quote to the holder. The OFT names the same holder as the endpoint refund address. The vault marks the claim before the send. A revert, including a short fee, rolls that mark back, so the claim cannot be taken twice and a failed send does not burn it. The vault is non-reentrant, and the module refuses a reentrant `payout`.
 
-`LaunchToken` stays a clone. A clone cannot run an OFT constructor, so graduation deploys `ZroCoinAdapter`, which locks the coin and bridges that balance. `ZroGraduation` takes the LayerZero endpoint as a constructor argument from chain config. It does not set peers. The Safe (`owner`) or the timelock calls `setPeer` and `setEnforcedOptions` on the adapter. Destination ids are arguments, not literals. If the graduation contract is the tracker's `excluder`, the adapter is excluded so locked coins do not earn weight.
+`LaunchToken` stays a clone. A clone cannot run an OFT constructor, so the home chain gets one `ZroCoinAdapter` lockbox and every other chain gets a mint/burn `ZroRemoteOFT`. Locked coins on the home adapter equal the remote OFT's supply. `ZroGraduation` only accepts coins the launcher created. Peers and enforced options are timelock calls. The Safe is the proposer. On the live Base Sepolia tracker, which has no `excluder()`, construct graduation with `tracker = address(0)` and run `SafeGraduateLive` so the Safe excludes the adapter in the same batch. A tracker that cannot exclude reverts `TrackerHasNoExcluder` instead of leaving the adapter eligible. The team wallet earns no weight: the tracker reads `teamWallet()` on the mint. Unclaimed rewards can be rolled into the next round after the claim window (90 days, timelock-settable). `claimRemote` takes the remote recipient as `bytes32` and rejects zero.
 
 The tax still applies only on Seedix's own v4 pools. DVN selection stays an endpoint config made by the delegate. It is not a value in these contracts. The delegate is the Safe.
 

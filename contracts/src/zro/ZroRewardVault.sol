@@ -128,11 +128,23 @@ contract ZroRewardVault {
         delegate = next;
     }
 
-    /// @notice Phase 2 plugs an OFT sender here. The zero address keeps claims as local transfers.
+    /// @notice Phase 2 plugs an OFT sender here. Only the timelock can set it. The zero address
+    ///         keeps claims as local transfers.
     function setPayoutModule(address next) external {
-        if (!_admin(msg.sender)) revert NotOwner();
+        if (msg.sender != timelock) revert NotTimelock();
         emit PayoutModuleSet(payoutModule, next);
         payoutModule = next;
+    }
+
+    uint256 public constant DEFAULT_CLAIM_WINDOW = 90 days;
+    uint256 public claimWindow = 90 days;
+
+    /// @notice How long a holder has to claim after the hour closes. The timelock can shorten it
+    ///         for a testnet. It cannot be zero.
+    function setClaimWindow(uint256 next) external {
+        if (msg.sender != timelock) revert NotTimelock();
+        if (next < 1 hours) revert Early();
+        claimWindow = next;
     }
 
     function pause() external {
@@ -191,8 +203,19 @@ contract ZroRewardVault {
         emit Claimed(poolId, epoch, msg.sender, amount);
     }
 
+    /// @notice What `account` would receive for this round if they claimed now.
+    function claimable(PoolId poolId, uint64 epoch, address account) external view returns (uint256) {
+        bytes32 id = _id(poolId, epoch);
+        Round storage round = rounds[id];
+        if (!round.opened || round.totalWeight == 0 || claimed[id][account]) return 0;
+        (address coin,,,,,,) = hook.config(poolId);
+        uint256 w = tracker.weight(coin, account, round.start, round.end);
+        if (w == 0) return 0;
+        return w * uint256(round.funded) / round.totalWeight;
+    }
+
     /// @notice LayerZero native fee for sending `amount` of ZRO to `to` on `dstEid`.
-    function quoteRemote(address to, uint256 amount, uint32 dstEid, bytes calldata options)
+    function quoteRemote(bytes32 to, uint256 amount, uint32 dstEid, bytes calldata options)
         external
         view
         returns (uint256 nativeFee)
@@ -201,24 +224,40 @@ contract ZroRewardVault {
         nativeFee = IZroPayout(payoutModule).quote(address(zro), to, amount, dstEid, options);
     }
 
-    /// @notice Phase 2. Same accounting as `claim`. The module sends ZRO through the OFT.
-    ///         `msg.value` covers the LayerZero fee. The module refunds anything above the quote.
-    function claimRemote(PoolId poolId, uint64 epoch, uint32 dstEid, bytes calldata options)
+    /// @notice Phase 2. Same accounting as `claim`. `to` is the remote recipient. The caller pays
+    ///         the LayerZero fee and receives any excess and any local dust.
+    function claimRemote(PoolId poolId, uint64 epoch, uint32 dstEid, bytes32 to, bytes calldata options)
         external
         payable
         nonReentrant
         returns (uint256 amount)
     {
         if (payoutModule == address(0)) revert NoModule();
+        if (to == bytes32(0)) revert ZeroAddress();
         amount = _account(poolId, epoch, msg.sender);
         if (amount == 0) {
             if (msg.value > 0) revert Nothing();
             return 0;
         }
         zro.forceApprove(payoutModule, amount);
-        IZroPayout(payoutModule).payout{value: msg.value}(address(zro), msg.sender, amount, dstEid, options);
+        IZroPayout(payoutModule).payout{value: msg.value}(address(zro), to, msg.sender, amount, dstEid, options);
         if (zro.allowance(address(this), payoutModule) != 0) zro.forceApprove(payoutModule, 0);
         emit Claimed(poolId, epoch, msg.sender, amount);
+    }
+
+    /// @notice After the claim window, move whatever was not claimed into `pendingDust`.
+    function expireRound(PoolId poolId, uint64 epoch) external {
+        bytes32 id = _id(poolId, epoch);
+        Round storage round = rounds[id];
+        if (!round.opened || round.totalWeight == 0) revert Nothing();
+        if (block.timestamp < uint256(round.end) + claimWindow) revert Early();
+        uint256 leftover = uint256(round.funded) - round.claimed;
+        if (leftover == 0) return;
+        round.claimed = round.funded;
+        round.claimedWeight = round.totalWeight;
+        liabilities -= leftover;
+        pendingDust += leftover;
+        emit DustRecycled(id, leftover);
     }
 
     function roundId(PoolId poolId, uint64 epoch) external pure returns (bytes32) {

@@ -31,6 +31,7 @@ contract ZroPayout is IZroPayout {
     error FeeShort();
     error RefundFailed();
     error Reentered();
+    error ZeroRecipient();
 
     address public immutable vault;
     uint256 private _locked;
@@ -40,46 +41,45 @@ contract ZroPayout is IZroPayout {
         vault = vault_;
     }
 
-    function quote(address zro, address to, uint256 amount, uint32 dstEid, bytes calldata options)
+    function quote(address zro, bytes32 to, uint256 amount, uint32 dstEid, bytes calldata options)
         public
         view
         returns (uint256 nativeFee)
     {
+        if (to == bytes32(0)) revert ZeroRecipient();
         nativeFee = IZroOft(zro).quoteSend(_param(to, amount, dstEid, options), false).nativeFee;
     }
 
-    function payout(address zro, address to, uint256 amount, uint32 dstEid, bytes calldata options) external payable {
+    function payout(address zro, bytes32 to, address refundTo, uint256 amount, uint32 dstEid, bytes calldata options)
+        external
+        payable
+    {
         if (msg.sender != vault) revert NotVault();
+        if (to == bytes32(0) || refundTo == address(0)) revert ZeroRecipient();
         if (_locked == 1) revert Reentered();
         _locked = 1;
         uint256 fee = quote(zro, to, amount, dstEid, options);
         if (msg.value < fee) revert FeeShort();
         IERC20(zro).safeTransferFrom(msg.sender, address(this), amount);
         (, OFTReceipt memory receipt) = IZroOft(zro).send{value: fee}(
-            _param(to, amount, dstEid, options), MessagingFee({nativeFee: fee, lzTokenFee: 0}), to
+            _param(to, amount, dstEid, options), MessagingFee({nativeFee: fee, lzTokenFee: 0}), refundTo
         );
-        if (receipt.amountSentLD < amount) IERC20(zro).safeTransfer(to, amount - receipt.amountSentLD);
+        if (receipt.amountSentLD < amount) IERC20(zro).safeTransfer(refundTo, amount - receipt.amountSentLD);
         uint256 excess = msg.value - fee;
         if (excess > 0) {
-            (bool ok,) = to.call{value: excess}("");
+            (bool ok,) = refundTo.call{value: excess}("");
             if (!ok) revert RefundFailed();
         }
         _locked = 0;
     }
 
-    function _param(address to, uint256 amount, uint32 dstEid, bytes calldata options)
+    function _param(bytes32 to, uint256 amount, uint32 dstEid, bytes calldata options)
         internal
         pure
         returns (SendParam memory)
     {
         return SendParam({
-            dstEid: dstEid,
-            to: bytes32(uint256(uint160(to))),
-            amountLD: amount,
-            minAmountLD: 0,
-            extraOptions: options,
-            composeMsg: "",
-            oftCmd: ""
+            dstEid: dstEid, to: to, amountLD: amount, minAmountLD: 0, extraOptions: options, composeMsg: "", oftCmd: ""
         });
     }
 }

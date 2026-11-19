@@ -162,7 +162,7 @@ contract ZroTaxSwapper is IUnlockCallback {
     function poke() external {
         if (!poolSet) revert BadPool();
         (, int24 tick,,) = poolManager.getSlot0(poolKey.toId());
-        OracleLib.onSwap(_oracle, uint32(block.timestamp), tick);
+        OracleLib.accrueStored(_oracle, uint32(block.timestamp), tick);
     }
 
     /// @dev View of the TWAP quote and the floor the keeper's minOut is checked against.
@@ -289,14 +289,14 @@ contract ZroTaxSwapper is IUnlockCallback {
     function _guard(uint256 amountIn) internal returns (int24 twap, int24 spot, bool zeroForOne) {
         if (amountIn == 0) revert Nothing();
         (, spot,,) = poolManager.getSlot0(poolKey.toId());
-        OracleLib.onSwap(_oracle, uint32(block.timestamp), spot);
-        twap = OracleLib.consult(_oracle, uint32(block.timestamp), C.TWAP_WINDOW, spot);
+        OracleLib.accrueStored(_oracle, uint32(block.timestamp), spot);
+        twap = OracleLib.consultDense(_oracle, uint32(block.timestamp), C.TWAP_WINDOW, spot);
         zeroForOne = Currency.unwrap(poolKey.currency0) == weth;
     }
 
     function _twap() internal view returns (int24 twap, bool zeroForOne) {
         (, int24 spot,,) = poolManager.getSlot0(poolKey.toId());
-        twap = OracleLib.consult(_oracle, uint32(block.timestamp), C.TWAP_WINDOW, spot);
+        twap = OracleLib.consultDense(_oracle, uint32(block.timestamp), C.TWAP_WINDOW, spot);
         TwapGuard.assertBand(spot, twap);
         zeroForOne = Currency.unwrap(poolKey.currency0) == weth;
     }

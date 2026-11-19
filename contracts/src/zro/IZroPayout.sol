@@ -5,10 +5,12 @@ pragma solidity ^0.8.26;
 ///         which covers the LayerZero fee. Excess is refunded to the holder. Phase 1 leaves the
 ///         module unset and transfers ZRO locally.
 interface IZroPayout {
-    function quote(address zro, address to, uint256 amount, uint32 dstEid, bytes calldata options)
+    function quote(address zro, bytes32 to, uint256 amount, uint32 dstEid, bytes calldata options)
         external
         view
         returns (uint256 nativeFee);
 
-    function payout(address zro, address to, uint256 amount, uint32 dstEid, bytes calldata options) external payable;
+    function payout(address zro, bytes32 to, address refundTo, uint256 amount, uint32 dstEid, bytes calldata options)
+        external
+        payable;
 }

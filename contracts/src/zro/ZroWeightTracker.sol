@@ -20,6 +20,7 @@ pragma solidity ^0.8.26;
 ///         loop over holders.
 contract ZroWeightTracker {
     error NotOwner();
+    error NotTimelock();
     error ZeroAddress();
     error Time();
     error Short();
@@ -32,9 +33,13 @@ contract ZroWeightTracker {
     }
 
     address public owner;
+    /// @notice The only caller that may set `excluder`.
+    address public timelock;
     /// @notice May exclude addresses, which is how graduation keeps a locked OFT adapter out of the weight.
     address public excluder;
     mapping(address account => bool) public excluded;
+    mapping(address account => address[] tokens) private _tokensOf;
+    mapping(address account => mapping(address token => bool seen)) private _tokenSeen;
     mapping(address token => mapping(address account => Point[])) internal _points;
     mapping(address token => Point[]) internal _supplyPoints;
     mapping(address token => uint256) public eligibleSupply;
@@ -58,17 +63,26 @@ contract ZroWeightTracker {
         owner = next;
     }
 
-    /// @notice One extra caller, set by the owner, that may exclude addresses. Graduation uses it.
+    /// @notice One-time. The owner points this at the timelock. After that, only the timelock sets the excluder.
+    function setTimelock(address next) external {
+        if (msg.sender != owner || next == address(0) || timelock != address(0)) revert NotOwner();
+        timelock = next;
+    }
+
+    /// @notice One extra caller that may exclude addresses. Only the timelock can set it.
     function setExcluder(address next) external {
-        if (msg.sender != owner) revert NotOwner();
+        if (timelock == address(0) || msg.sender != timelock) revert NotTimelock();
         emit ExcluderSet(excluder, next);
         excluder = next;
     }
 
-    /// @notice The zero address stays excluded. Other protocol contracts can be added by the owner.
+    /// @notice The zero address stays excluded. A balance already in `eligibleSupply` is moved out
+    ///         or back in, so a late exclusion cannot double-count the next transfer.
     function setExcluded(address account, bool isExcluded) external {
         if (msg.sender != owner && msg.sender != excluder) revert NotOwner();
         if (account == address(0) && !isExcluded) revert ZeroAddress();
+        if (excluded[account] == isExcluded) return;
+        _moveSupply(account, isExcluded);
         _setExcluded(account, isExcluded);
     }
 
@@ -79,17 +93,21 @@ contract ZroWeightTracker {
         address token = msg.sender;
         uint64 t = uint64(block.timestamp);
         uint128 amt = _asUint128(amount);
-        bool fromCounts = from != address(0) && !excluded[from];
-        bool toCounts = to != address(0) && !excluded[to];
+        bool fromTeam = _isTeam(token, from);
+        bool toTeam = _isTeam(token, to);
+        bool fromCounts = from != address(0) && !excluded[from] && !fromTeam;
+        bool toCounts = to != address(0) && !excluded[to] && !toTeam;
+        if (from != address(0)) _note(from, token);
+        if (to != address(0)) _note(to, token);
 
         if (from != address(0)) {
             uint128 bal = _lastBalance(_points[token][from]);
             if (bal < amt) revert Short();
-            _push(_points[token][from], t, bal - amt, !_excludedOrZero(from));
+            _push(_points[token][from], t, bal - amt, !_excludedOrZero(from) && !fromTeam);
         }
         if (to != address(0)) {
             uint128 bal = _lastBalance(_points[token][to]);
-            _push(_points[token][to], t, bal + amt, !_excludedOrZero(to));
+            _push(_points[token][to], t, bal + amt, !_excludedOrZero(to) && !toTeam);
         }
         if (fromCounts != toCounts) {
             uint256 supply = eligibleSupply[token];
@@ -104,7 +122,7 @@ contract ZroWeightTracker {
     }
 
     function weight(address token, address account, uint64 start, uint64 end) external view returns (uint256) {
-        if (end <= start || excluded[account] || account == address(0)) return 0;
+        if (end <= start || excluded[account] || account == address(0) || _isTeam(token, account)) return 0;
         return _between(_points[token][account], start, end);
     }
 
@@ -124,6 +142,40 @@ contract ZroWeightTracker {
 
     function _excludedOrZero(address account) internal view returns (bool) {
         return account == address(0) || excluded[account];
+    }
+
+    /// @dev The team allocation is excluded at the mint itself. `teamWallet` is set before that mint.
+    function _isTeam(address token, address account) internal view returns (bool) {
+        if (account == address(0)) return false;
+        (bool ok, bytes memory data) = token.staticcall(abi.encodeWithSignature("teamWallet()"));
+        if (!ok || data.length < 32) return false;
+        address team = abi.decode(data, (address));
+        return team != address(0) && team == account;
+    }
+
+    function _note(address account, address token) internal {
+        if (_tokenSeen[account][token]) return;
+        _tokenSeen[account][token] = true;
+        _tokensOf[account].push(token);
+    }
+
+    function _moveSupply(address account, bool isExcluded) internal {
+        address[] memory tokens = _tokensOf[account];
+        uint64 t = uint64(block.timestamp);
+        for (uint256 i; i < tokens.length; ++i) {
+            address token = tokens[i];
+            uint256 bal = _lastBalance(_points[token][account]);
+            if (bal == 0) continue;
+            uint256 supply = eligibleSupply[token];
+            if (isExcluded) {
+                if (supply < bal) revert Short();
+                supply -= bal;
+            } else {
+                supply += bal;
+            }
+            eligibleSupply[token] = supply;
+            _push(_supplyPoints[token], t, _asUint128(supply), true);
+        }
     }
 
     function _push(Point[] storage pts, uint64 t, uint128 balance, bool accrue) internal {

@@ -9,24 +9,37 @@ import {EnforcedOptionParam} from "@layerzerolabs/oapp-evm/contracts/oapp/interf
 import {MessagingFee, SendParam} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {ZroCoinAdapter} from "../../src/zro/ZroCoinAdapter.sol";
 import {ZroGraduation} from "../../src/zro/ZroGraduation.sol";
+import {ZroRemoteOFT} from "../../src/zro/ZroRemoteOFT.sol";
 import {ZroWeightTracker} from "../../src/zro/ZroWeightTracker.sol";
 import {TestLzEndpoint} from "./TestLzEndpoint.sol";
+
+contract CoinAllow {
+    mapping(address => bool) public isLaunchedCoin;
+
+    function allow(address coin) external {
+        isLaunchedCoin[coin] = true;
+    }
+}
 
 contract ZroGraduateTest is Fixture {
     function test_adapterLocksTheCoinAndAdminsSetPeers() public {
         LaunchToken impl = new LaunchToken();
         LaunchToken coin = LaunchToken(Clones.clone(address(impl)));
         coin.initialize("Coin", "COIN", address(this), C.SUPPLY, address(0), 0);
-        LaunchToken remoteCoin = LaunchToken(Clones.clone(address(impl)));
-        remoteCoin.initialize("Remote", "REM", address(this), C.SUPPLY, address(0), 0);
+        CoinAllow list = new CoinAllow();
+        list.allow(address(coin));
 
         TestLzEndpoint endpoint = new TestLzEndpoint(1, 0.01 ether);
         ZroWeightTracker tracker = new ZroWeightTracker(address(this), address(0), address(0), address(0));
-        ZroGraduation grad = new ZroGraduation(address(endpoint), address(this), address(d.timelock), address(tracker));
+        ZroGraduation grad =
+            new ZroGraduation(address(endpoint), address(this), address(d.timelock), address(tracker), address(list));
+        tracker.setTimelock(address(d.timelock));
+        vm.prank(address(d.timelock));
         tracker.setExcluder(address(grad));
 
         ZroCoinAdapter adapter = ZroCoinAdapter(grad.graduate(address(coin)));
-        ZroCoinAdapter remote = ZroCoinAdapter(grad.graduate(address(remoteCoin)));
+        ZroRemoteOFT remote =
+            new ZroRemoteOFT("Remote", "REM", address(endpoint), address(this), address(this), address(d.timelock), 60);
         assertEq(adapter.token(), address(coin));
         assertTrue(tracker.excluded(address(adapter)));
         assertEq(grad.adapterOf(address(coin)), address(adapter));
@@ -38,17 +51,16 @@ contract ZroGraduateTest is Fixture {
         grad.graduate(address(0x1234));
 
         vm.prank(address(0xBEEF));
-        vm.expectRevert(ZroCoinAdapter.NotAdmin.selector);
+        vm.expectRevert(ZroCoinAdapter.NotTimelock.selector);
         adapter.setPeer(2, bytes32(uint256(uint160(address(remote)))));
-        vm.prank(address(d.timelock));
+        vm.startPrank(address(d.timelock));
         adapter.setPeer(2, bytes32(uint256(uint160(address(remote)))));
         remote.setPeer(1, bytes32(uint256(uint160(address(adapter)))));
-
         EnforcedOptionParam[] memory opts = new EnforcedOptionParam[](1);
         opts[0] = EnforcedOptionParam({eid: 2, msgType: 1, options: hex"0003"});
         adapter.setEnforcedOptions(opts);
+        vm.stopPrank();
 
-        remoteCoin.transfer(address(remote), 10 ether);
         coin.approve(address(adapter), 10 ether);
         SendParam memory param = SendParam({
             dstEid: 2,
@@ -63,7 +75,7 @@ contract ZroGraduateTest is Fixture {
         adapter.send{value: fee.nativeFee}(param, fee, address(this));
         assertEq(coin.balanceOf(address(adapter)), 10 ether);
         endpoint.deliverLast();
-        assertEq(remoteCoin.balanceOf(address(this)), C.SUPPLY);
-        assertEq(remoteCoin.balanceOf(address(remote)), 0);
+        assertEq(remote.totalSupply(), coin.balanceOf(address(adapter)));
+        assertEq(remote.balanceOf(address(this)), 10 ether);
     }
 }

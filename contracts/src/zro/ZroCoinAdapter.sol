@@ -5,36 +5,46 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {EnforcedOptionParam} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppOptionsType3.sol";
 import {OFTAdapter} from "@layerzerolabs/oft-evm/contracts/OFTAdapter.sol";
 
-/// @notice Locks an existing Seedix coin and bridges it. LaunchToken is a clone, so it cannot be
-///         an OFT itself: an OFT needs a constructor, and a clone does not run one. The hook and
-///         the weight tracker stay on the coin's own transfers.
-///
-///         `owner` is the Safe. `timelock` may set peers and enforced options as well. The endpoint
-///         and every destination id are arguments. None of them are stored as literals here.
+/// @notice Home-chain lockbox for one Seedix coin. Only `ZroGraduation` can construct it, so
+///         `adapterOf` on that contract is the registry. Peers and enforced options move only
+///         through `timelock`. The delay itself is the timelock's `getMinDelay`.
 contract ZroCoinAdapter is OFTAdapter {
-    error NotAdmin();
+    error NotTimelock();
+    error NotGraduation();
+    error ZeroAddress();
 
-    address public timelock;
+    address public immutable timelock;
 
-    constructor(address token, address endpoint, address delegate, address owner_, address timelock_)
-        OFTAdapter(token, endpoint, delegate)
-        Ownable(owner_)
-    {
-        if (owner_ == address(0) || timelock_ == address(0)) revert NotAdmin();
+    constructor(
+        address token,
+        address endpoint,
+        address delegate,
+        address owner_,
+        address timelock_,
+        address graduation
+    ) OFTAdapter(token, endpoint, delegate) Ownable(owner_) {
+        if (msg.sender != graduation) revert NotGraduation();
+        if (owner_ == address(0) || timelock_ == address(0)) revert ZeroAddress();
         timelock = timelock_;
     }
 
     function setPeer(uint32 eid, bytes32 peer) public override {
-        _admin();
+        if (msg.sender != timelock) revert NotTimelock();
         _setPeer(eid, peer);
     }
 
     function setEnforcedOptions(EnforcedOptionParam[] calldata enforced) public override {
-        _admin();
+        if (msg.sender != timelock) revert NotTimelock();
         _setEnforcedOptions(enforced);
     }
 
-    function _admin() internal view {
-        if (msg.sender != owner() && msg.sender != timelock) revert NotAdmin();
+    /// @notice Pulls ETH that a LayerZero option delivered here and nowhere else can withdraw.
+    function sweep(address payable to) external {
+        if (msg.sender != timelock) revert NotTimelock();
+        if (to == address(0)) revert ZeroAddress();
+        uint256 bal = address(this).balance;
+        if (bal == 0) revert ZeroAddress();
+        (bool ok,) = to.call{value: bal}("");
+        if (!ok) revert ZeroAddress();
     }
 }

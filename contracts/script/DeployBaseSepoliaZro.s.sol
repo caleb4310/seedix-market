@@ -15,6 +15,7 @@ import {MockZRO} from "../src/zro/MockZRO.sol";
 import {TestOwner} from "../src/zro/TestOwner.sol";
 import {ZroRewardVault} from "../src/zro/ZroRewardVault.sol";
 import {ZroTaxSwapper} from "../src/zro/ZroTaxSwapper.sol";
+import {ZroMainnetGuard} from "../src/zro/ZroMainnetGuard.sol";
 import {ZroWeightTracker} from "../src/zro/ZroWeightTracker.sol";
 import {ZroChain} from "./ZroChain.sol";
 
@@ -51,14 +52,18 @@ contract DeployBaseSepoliaZro is ZroChain {
             revert Amount();
         }
         address broadcaster = vm.addr(pk);
+        address proposer = vm.envOr("TIMELOCK_PROPOSER", broadcaster);
+        address executor = vm.envOr("TIMELOCK_EXECUTOR", broadcaster);
+        if (block.chainid == 1 || block.chainid == 8453 || block.chainid == 42161) revert Amount();
 
         vm.startBroadcast(pk);
 
         (address owner, bool safe) = _owner(chain, broadcaster);
+        new ZroMainnetGuard().assertReady(block.chainid, address(0), delay, proposer, owner, broadcaster);
         address[] memory proposers = new address[](1);
-        proposers[0] = broadcaster;
+        proposers[0] = proposer;
         address[] memory executors = new address[](1);
-        executors[0] = broadcaster;
+        executors[0] = executor;
         TimelockController timelock = new TimelockController(delay, proposers, executors, owner);
 
         address endpoint = chain.lzEndpoint;
@@ -93,10 +98,6 @@ contract DeployBaseSepoliaZro is ZroChain {
         RouteSeeder seeder = new RouteSeeder();
         IERC20(address(zro)).approve(address(seeder), zroAmount);
         IERC20(chain.weth).approve(address(seeder), wethAmount);
-        // Pre-fund the seeder so `seedWide` can measure WETH spent (it only counts
-        // the drop in its own balance, not transferFrom from the payer).
-        IERC20(address(zro)).transfer(address(seeder), zroAmount);
-        IERC20(chain.weth).transfer(address(seeder), wethAmount);
         int24 widthSteps = int24(int256(vm.envOr("SEED_WIDTH_STEPS", uint256(1))));
         if (widthSteps < 1) widthSteps = 1;
         (PoolKey memory key, uint256 spent) =

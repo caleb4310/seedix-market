@@ -25,13 +25,13 @@ contract ReenteringHolder {
     }
 
     function claim(uint256 value) external {
-        vault.claimRemote{value: value}(id, epoch, dstEid, "");
+        vault.claimRemote{value: value}(id, epoch, dstEid, bytes32(uint256(uint160(address(this)))), "");
     }
 
     receive() external payable {
         if (tried) return;
         tried = true;
-        try vault.claimRemote(id, epoch, dstEid, "") {
+        try vault.claimRemote(id, epoch, dstEid, bytes32(uint256(uint160(address(this)))), "") {
             blocked = false;
         } catch {
             blocked = true;
@@ -72,6 +72,7 @@ contract ZroRemoteTest is Fixture {
         vault =
             new ZroRewardVault(address(this), address(this), address(d.timelock), address(this), zro, d.hook, tracker);
         payout = new ZroPayout(address(vault));
+        vm.prank(address(d.timelock));
         vault.setPayoutModule(address(payout));
         vault.setSwapper(address(this));
         zro.mint(address(this), 100 ether);
@@ -80,13 +81,13 @@ contract ZroRemoteTest is Fixture {
     }
 
     function test_quoteAndRemoteClaimRefundsExcessAndCannotClaimTwice() public {
-        uint256 fee = vault.quoteRemote(alice, 1 ether, DST, "");
+        uint256 fee = vault.quoteRemote(bytes32(uint256(uint160(alice))), 1 ether, DST, "");
         assertEq(fee, 0.01 ether);
         uint256 extra = 0.04 ether;
         vm.deal(alice, 1 ether);
         uint256 before = alice.balance;
         vm.prank(alice);
-        uint256 claimed = vault.claimRemote{value: fee + extra}(id, epoch, DST, "");
+        uint256 claimed = vault.claimRemote{value: fee + extra}(id, epoch, DST, bytes32(uint256(uint160(alice))), "");
         assertEq(claimed, 1 ether);
         assertEq(alice.balance, before - fee);
         assertEq(zro.balanceOf(address(vault)), 0);
@@ -98,7 +99,7 @@ contract ZroRemoteTest is Fixture {
 
         vm.prank(alice);
         vm.expectRevert(ZroRewardVault.AlreadyClaimed.selector);
-        vault.claimRemote{value: fee}(id, epoch, DST, "");
+        vault.claimRemote{value: fee}(id, epoch, DST, bytes32(uint256(uint160(alice))), "");
         vm.prank(alice);
         vm.expectRevert(ZroRewardVault.AlreadyClaimed.selector);
         vault.claim(id, epoch);
@@ -108,11 +109,11 @@ contract ZroRemoteTest is Fixture {
         vm.deal(alice, 1 ether);
         vm.prank(alice);
         vm.expectRevert(ZroPayout.FeeShort.selector);
-        vault.claimRemote{value: 0.009 ether}(id, epoch, DST, "");
+        vault.claimRemote{value: 0.009 ether}(id, epoch, DST, bytes32(uint256(uint160(alice))), "");
         assertEq(vault.totalClaimed(), 0);
-        uint256 fee = vault.quoteRemote(alice, 1 ether, DST, "");
+        uint256 fee = vault.quoteRemote(bytes32(uint256(uint160(alice))), 1 ether, DST, "");
         vm.prank(alice);
-        assertEq(vault.claimRemote{value: fee}(id, epoch, DST, ""), 1 ether);
+        assertEq(vault.claimRemote{value: fee}(id, epoch, DST, bytes32(uint256(uint160(alice))), ""), 1 ether);
     }
 
     function test_refundCannotReenterASecondClaim() public {
@@ -130,7 +131,7 @@ contract ZroRemoteTest is Fixture {
         zro.mint(address(this), 1 ether);
         vault.fund(other, next, 1 ether);
 
-        uint256 fee = vault.quoteRemote(address(holder), 1 ether, DST, "");
+        uint256 fee = vault.quoteRemote(bytes32(uint256(uint160(address(holder)))), 1 ether, DST, "");
         vm.deal(address(holder), fee + 0.05 ether);
         holder.claim(fee + 0.05 ether);
         assertTrue(holder.tried());
