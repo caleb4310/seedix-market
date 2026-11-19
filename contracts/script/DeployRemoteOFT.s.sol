@@ -26,7 +26,7 @@ contract DeployRemoteOFT is ZroChain {
             if (owner == broadcaster) revert MainnetDelay();
         }
         vm.startBroadcast(pk);
-        ZroRemoteOFT oft = new ZroRemoteOFT(name_, symbol_, chain.lzEndpoint, owner, owner, timelock, minDelay);
+        ZroRemoteOFT oft = new ZroRemoteOFT(name_, symbol_, chain.lzEndpoint, owner, timelock, minDelay);
         vm.stopBroadcast();
         console2.log("remoteOft", address(oft));
         console2.log("endpoint", chain.lzEndpoint);

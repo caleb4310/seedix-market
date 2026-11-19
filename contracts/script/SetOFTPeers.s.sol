@@ -1,36 +1,31 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Script, console2} from "forge-std/Script.sol";
+import {console2} from "forge-std/Script.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
-import {ZroCoinAdapter} from "../src/zro/ZroCoinAdapter.sol";
-import {ZroRemoteOFT} from "../src/zro/ZroRemoteOFT.sol";
+import {SafeOps} from "../src/zro/SafeOps.sol";
+import {SafeBatch} from "./SafeBatch.sol";
 
-/// @notice Schedules both peer writes through the timelock. HOME_EID and REMOTE_EID come from the
-///         environment. Execute after the delay with EXECUTE=1. PRIVATE_KEY is never logged.
-contract SetOFTPeers is Script {
+/// @notice One chain, one peer. Run it on the home chain with OFT = the adapter and PEER = the
+///         remote OFT, then again on the remote chain with the addresses swapped. The schedule
+///         targets this chain's timelock only. This does not broadcast.
+contract SetOFTPeers is SafeBatch {
     function run() external {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
-        TimelockController tl = TimelockController(payable(vm.envAddress("ZRO_TIMELOCK")));
-        address home = vm.envAddress("HOME_ADAPTER");
-        address remote = vm.envAddress("REMOTE_OFT");
-        uint32 homeEid = uint32(vm.envUint("HOME_EID"));
+        address timelock = vm.envAddress("ZRO_TIMELOCK");
+        address oft = vm.envAddress("OFT");
+        address peer = vm.envAddress("PEER");
         uint32 remoteEid = uint32(vm.envUint("REMOTE_EID"));
-        bytes32 salt = keccak256(abi.encode(home, remote, homeEid, remoteEid));
-        bytes memory homeCall = abi.encodeCall(ZroCoinAdapter.setPeer, (remoteEid, bytes32(uint256(uint160(remote)))));
-        bytes memory remoteCall = abi.encodeCall(ZroRemoteOFT.setPeer, (homeEid, bytes32(uint256(uint160(home)))));
-        bool execute = vm.envOr("EXECUTE", false);
-        vm.startBroadcast(pk);
-        if (!execute) {
-            tl.schedule(home, 0, homeCall, bytes32(0), salt, tl.getMinDelay());
-            tl.schedule(remote, 0, remoteCall, bytes32(0), salt, tl.getMinDelay());
-        } else {
-            tl.execute(home, 0, homeCall, bytes32(0), salt);
-            tl.execute(remote, 0, remoteCall, bytes32(0), salt);
-        }
-        vm.stopBroadcast();
-        console2.log("home", home);
-        console2.log("remote", remote);
-        console2.log("execute", execute ? 1 : 0);
+        uint256 chainId = vm.envOr("CHAIN_ID", block.chainid);
+        uint256 delay = vm.envOr("TIMELOCK_DELAY", uint256(0));
+        if (delay == 0) delay = TimelockController(payable(timelock)).getMinDelay();
+        bytes32 salt = keccak256(abi.encode(oft, peer, remoteEid, chainId));
+        address[] memory to = new address[](1);
+        bytes[] memory data = new bytes[](1);
+        to[0] = timelock;
+        data[0] = SafeOps.peerSchedule(oft, remoteEid, peer, salt, delay);
+        _writeBatch(vm.envOr("SAFE_BATCH_OUT", string("out/safe/set-peer.json")), chainId, "set-oft-peer", to, data);
+        console2.log("oft", oft);
+        console2.log("peer", peer);
+        console2.log("remoteEid", remoteEid);
     }
 }

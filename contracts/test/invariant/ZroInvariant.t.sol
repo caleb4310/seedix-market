@@ -44,6 +44,7 @@ contract ZroInvariantTest is StdInvariant, Fixture {
         vm.warp(2 days);
         ZroWeightTracker tracker = new ZroWeightTracker(address(this), address(d.hook), address(router), address(pm));
         (address coin, PoolId id) = _launch(0);
+        tracker.registerCoin(coin);
         address alice = address(0xA11CE);
         address bob = address(0xB0B2);
         vm.prank(coin);

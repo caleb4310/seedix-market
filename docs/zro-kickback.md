@@ -182,15 +182,36 @@ Environment variables for that deploy:
 
 ## Phase 2
 
-A holder calls `quoteRemote(to, amount, dstEid, options)` and then `claimRemote(poolId, epoch, dstEid, options)` with at least that native fee in `msg.value`. `ZroPayout` is the module. It pulls the claimed ZRO, calls `OFT.send`, and refunds `msg.value` above the quote to the holder. The OFT names the same holder as the endpoint refund address. The vault marks the claim before the send. A revert, including a short fee, rolls that mark back, so the claim cannot be taken twice and a failed send does not burn it. The vault is non-reentrant, and the module refuses a reentrant `payout`.
+A holder calls `quoteRemote(to, amount, dstEid, options)` and then `claimRemote(poolId, epoch, dstEid, to, options)` with at least that native fee in `msg.value`. `to` is a `bytes32`. Zero and any value with the top 96 bits set are rejected. `ZroPayout` pulls the claimed ZRO, calls `OFT.send`, and refunds `msg.value` above the quote to the holder. The OFT names the same holder as the endpoint refund address. The vault marks the claim before the send. A revert, including a short fee, rolls that mark back, so the claim cannot be taken twice and a failed send does not burn it. The vault is non-reentrant, and the module refuses a reentrant `payout`.
 
-`LaunchToken` stays a clone. A clone cannot run an OFT constructor, so the home chain gets one `ZroCoinAdapter` lockbox and every other chain gets a mint/burn `ZroRemoteOFT`. Locked coins on the home adapter equal the remote OFT's supply. `ZroGraduation` only accepts coins the launcher created. Peers and enforced options are timelock calls. The Safe is the proposer. On the live Base Sepolia tracker, which has no `excluder()`, construct graduation with `tracker = address(0)` and run `SafeGraduateLive` so the Safe excludes the adapter in the same batch. A tracker that cannot exclude reverts `TrackerHasNoExcluder` instead of leaving the adapter eligible. The team wallet earns no weight: the tracker reads `teamWallet()` on the mint. Unclaimed rewards can be rolled into the next round after the claim window (90 days, timelock-settable). `claimRemote` takes the remote recipient as `bytes32` and rejects zero.
+`LaunchToken` stays a clone. A clone cannot run an OFT constructor, so the home chain gets one `ZroCoinAdapter` lockbox and every other chain gets a mint/burn `ZroRemoteOFT`. Locked coins on the home adapter equal the remote OFT's supply. The adapter constructor reads the launcher from the graduation contract that is creating it. A caller cannot pass a graduation address of their own. Peers, enforced options, `setDelegate`, and `sweep` are timelock calls on both the adapter and the remote OFT. The OApp owner is the timelock, which is what makes `setDelegate` timelock-only. `SetOFTPeers` writes one Safe batch for one chain. Run it on the home chain, then again on the remote chain with the addresses swapped. `VerifyOFTPeer` reads `peers` on that chain.
 
-The tax still applies only on Seedix's own v4 pools. DVN selection stays an endpoint config made by the delegate. It is not a value in these contracts. The delegate is the Safe.
+The keeper is the only address that may `poke`. The timelock sets the keeper. The dense quote needs an observation within 30 seconds of the start of the 30-minute window, so the keeper pokes at least that often. A 40 second gap makes `quote` and `harvest` revert until the next poke.
+
+`SetUlnConfig` reads `config/uln.json` plus `LZ_ENDPOINT`, `LZ_SEND_LIB`, `LZ_RECEIVE_LIB`, `OAPP`, and `REMOTE_EID`. It refuses a list of fewer than two required DVNs, a list that is only the LayerZero Labs DVN, and a file whose `chainId` is not this chain. It writes a Safe batch and does not broadcast. `VERIFY=1` reads `getConfig` back after the Safe has executed. The committed file is the Ethereum mainnet example. Copy it per chain.
+
+## What already-deployed Base Sepolia contracts can do
+
+These addresses stay in place. Nothing here sends a transaction.
+
+- Launcher `0xb0F9D152e76D5232A13672EA531aD7BB223e81FB` has no `isLaunchedCoin`. A new `ZroGraduation` is constructed with that launcher. The Safe calls `allowCoin(coin, true)` and then `graduate`. The launcher is not redeployed for that.
+- Tracker `0x18CAd4686D7864C379cC9A49B926F0c112D3dE1F` has no `excluder()` and no per-token `setExcluded`. Graduation is constructed with `tracker = address(0)`. `SafeGraduateLive` writes one Safe batch: `allowCoin`, `graduate`, and the live tracker's `setExcluded(adapter, true)`. The adapter is the graduation contract's next CREATE address, so the third call names it before `graduate` runs. `VerifyGraduateLive` checks the registry and `excluded` afterwards. The script does not broadcast.
+- The live timelock still has the deployer as proposer, executor, and canceller, with a 60 second delay. This branch does not change it. `SafeSetExcluder` writes the batch for a tracker deployed from this code. On the live timelock the schedule has to be submitted by the current proposer.
+
+## What has to be deployed from this code
+
+These behaviors are in new bytecode. A contract that is already on Base Sepolia does not pick them up.
+
+- The weight-tracker registry, per-token exclusion, and the rule that the team wallet is not subtracted from supply a second time. `onTransfer` accepts only a registered coin. The launcher registers the coin before the mint. The live tracker does not have that registry. Using this tracker means deploying it and a launcher that calls `registerCoin`. The live graduation path above does not use this tracker.
+- The claim window stored on each round at `fund`. Shortening `claimWindow` later does not expire a round that was already funded. A mainnet window is at least 30 days. `ZroMainnetGuard.assertClaimWindow` checks that. The Base Sepolia deploy does not construct the guard.
+- `ZroRemoteOFT`, including `sweep`, and the recipient check on `send`.
+- Keeper-only `poke` on a swapper deployed from this branch.
+
+`ZroMainnetGuard.assertReady` reads the deployed timelock: `getMinDelay`, and whether the Safe holds `PROPOSER_ROLE` and the deployer holds proposer, executor, canceller, or admin. It covers chain ids 1, 8453, 42161, and 99901. There is no mainnet deploy script yet. The guard is not deployed on Base Sepolia.
 
 ## Phase 3
 
-The send path should require at least two DVNs, including one that is not run by LayerZero Labs. That configuration is on the endpoint, by the same Safe delegate. The adapter and the payout module do not need a redeploy for it.
+The send path requires at least two DVNs, including one that is not run by LayerZero Labs. That configuration is on the endpoint. `SetUlnConfig` writes the Safe batch for the delegate and checks the DVN list before it writes. The adapter and the payout module do not need a redeploy for it.
 
 ## Open questions
 

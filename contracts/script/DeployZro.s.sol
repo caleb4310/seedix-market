@@ -9,6 +9,7 @@ import {MockLzEndpoint} from "../src/zro/MockLzEndpoint.sol";
 import {MockZRO} from "../src/zro/MockZRO.sol";
 import {ZroRewardVault} from "../src/zro/ZroRewardVault.sol";
 import {ZroTaxSwapper} from "../src/zro/ZroTaxSwapper.sol";
+import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {ZroWeightTracker} from "../src/zro/ZroWeightTracker.sol";
 import {ZroChain} from "./ZroChain.sol";
 
@@ -49,7 +50,10 @@ contract DeployZro is ZroChain {
 
         ZroWeightTracker tracker = new ZroWeightTracker(broadcaster, hookAddr, chain.router, chain.poolManager);
         if (lockerAddr != address(0)) tracker.setExcluded(lockerAddr, true);
-        if (launcherAddr != address(0)) tracker.setExcluded(launcherAddr, true);
+        if (launcherAddr != address(0)) {
+            tracker.setExcluded(launcherAddr, true);
+            tracker.setLauncher(launcherAddr);
+        }
         if (broadcaster != owner) tracker.setOwner(owner);
 
         if (hookAddr != address(0)) {
@@ -59,7 +63,17 @@ contract DeployZro is ZroChain {
             ZroTaxSwapper swapper =
                 new ZroTaxSwapper(broadcaster, timelock, owner, hook, vault, chain.weth, address(zro));
             vault.setSwapper(address(swapper));
-            if (keeper != address(0)) swapper.setKeeper(keeper);
+            if (keeper != address(0)) {
+                TimelockController(payable(timelock))
+                    .schedule(
+                        address(swapper),
+                        0,
+                        abi.encodeCall(ZroTaxSwapper.setKeeper, (keeper)),
+                        bytes32(0),
+                        keccak256("zro-keeper"),
+                        TimelockController(payable(timelock)).getMinDelay()
+                    );
+            }
             if (broadcaster != owner) swapper.setOwner(owner);
             hook.setZroAdmin(owner, timelock);
             hook.setZroSwapper(address(swapper));

@@ -16,15 +16,22 @@ pragma solidity ^0.8.26;
 ///         The zero address, the hook, the router, and the pool (the PoolManager) are excluded.
 ///         Excluded balances are not part of `eligibleSupply` and their weight is zero.
 ///
+///         `onTransfer` accepts only coins this registry has recorded. The launcher registers a coin
+///         before its mint, and graduation can register one later. Exclusion of an address that
+///         already holds a coin is per token: one balance, one supply update, no token list.
+///
 ///         Checkpoints are append-only. A claim reads two points with a binary search. It does not
 ///         loop over holders.
 contract ZroWeightTracker {
     error NotOwner();
     error NotTimelock();
+    error NotRegistrar();
+    error NotCoin();
     error ZeroAddress();
     error Time();
     error Short();
     error Overflow();
+    error PerToken();
 
     struct Point {
         uint64 t;
@@ -37,16 +44,22 @@ contract ZroWeightTracker {
     address public timelock;
     /// @notice May exclude addresses, which is how graduation keeps a locked OFT adapter out of the weight.
     address public excluder;
+    /// @notice The launcher. It may register a coin in the same transaction that mints it.
+    address public launcher;
     mapping(address account => bool) public excluded;
-    mapping(address account => address[] tokens) private _tokensOf;
-    mapping(address account => mapping(address token => bool seen)) private _tokenSeen;
+    /// @notice Per-token exclusion. Graduation uses this for the adapter. There is no token list.
+    mapping(address token => mapping(address account => bool)) public excludedFrom;
+    mapping(address coin => bool) public isCoin;
     mapping(address token => mapping(address account => Point[])) internal _points;
     mapping(address token => Point[]) internal _supplyPoints;
     mapping(address token => uint256) public eligibleSupply;
 
     event ExcludedSet(address indexed account, bool excluded);
+    event ExcludedFromSet(address indexed token, address indexed account, bool excluded);
     event ExcluderSet(address indexed previous, address indexed next);
     event OwnerSet(address indexed previous, address indexed next);
+    event LauncherSet(address indexed previous, address indexed next);
+    event CoinRegistered(address indexed coin);
 
     constructor(address owner_, address hook_, address router_, address poolManager_) {
         if (owner_ == address(0)) revert ZeroAddress();
@@ -76,38 +89,85 @@ contract ZroWeightTracker {
         excluder = next;
     }
 
-    /// @notice The zero address stays excluded. A balance already in `eligibleSupply` is moved out
-    ///         or back in, so a late exclusion cannot double-count the next transfer.
-    function setExcluded(address account, bool isExcluded) external {
-        if (msg.sender != owner && msg.sender != excluder) revert NotOwner();
-        if (account == address(0) && !isExcluded) revert ZeroAddress();
-        if (excluded[account] == isExcluded) return;
-        _moveSupply(account, isExcluded);
-        _setExcluded(account, isExcluded);
+    /// @notice The owner or the timelock names the launcher that may register coins.
+    function setLauncher(address next) external {
+        if (msg.sender != owner && msg.sender != timelock) revert NotOwner();
+        if (next == address(0)) revert ZeroAddress();
+        emit LauncherSet(launcher, next);
+        launcher = next;
     }
 
-    /// @notice Called by the coin after its own balances move. `msg.sender` is the coin.
+    /// @notice Records a Seedix coin. The launcher calls this before the coin's first mint.
+    ///         Graduation may call it when the launcher that created the coin predates this registry.
+    function registerCoin(address coin) external {
+        if (msg.sender != launcher && msg.sender != owner && msg.sender != timelock && msg.sender != excluder) {
+            revert NotRegistrar();
+        }
+        if (coin == address(0)) revert ZeroAddress();
+        if (isCoin[coin]) return;
+        isCoin[coin] = true;
+        emit CoinRegistered(coin);
+    }
+
+    /// @notice Global exclusion for an address that does not yet hold a registered coin: the hook,
+    ///         the router, the pool, the locker, and the launcher. Turning it off is per token, so
+    ///         an excluded interval cannot be credited later. A balance that already exists is
+    ///         moved with `setExcluded(account, token, bool)`.
+    function setExcluded(address account, bool isExcluded) external {
+        if (msg.sender != owner && msg.sender != excluder) revert NotOwner();
+        if (!isExcluded) revert PerToken();
+        if (account == address(0)) revert ZeroAddress();
+        if (excluded[account]) return;
+        _setExcluded(account, true);
+    }
+
+    /// @notice Exclude or include `account` for one registered coin. The account is checkpointed
+    ///         at the old status before the flag flips, so the excluded interval is not weight.
+    ///         The team wallet was never in `eligibleSupply`, so this does not subtract it again.
+    function setExcluded(address account, address token, bool isExcluded) external {
+        if (msg.sender != owner && msg.sender != excluder) revert NotOwner();
+        if (account == address(0)) revert ZeroAddress();
+        if (!isCoin[token]) revert NotCoin();
+        if (excludedFrom[token][account] == isExcluded) return;
+        if (_isTeam(token, account)) return;
+        _checkpoint(token, account);
+        uint256 bal = _lastBalance(_points[token][account]);
+        if (bal > 0 && !excluded[account]) {
+            uint256 supply = eligibleSupply[token];
+            if (isExcluded) {
+                if (supply < bal) revert Short();
+                supply -= bal;
+            } else {
+                supply += bal;
+            }
+            eligibleSupply[token] = supply;
+            _push(_supplyPoints[token], uint64(block.timestamp), _asUint128(supply), true);
+        }
+        excludedFrom[token][account] = isExcluded;
+        emit ExcludedFromSet(token, account, isExcluded);
+    }
+
+    /// @notice Called by a registered coin after its own balances move. `msg.sender` is the coin.
     ///         A self-transfer is ignored, so it cannot reset or inflate weight.
     function onTransfer(address from, address to, uint256 amount) external {
         if (amount == 0 || from == to) return;
         address token = msg.sender;
+        if (!isCoin[token]) revert NotCoin();
         uint64 t = uint64(block.timestamp);
         uint128 amt = _asUint128(amount);
         bool fromTeam = _isTeam(token, from);
         bool toTeam = _isTeam(token, to);
-        bool fromCounts = from != address(0) && !excluded[from] && !fromTeam;
-        bool toCounts = to != address(0) && !excluded[to] && !toTeam;
-        if (from != address(0)) _note(from, token);
-        if (to != address(0)) _note(to, token);
+        bool fromCounts = _counts(token, from, fromTeam);
+        bool toCounts = _counts(token, to, toTeam);
 
         if (from != address(0)) {
             uint128 bal = _lastBalance(_points[token][from]);
             if (bal < amt) revert Short();
-            _push(_points[token][from], t, bal - amt, !_excludedOrZero(from) && !fromTeam);
+            _push(_points[token][from], t, bal - amt, fromCounts);
         }
         if (to != address(0)) {
             uint128 bal = _lastBalance(_points[token][to]);
-            _push(_points[token][to], t, bal + amt, !_excludedOrZero(to) && !toTeam);
+            _push(_points[token][to], t, bal + amt, toCounts);
         }
         if (fromCounts != toCounts) {
             uint256 supply = eligibleSupply[token];
@@ -122,7 +182,10 @@ contract ZroWeightTracker {
     }
 
     function weight(address token, address account, uint64 start, uint64 end) external view returns (uint256) {
-        if (end <= start || excluded[account] || account == address(0) || _isTeam(token, account)) return 0;
+        if (
+            end <= start || excluded[account] || excludedFrom[token][account] || account == address(0)
+                || _isTeam(token, account)
+        ) return 0;
         return _between(_points[token][account], start, end);
     }
 
@@ -135,13 +198,20 @@ contract ZroWeightTracker {
         return _lastBalance(_points[token][account]);
     }
 
+    function _counts(address token, address account, bool team) internal view returns (bool) {
+        return account != address(0) && !excluded[account] && !excludedFrom[token][account] && !team;
+    }
+
     function _setExcluded(address account, bool isExcluded) internal {
         excluded[account] = isExcluded;
         emit ExcludedSet(account, isExcluded);
     }
 
-    function _excludedOrZero(address account) internal view returns (bool) {
-        return account == address(0) || excluded[account];
+    /// @dev Close the integral up to now using the status from before a flag change.
+    function _checkpoint(address token, address account) internal {
+        uint128 bal = _lastBalance(_points[token][account]);
+        bool accrue = _counts(token, account, _isTeam(token, account));
+        _push(_points[token][account], uint64(block.timestamp), bal, accrue);
     }
 
     /// @dev The team allocation is excluded at the mint itself. `teamWallet` is set before that mint.
@@ -151,31 +221,6 @@ contract ZroWeightTracker {
         if (!ok || data.length < 32) return false;
         address team = abi.decode(data, (address));
         return team != address(0) && team == account;
-    }
-
-    function _note(address account, address token) internal {
-        if (_tokenSeen[account][token]) return;
-        _tokenSeen[account][token] = true;
-        _tokensOf[account].push(token);
-    }
-
-    function _moveSupply(address account, bool isExcluded) internal {
-        address[] memory tokens = _tokensOf[account];
-        uint64 t = uint64(block.timestamp);
-        for (uint256 i; i < tokens.length; ++i) {
-            address token = tokens[i];
-            uint256 bal = _lastBalance(_points[token][account]);
-            if (bal == 0) continue;
-            uint256 supply = eligibleSupply[token];
-            if (isExcluded) {
-                if (supply < bal) revert Short();
-                supply -= bal;
-            } else {
-                supply += bal;
-            }
-            eligibleSupply[token] = supply;
-            _push(_supplyPoints[token], t, _asUint128(supply), true);
-        }
     }
 
     function _push(Point[] storage pts, uint64 t, uint128 balance, bool accrue) internal {

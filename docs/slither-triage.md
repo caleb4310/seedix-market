@@ -89,4 +89,7 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - unused-return ZroPayout.payout | `send` returns the LayerZero messaging receipt and the OFT receipt. The payout uses the OFT receipt to return dust. The messaging guid is not an input to the vault's claim accounting.
 - uninitialized-local OracleLib._consult | `beforeOrAt` and `atOrAfter` are filled inside the observation loop. The reads happen only after `foundBefore` is true. Slither drops the zero start of the search flags.
 - incorrect-equality ZroCoinAdapter.sweep | `bal == 0` means the adapter is not holding ETH, so there is nothing to sweep. It is not a token-balance comparison.
+- incorrect-equality ZroRemoteOFT.sweep | The same empty-balance check on the remote mint/burn OFT. There is nothing to sweep.
+- uninitialized-local UlnPolicy.assertDvns | `outsider` starts false and is set when a required DVN is not the LayerZero Labs DVN. The function reverts if it is still false after the list.
+- uninitialized-local ZroCoinAdapter._fromGraduation | `launcher` is set from the graduation contract that is constructing the adapter. A failed read returns before the address is used.
 - unused-return ZroRewardVault.claimable | `config` is read for the coin whose time-weight is claimable. The pair and the fee fields are not a payout amount.

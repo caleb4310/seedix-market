@@ -13,6 +13,7 @@ contract ZroWeightTest is Test {
 
     function setUp() public {
         tracker = new ZroWeightTracker(address(this), address(0x1111), address(0x2222), pool);
+        tracker.registerCoin(token);
         vm.warp(10_000);
     }
 

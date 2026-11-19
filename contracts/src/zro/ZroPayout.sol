@@ -32,6 +32,7 @@ contract ZroPayout is IZroPayout {
     error RefundFailed();
     error Reentered();
     error ZeroRecipient();
+    error BadRecipient();
 
     address public immutable vault;
     uint256 private _locked;
@@ -46,7 +47,7 @@ contract ZroPayout is IZroPayout {
         view
         returns (uint256 nativeFee)
     {
-        if (to == bytes32(0)) revert ZeroRecipient();
+        _recipient(to);
         nativeFee = IZroOft(zro).quoteSend(_param(to, amount, dstEid, options), false).nativeFee;
     }
 
@@ -55,7 +56,8 @@ contract ZroPayout is IZroPayout {
         payable
     {
         if (msg.sender != vault) revert NotVault();
-        if (to == bytes32(0) || refundTo == address(0)) revert ZeroRecipient();
+        _recipient(to);
+        if (refundTo == address(0)) revert ZeroRecipient();
         if (_locked == 1) revert Reentered();
         _locked = 1;
         uint256 fee = quote(zro, to, amount, dstEid, options);
@@ -71,6 +73,11 @@ contract ZroPayout is IZroPayout {
             if (!ok) revert RefundFailed();
         }
         _locked = 0;
+    }
+
+    function _recipient(bytes32 to) internal pure {
+        if (to == bytes32(0)) revert ZeroRecipient();
+        if (uint256(to) >> 160 != 0) revert BadRecipient();
     }
 
     function _param(bytes32 to, uint256 amount, uint32 dstEid, bytes calldata options)

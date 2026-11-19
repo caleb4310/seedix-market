@@ -114,8 +114,9 @@ contract ZroTaxSwapper is IUnlockCallback {
         owner = next;
     }
 
+    /// @notice The keeper is the only address that may `poke` or `harvest`. The timelock sets it.
     function setKeeper(address next) external {
-        if (!_admin(msg.sender)) revert NotOwner();
+        if (msg.sender != timelock) revert NotTimelock();
         keeper = next;
         emit KeeperSet(next);
     }
@@ -158,8 +159,12 @@ contract ZroTaxSwapper is IUnlockCallback {
         emit PoolRegistered(key.toId());
     }
 
-    /// @notice Records the pre-swap tick. The harvest TWAP needs 30 minutes of these observations.
+    /// @notice Records the stored tick across the idle gap. Only the keeper may call it. The dense
+    ///         quote needs an observation within 30 seconds of the start of the TWAP window, so the
+    ///         keeper pokes at least that often. A 40 second gap makes `quote` and `harvest` revert
+    ///         until the next poke lands inside the cadence.
     function poke() external {
+        if (keeper == address(0) || msg.sender != keeper) revert NotKeeper();
         if (!poolSet) revert BadPool();
         (, int24 tick,,) = poolManager.getSlot0(poolKey.toId());
         OracleLib.accrueStored(_oracle, uint32(block.timestamp), tick);

@@ -58,6 +58,7 @@ contract ZroRemoteTest is Fixture {
         ZroWeightTracker tracker = new ZroWeightTracker(address(this), address(d.hook), address(router), address(pm));
         address coin;
         (coin, id) = _launch(0);
+        tracker.registerCoin(coin);
         epoch = uint64(vm.getBlockTimestamp() / 1 hours);
         vm.prank(coin);
         tracker.onTransfer(address(0), alice, 5 ether);
@@ -123,6 +124,7 @@ contract ZroRemoteTest is Fixture {
         uint64 next = uint64(vm.getBlockTimestamp() / 1 hours);
         ReenteringHolder holder = new ReenteringHolder(vault, other, next, DST);
         ZroWeightTracker tracker = ZroWeightTracker(address(vault.tracker()));
+        tracker.registerCoin(coin);
         vm.prank(coin);
         tracker.onTransfer(address(0), address(holder), 5 ether);
         assertGt(tracker.eligibleSupply(coin), 0);

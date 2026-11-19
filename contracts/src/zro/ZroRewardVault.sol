@@ -36,6 +36,7 @@ contract ZroRewardVault {
     error NoModule();
     error Overflow();
     error TransferFailed();
+    error BadRecipient();
 
     uint256 public constant ROUND_SECONDS = 1 hours;
 
@@ -46,6 +47,9 @@ contract ZroRewardVault {
         uint256 totalWeight;
         uint64 start;
         uint64 end;
+        /// @notice `claimWindow` at the moment this round was funded. A later `setClaimWindow`
+        ///         does not shorten a round that is already open.
+        uint64 claimWindowAtFund;
         bool opened;
     }
 
@@ -122,8 +126,9 @@ contract ZroRewardVault {
         owner = next;
     }
 
+    /// @notice The delegate is named by the timelock. It is not an instant owner call.
     function setDelegate(address next) external {
-        if (!_admin(msg.sender) || next == address(0)) revert NotOwner();
+        if (msg.sender != timelock || next == address(0)) revert NotTimelock();
         emit DelegateSet(delegate, next);
         delegate = next;
     }
@@ -139,11 +144,13 @@ contract ZroRewardVault {
     uint256 public constant DEFAULT_CLAIM_WINDOW = 90 days;
     uint256 public claimWindow = 90 days;
 
-    /// @notice How long a holder has to claim after the hour closes. The timelock can shorten it
-    ///         for a testnet. It cannot be zero.
+    /// @notice How long a holder has to claim after the hour closes, for rounds funded after this
+    ///         call. A round already funded keeps the window it snapshotted. The timelock can
+    ///         shorten the next window for a testnet, down to one hour. A mainnet config is
+    ///         checked separately and must be at least 30 days.
     function setClaimWindow(uint256 next) external {
         if (msg.sender != timelock) revert NotTimelock();
-        if (next < 1 hours) revert Early();
+        if (next < 1 hours || next > type(uint64).max) revert Early();
         claimWindow = next;
     }
 
@@ -183,6 +190,7 @@ contract ZroRewardVault {
             round.opened = true;
             round.start = start;
             round.end = end;
+            round.claimWindowAtFund = uint64(claimWindow);
             emit Funded(poolId, epoch, amount, 0, dustIn);
             return;
         }
@@ -192,6 +200,7 @@ contract ZroRewardVault {
         round.totalWeight = weight;
         round.start = start;
         round.end = end;
+        round.claimWindowAtFund = uint64(claimWindow);
         liabilities += pot;
         emit Funded(poolId, epoch, amount, weight, dustIn);
     }
@@ -221,6 +230,7 @@ contract ZroRewardVault {
         returns (uint256 nativeFee)
     {
         if (payoutModule == address(0)) revert NoModule();
+        _recipient(to);
         nativeFee = IZroPayout(payoutModule).quote(address(zro), to, amount, dstEid, options);
     }
 
@@ -233,7 +243,7 @@ contract ZroRewardVault {
         returns (uint256 amount)
     {
         if (payoutModule == address(0)) revert NoModule();
-        if (to == bytes32(0)) revert ZeroAddress();
+        _recipient(to);
         amount = _account(poolId, epoch, msg.sender);
         if (amount == 0) {
             if (msg.value > 0) revert Nothing();
@@ -250,7 +260,7 @@ contract ZroRewardVault {
         bytes32 id = _id(poolId, epoch);
         Round storage round = rounds[id];
         if (!round.opened || round.totalWeight == 0) revert Nothing();
-        if (block.timestamp < uint256(round.end) + claimWindow) revert Early();
+        if (block.timestamp < uint256(round.end) + round.claimWindowAtFund) revert Early();
         uint256 leftover = uint256(round.funded) - round.claimed;
         if (leftover == 0) return;
         round.claimed = round.funded;
@@ -299,6 +309,11 @@ contract ZroRewardVault {
         uint256 beforeBal = zro.balanceOf(address(this));
         zro.safeTransfer(to, amount);
         if (zro.balanceOf(address(this)) != beforeBal - amount) revert TransferFailed();
+    }
+
+    function _recipient(bytes32 to) internal pure {
+        if (to == bytes32(0)) revert ZeroAddress();
+        if (uint256(to) >> 160 != 0) revert BadRecipient();
     }
 
     function _admin(address account) internal view returns (bool) {

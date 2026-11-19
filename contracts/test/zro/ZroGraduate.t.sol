@@ -39,9 +39,9 @@ contract ZroGraduateTest is Fixture {
 
         ZroCoinAdapter adapter = ZroCoinAdapter(grad.graduate(address(coin)));
         ZroRemoteOFT remote =
-            new ZroRemoteOFT("Remote", "REM", address(endpoint), address(this), address(this), address(d.timelock), 60);
+            new ZroRemoteOFT("Remote", "REM", address(endpoint), address(this), address(d.timelock), 60);
         assertEq(adapter.token(), address(coin));
-        assertTrue(tracker.excluded(address(adapter)));
+        assertTrue(tracker.excludedFrom(address(coin), address(adapter)));
         assertEq(grad.adapterOf(address(coin)), address(adapter));
 
         vm.expectRevert(ZroGraduation.AlreadyGraduated.selector);

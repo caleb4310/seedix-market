@@ -18,6 +18,7 @@ contract ZroSwapTest is Fixture {
     function test_creatorTaxSwapsToZroOutsideTheHook() public {
         vm.warp(2 days);
         ZroWeightTracker tracker = new ZroWeightTracker(address(this), address(d.hook), address(router), address(pm));
+        tracker.setLauncher(address(d.launcher));
         tracker.setExcluded(address(d.locker), true);
         tracker.setExcluded(address(d.launcher), true);
         deployer.setWeightTracker(d.launcher, address(tracker));
@@ -30,6 +31,7 @@ contract ZroSwapTest is Fixture {
             new ZroTaxSwapper(address(this), address(d.timelock), admin, d.hook, vault, address(whype), address(zro));
         deployer.setZroSwapper(d.hook, address(swapper));
         vault.setSwapper(address(swapper));
+        vm.prank(address(d.timelock));
         swapper.setKeeper(address(this));
 
         (, PoolId id) = d.launcher.launchWithZroTax(_params(address(whype), 0, 0, address(0)), 500);
@@ -93,7 +95,7 @@ contract ZroSwapTest is Fixture {
         assertGt(out, 0);
         uint256 fundedSum;
         for (uint64 epoch = start; epoch < start + 3; ++epoch) {
-            (uint128 funded,,,,,,) = vault.rounds(vault.roundId(id, epoch));
+            (uint128 funded,,,,,,,) = vault.rounds(vault.roundId(id, epoch));
             assertGt(funded, 0);
             fundedSum += funded;
             assertGt(vault.claim(id, epoch), 0);
@@ -137,6 +139,7 @@ contract ZroSwapTest is Fixture {
     function _boot() internal returns (ZroTaxSwapper swapper, ZroRewardVault vault, PoolId id) {
         vm.warp(2 days);
         ZroWeightTracker tracker = new ZroWeightTracker(address(this), address(d.hook), address(router), address(pm));
+        tracker.setLauncher(address(d.launcher));
         tracker.setExcluded(address(d.locker), true);
         tracker.setExcluded(address(d.launcher), true);
         deployer.setWeightTracker(d.launcher, address(tracker));
@@ -148,6 +151,7 @@ contract ZroSwapTest is Fixture {
             new ZroTaxSwapper(address(this), address(d.timelock), admin, d.hook, vault, address(whype), address(zro));
         deployer.setZroSwapper(d.hook, address(swapper));
         vault.setSwapper(address(swapper));
+        vm.prank(address(d.timelock));
         swapper.setKeeper(address(this));
         (, id) = d.launcher.launchWithZroTax(_params(address(whype), 0, 0, address(0)), 500);
         zro.mint(address(this), 2_000_000 ether);

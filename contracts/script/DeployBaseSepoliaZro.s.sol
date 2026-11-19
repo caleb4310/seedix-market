@@ -15,7 +15,6 @@ import {MockZRO} from "../src/zro/MockZRO.sol";
 import {TestOwner} from "../src/zro/TestOwner.sol";
 import {ZroRewardVault} from "../src/zro/ZroRewardVault.sol";
 import {ZroTaxSwapper} from "../src/zro/ZroTaxSwapper.sol";
-import {ZroMainnetGuard} from "../src/zro/ZroMainnetGuard.sol";
 import {ZroWeightTracker} from "../src/zro/ZroWeightTracker.sol";
 import {ZroChain} from "./ZroChain.sol";
 
@@ -59,7 +58,6 @@ contract DeployBaseSepoliaZro is ZroChain {
         vm.startBroadcast(pk);
 
         (address owner, bool safe) = _owner(chain, broadcaster);
-        new ZroMainnetGuard().assertReady(block.chainid, address(0), delay, proposer, owner, broadcaster);
         address[] memory proposers = new address[](1);
         proposers[0] = proposer;
         address[] memory executors = new address[](1);
@@ -74,7 +72,10 @@ contract DeployBaseSepoliaZro is ZroChain {
 
         ZroWeightTracker tracker = new ZroWeightTracker(broadcaster, hookAddr, chain.router, chain.poolManager);
         if (lockerAddr != address(0)) tracker.setExcluded(lockerAddr, true);
-        if (launcherAddr != address(0)) tracker.setExcluded(launcherAddr, true);
+        if (launcherAddr != address(0)) {
+            tracker.setExcluded(launcherAddr, true);
+            tracker.setLauncher(launcherAddr);
+        }
         tracker.setOwner(owner);
 
         if (hookAddr != address(0)) {
@@ -84,7 +85,16 @@ contract DeployBaseSepoliaZro is ZroChain {
             ZroTaxSwapper swapper =
                 new ZroTaxSwapper(broadcaster, address(timelock), owner, hook, vault, chain.weth, address(zro));
             vault.setSwapper(address(swapper));
-            if (keeper != address(0)) swapper.setKeeper(keeper);
+            if (keeper != address(0)) {
+                timelock.schedule(
+                    address(swapper),
+                    0,
+                    abi.encodeCall(ZroTaxSwapper.setKeeper, (keeper)),
+                    bytes32(0),
+                    keccak256("zro-keeper"),
+                    delay
+                );
+            }
             swapper.setOwner(owner);
             hook.setZroAdmin(owner, address(timelock));
             hook.setZroSwapper(address(swapper));

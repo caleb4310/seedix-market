@@ -12,6 +12,7 @@ import {ZroGraduation} from "../../src/zro/ZroGraduation.sol";
 import {ZroMainnetGuard} from "../../src/zro/ZroMainnetGuard.sol";
 import {ZroPayout} from "../../src/zro/ZroPayout.sol";
 import {ZroRewardVault} from "../../src/zro/ZroRewardVault.sol";
+import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 import {ZroWeightTracker} from "../../src/zro/ZroWeightTracker.sol";
 import {TestLzEndpoint} from "../zro/TestLzEndpoint.sol";
 
@@ -54,6 +55,7 @@ contract Pr33FixTest is Fixture {
         trackerForTeam = new ZroWeightTracker(address(this), address(0), address(0), address(0));
         trackerForTeam.setExcluded(address(this), true);
         LaunchToken coin = LaunchToken(Clones.clone(address(new LaunchToken())));
+        trackerForTeam.registerCoin(address(coin));
         address team = address(0x7EA);
         uint256 teamAmt = C.SUPPLY * C.MAX_TEAM_BPS / 10_000;
         coin.initialize("Coin", "C", address(this), C.SUPPLY - teamAmt, team, teamAmt);
@@ -70,6 +72,7 @@ contract Pr33FixTest is Fixture {
 
     function test_L01_excludingABalanceDoesNotInflateSupply() public {
         (ZroWeightTracker tracker,, address coin) = _coin();
+        tracker.registerCoin(coin);
         address adapter = address(0xADA7);
         address alice = address(0xA11CE);
         address bob = address(0xB0B);
@@ -77,7 +80,7 @@ contract Pr33FixTest is Fixture {
         tracker.onTransfer(address(0), alice, 5 ether);
         tracker.onTransfer(alice, adapter, 4 ether);
         vm.stopPrank();
-        tracker.setExcluded(adapter, true);
+        tracker.setExcluded(adapter, coin, true);
         vm.prank(coin);
         tracker.onTransfer(adapter, bob, 4 ether);
         assertEq(tracker.eligibleSupply(coin), 5 ether);
@@ -91,6 +94,9 @@ contract Pr33FixTest is Fixture {
             address(this), address(this), address(d.timelock), address(this), IERC20(_zro()), d.hook, tracker
         );
         vault.setSwapper(address(this));
+        tracker.registerCoin(coin);
+        vm.prank(address(d.timelock));
+        vault.setClaimWindow(1 hours);
         uint64 epoch = uint64(vm.getBlockTimestamp() / 1 hours);
         vm.startPrank(coin);
         tracker.onTransfer(address(0), address(0xA11CE), 5 ether);
@@ -102,8 +108,6 @@ contract Pr33FixTest is Fixture {
         vm.prank(address(0xA11CE));
         vault.claim(id, epoch);
         assertEq(vault.liabilities(), 0.5 ether);
-        vm.prank(address(d.timelock));
-        vault.setClaimWindow(1 hours);
         vm.warp(closed + 1 hours);
         vault.expireRound(id, epoch);
         assertEq(vault.liabilities(), 0);
@@ -133,6 +137,7 @@ contract Pr33FixTest is Fixture {
             address(this), address(this), address(d.timelock), address(this), IERC20(_zro()), d.hook, tracker
         );
         vault.setSwapper(address(this));
+        tracker.registerCoin(coin);
         uint64 epoch = uint64(vm.getBlockTimestamp() / 1 hours);
         vm.prank(coin);
         tracker.onTransfer(address(0), address(this), 1 ether);
@@ -145,10 +150,21 @@ contract Pr33FixTest is Fixture {
         ZroMainnetGuard guard = new ZroMainnetGuard();
         address safe = address(0x5AFE);
         address zro = guard.canonical();
+        vm.etch(zro, hex"00");
+        address[] memory safeOnly = new address[](1);
+        safeOnly[0] = safe;
+        TimelockController short = new TimelockController(60, safeOnly, safeOnly, safe);
         vm.expectRevert(ZroMainnetGuard.MainnetConfig.selector);
-        guard.assertReady(8453, zro, 60, safe, safe, address(this));
-        guard.assertReady(8453, zro, 48 hours, safe, safe, address(this));
-        guard.assertReady(84532, address(0), 60, address(this), address(this), address(this));
+        guard.assertReady(8453, zro, address(short), safe, address(this));
+        vm.expectRevert(ZroMainnetGuard.MainnetConfig.selector);
+        guard.assertReady(99901, address(0x1234), address(short), safe, address(this));
+        TimelockController ready = new TimelockController(48 hours, safeOnly, safeOnly, safe);
+        guard.assertReady(8453, zro, address(ready), safe, address(this));
+        guard.assertReady(99901, zro, address(ready), safe, address(this));
+        guard.assertReady(84532, address(0), address(0), address(0), address(this));
+        vm.expectRevert(ZroMainnetGuard.MainnetConfig.selector);
+        guard.assertClaimWindow(1, 1 hours);
+        guard.assertClaimWindow(84532, 1 hours);
     }
 
     function _coin() internal returns (ZroWeightTracker tracker, CoinAllow list, address coin) {
