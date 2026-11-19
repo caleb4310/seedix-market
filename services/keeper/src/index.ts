@@ -2,19 +2,23 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { createPublicClient, createWalletClient, defineChain, http, parseAbi, type Abi, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { elysiumTestnet, priorityFloorWei, transactionFees, type TxFees } from "@seedix/shared";
+import { activeChain, priorityFloorWei, transactionFees, type TxFees } from "@seedix/shared";
 import { deployment99801 } from "./deployment.ts";
 import { assertKeyFile, keyFilePath, loadKey } from "./key.ts";
 import { preparePush, type Manifest } from "./merkle.ts";
 import { feeWithinCap, planCoinBuyback, planPlatformBuyback, pushBatches, pushReady } from "./plan.ts";
 import { revertLabel } from "./reason.ts";
 
-const chain = defineChain({
-  id: elysiumTestnet.id,
-  name: elysiumTestnet.name,
-  nativeCurrency: { ...elysiumTestnet.nativeCurrency },
-  rpcUrls: { default: { http: [...elysiumTestnet.rpcUrls] } },
-});
+function viemChain() {
+  const selected = activeChain();
+  return defineChain({
+    id: selected.id,
+    name: selected.name,
+    nativeCurrency: { ...selected.nativeCurrency },
+    rpcUrls: { default: { http: [...selected.rpcUrls] } },
+  });
+}
+const chain = viemChain();
 
 const executorAbi = parseAbi([
   "function buybackCoin(bytes32 id, uint256 amountIn, uint256 minOut) returns (uint256)",
@@ -121,7 +125,7 @@ export function parseManifest(text: string): Manifest | null {
     return {
       poolId: raw.poolId as Hex,
       epoch: BigInt(raw.epoch),
-      chainId: BigInt(raw.chainId ?? elysiumTestnet.id),
+      chainId: BigInt(raw.chainId ?? activeChain().id),
       distributor: raw.distributor as Hex,
       coin: raw.coin as Hex,
       pair: raw.pair as Hex,
@@ -142,10 +146,14 @@ export async function main(): Promise<void> {
   assertKeyFile(keyFile, info.mode, info.uid);
   const key = loadKey(await readFile(keyFile, "utf8"));
   const account = privateKeyToAccount(key);
-  const rpc = process.env.RPC_URL && process.env.RPC_URL.length > 0 ? process.env.RPC_URL : elysiumTestnet.rpcUrls[0];
-  const hook = envAddress("HOOK_ADDRESS", deployment99801.hook);
-  const executor = envAddress("BUYBACK_EXECUTOR", deployment99801.buybackExecutor);
-  const distributor = envAddress("KICKBACK_DISTRIBUTOR", deployment99801.kickbackDistributor);
+  const selected = activeChain();
+  const rpc = selected.rpcUrls[0];
+  const baseHook = "0xF76b84C90c49a785322f110c66d1155bc26228cC";
+  const baseExecutor = "0x1885501719d334A7f193aed6F1038b15b42075d3";
+  const baseDistributor = "0xd6CfAfb4f77F7f62602ea861027eA55667fd4840";
+  const hook = envAddress("HOOK_ADDRESS", selected.id === 99801 ? deployment99801.hook : baseHook);
+  const executor = envAddress("BUYBACK_EXECUTOR", selected.id === 99801 ? deployment99801.buybackExecutor : baseExecutor);
+  const distributor = envAddress("KICKBACK_DISTRIBUTOR", selected.id === 99801 ? deployment99801.kickbackDistributor : baseDistributor);
   const pollMs = Number(process.env.KEEPER_POLL_MS ?? 60_000);
   const manifestDir = process.env.KICKBACK_MANIFEST_DIR ?? "";
   const maxFeeGwei = process.env.KEEPER_MAX_FEE_GWEI && process.env.KEEPER_MAX_FEE_GWEI.length > 0 ? process.env.KEEPER_MAX_FEE_GWEI : "100";
@@ -295,7 +303,9 @@ export async function main(): Promise<void> {
           args: [platformPool],
         });
         let sentPlatform = false;
-        for (const pair of deployment99801.pairs) {
+        const listed = (process.env.PAIR_ADDRESSES ?? "").split(",").map((item) => item.trim()).filter((item) => item.startsWith("0x"));
+        const pairs = listed.length > 0 ? listed : selected.id === 99801 ? deployment99801.pairs : ["0x4200000000000000000000000000000000000006"];
+        for (const pair of pairs) {
           if (sentPlatform) break;
           const pot = await publicClient.readContract({
             address: hook,

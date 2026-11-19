@@ -1,6 +1,9 @@
 import type { Mode } from "./coin";
+import { nativeSymbol, wrappedSymbol } from "./chain";
 
-const WHYPE = /^whype$/i;
+function isWrappedLabel(value: string): boolean {
+  return new RegExp(`^(whype|weth|${nativeSymbol}|${wrappedSymbol})$`, "i").test(value.trim());
+}
 
 export function backingLabel(input: {
   mode: Mode;
@@ -10,9 +13,9 @@ export function backingLabel(input: {
 }): string {
   if (input.mode === "burn") return "Burn";
   const named = (input.backingSymbol ?? "").trim();
-  if (named && !WHYPE.test(named)) return named;
+  if (named && !isWrappedLabel(named)) return named;
   const pair = (input.pair ?? "").trim();
-  if (pair && !WHYPE.test(pair)) return pair;
+  if (pair && !isWrappedLabel(pair)) return pair;
   const address = (input.backing ?? "").trim();
   if (/^0x[0-9a-fA-F]{40}$/.test(address) && !/^0x0{40}$/i.test(address)) {
     return `${address.slice(0, 6)}…${address.slice(-4)}`;
@@ -21,5 +24,5 @@ export function backingLabel(input: {
 }
 
 export function isWhypeLabel(value: string | null | undefined): boolean {
-  return WHYPE.test((value ?? "").trim());
+  return isWrappedLabel(value ?? "");
 }

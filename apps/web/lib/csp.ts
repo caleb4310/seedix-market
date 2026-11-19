@@ -5,7 +5,7 @@ export const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
-  "connect-src 'self' https://testnet-rpc.elysium.kinetiq.xyz https://rpc.elysium.kinetiq.xyz https://api.coingecko.com https://explorer-elysium-testnet.t.conduit.xyz https://elyscan.live https://rpc.walletconnect.com https://relay.walletconnect.com wss://relay.walletconnect.com https://pulse.walletconnect.org https://api.web3modal.org https://explorer-api.walletconnect.com",
+  "connect-src 'self' https://base-sepolia-rpc.publicnode.com https://sepolia.base.org https://sepolia.basescan.org https://testnet-rpc.elysium.kinetiq.xyz https://rpc.elysium.kinetiq.xyz https://api.coingecko.com https://explorer-elysium-testnet.t.conduit.xyz https://elyscan.live https://rpc.walletconnect.com https://relay.walletconnect.com wss://relay.walletconnect.com https://pulse.walletconnect.org https://api.web3modal.org https://explorer-api.walletconnect.com",
   "frame-src https://verify.walletconnect.com https://secure.walletconnect.com",
   "object-src 'none'",
   "base-uri 'self'",

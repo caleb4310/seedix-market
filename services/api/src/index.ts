@@ -1,8 +1,7 @@
 import { createServer, type IncomingMessage } from "node:http";
 import pg from "pg";
-import { elysiumTestnet } from "@seedix/shared";
+import { activeChain, deployment99801 } from "@seedix/shared";
 import { createPublicClient, http, parseAbi, type Address, type Hex } from "viem";
-import { deployment99801 } from "@seedix/shared";
 import { verifyAttach, verifyUpload } from "./logoAuth.ts";
 import { publicLogoUrl, readLogo, saveLogo, shrinkLogo } from "./logos.ts";
 import { handleRequest } from "./routes.ts";
@@ -11,11 +10,13 @@ const hookConfigAbi = parseAbi([
   "function config(bytes32) view returns (address coin, address pair, bool coinIsToken0, uint8 mode, bool isPlatform, uint40 launchTime, address feeRecipient)",
 ]);
 
+const chain = activeChain();
+
 async function feeRecipientOf(poolId: Hex): Promise<Address | null> {
   const client = createPublicClient({
-    transport: http(process.env.RPC_URL || "https://testnet-rpc.elysium.kinetiq.xyz"),
+    transport: http(chain.rpcUrls[0]),
   });
-  const hook = (process.env.HOOK_ADDRESS || deployment99801.hook) as Address;
+  const hook = (process.env.HOOK_ADDRESS || (chain.id === 99801 ? deployment99801.hook : "0xF76b84C90c49a785322f110c66d1155bc26228cC")) as Address;
   const row = await client.readContract({ address: hook, abi: hookConfigAbi, functionName: "config", args: [poolId] });
   const recipient = row[6];
   if (!recipient || /^0x0{40}$/i.test(recipient)) return null;
@@ -23,11 +24,11 @@ async function feeRecipientOf(poolId: Hex): Promise<Address | null> {
 }
 
 export const apiConfig = {
-  chainId: elysiumTestnet.id,
+  chainId: chain.id,
   port: Number(process.env.API_PORT ?? 3001),
   host: process.env.API_HOST ?? "0.0.0.0",
   databaseUrl: process.env.DATABASE_URL ?? "",
-  rpcUrl: process.env.RPC_URL || "https://testnet-rpc.elysium.kinetiq.xyz",
+  rpcUrl: chain.rpcUrls[0],
 };
 
 export async function main(): Promise<void> {

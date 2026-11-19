@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { keccak256 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { elysiumTestnet, logoDomainName, logoUploadTypes } from "@seedix/shared";
+import { activeChain, logoDomainName, logoUploadTypes } from "@seedix/shared";
 import { verifyUpload } from "./logoAuth.ts";
 
 test("a wallet signature authorizes one upload and the nonce cannot be reused", async () => {
@@ -11,7 +11,7 @@ test("a wallet signature authorizes one upload and the nonce cannot be reused", 
   const expiry = BigInt(Math.floor(Date.now() / 1000) + 60);
   const sign = (nonce: bigint) =>
     account.signTypedData({
-      domain: { ...logoDomainName, chainId: elysiumTestnet.id },
+      domain: { ...logoDomainName, chainId: activeChain().id },
       types: logoUploadTypes,
       primaryType: "LogoUpload",
       message: { contentHash: keccak256(bytes), nonce, expiry },

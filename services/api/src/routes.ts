@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { elysiumTestnet, cleanSocials, LAUNCH_SUPPLY, marketCapFromSpot, reportedZroTax } from "@seedix/shared";
+import { activeChain, cleanSocials, LAUNCH_SUPPLY, marketCapFromSpot, reportedZroTax } from "@seedix/shared";
 import { attachLogo, logoFor } from "./logos.ts";
 import { peekNonce } from "./logoAuth.ts";
 import { claimsForPool } from "./claims.ts";
@@ -215,23 +215,25 @@ export type RequestExtras = {
 
 let hypeCache: { at: number; usd: number | null } = { at: 0, usd: null };
 
-/** CoinGecko `hyperliquid` id, cached for 60s. A failed refresh keeps the last price. */
+/** CoinGecko price for the active chain's native asset, cached for 60s. */
 export async function hypeQuote(): Promise<{ usd: number | null; source: string; stale: boolean }> {
+  const priceId = activeChain().priceId;
+  const source = `coingecko:${priceId}`;
   if (hypeCache.usd != null && Date.now() - hypeCache.at < 60_000) {
-    return { usd: hypeCache.usd, source: "coingecko:hyperliquid", stale: false };
+    return { usd: hypeCache.usd, source, stale: false };
   }
   try {
-    const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=hyperliquid&vs_currencies=usd");
-    const body = (await response.json()) as { hyperliquid?: { usd?: number } };
-    const usd = body.hyperliquid?.usd;
+    const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${priceId}&vs_currencies=usd`);
+    const body = (await response.json()) as Record<string, { usd?: number } | undefined>;
+    const usd = body[priceId]?.usd;
     if (typeof usd === "number" && Number.isFinite(usd) && usd > 0) {
       hypeCache = { at: Date.now(), usd };
-      return { usd, source: "coingecko:hyperliquid", stale: false };
+      return { usd, source, stale: false };
     }
   } catch {
     /* stale fallback */
   }
-  return { usd: hypeCache.usd, source: "coingecko:hyperliquid", stale: hypeCache.usd != null };
+  return { usd: hypeCache.usd, source, stale: hypeCache.usd != null };
 }
 
 export async function handleRequest(
@@ -271,7 +273,7 @@ export async function handleRequest(
     return { status: 200, json: cleanSocials(record) };
   }
   if (method !== "GET") return { status: 405, json: { error: "GET only" } };
-  const chainId = elysiumTestnet.id;
+  const chainId = activeChain().id;
   if (path === "/health") return { status: 200, json: { ok: true, chainId } };
   if (path === "/price/hype") {
     const quote = await hypeQuote();

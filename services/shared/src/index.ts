@@ -1,18 +1,11 @@
-export const elysiumTestnet = {
-  id: 99801,
-  name: "Elysium Testnet",
-  nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
-  rpcUrls: ["https://testnet-rpc.elysium.kinetiq.xyz"],
-  blockExplorerUrls: ["https://explorer-elysium-testnet.t.conduit.xyz"],
-} as const;
-
-export const elysiumMainnet = {
-  id: 99901,
-  name: "Elysium",
-  nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
-  rpcUrls: ["https://rpc.elysium.kinetiq.xyz"],
-  blockExplorerUrls: ["https://elyscan.live"],
-} as const;
+export {
+  activeChain,
+  baseSepolia,
+  elysiumMainnet,
+  elysiumTestnet,
+  presetFor,
+  type ActiveChain,
+} from "./chains.ts";
 
 /** Mainnet addresses are reference only. This repository does not deploy there. */
 export const referenceAddresses = {

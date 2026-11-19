@@ -2,6 +2,8 @@
 
 The web image is built by Compose. Next.js copies `NEXT_PUBLIC_*` into the browser bundle while `npm run build` runs. A container restart does not pick up a new value.
 
+Base Sepolia is the public target. Use `infra/env/base-sepolia.app.env.example` and `docs/deploy-base-sepolia.md`. This runbook's older RPC examples are the Elysium testnet, which stays selectable with `CHAIN_ID=99801`.
+
 ## Env file
 
 On the server the file is `/etc/seedix/app.env`. It is not in git. Put the real WalletConnect project id there:

@@ -1,5 +1,6 @@
 import { extremeSqrtPriceLimit, maximumFromQuote, minimumFromQuote } from "./amounts";
 import { erc20Abi, swapAbi, wethAbi } from "./abi";
+import { nativeSymbol } from "./chain";
 import { type Address, routerAddress, sameAddress, whypeAddress } from "./deployment";
 import { LP_FEE, TICK_SPACING, UINT128_MAX } from "./protocol";
 import { exactApproval, type TxStep } from "./tx";
@@ -85,9 +86,9 @@ export function tradeSteps(input: {
   let balance = input.tokenBalance;
   if (sameAddress(input.spendToken, whypeAddress) && balance < needed) {
     const shortfall = needed - balance;
-    if (input.nativeBalance < shortfall) return { error: "The wallet does not have enough HYPE to wrap." };
+    if (input.nativeBalance < shortfall) return { error: `The wallet does not have enough ${nativeSymbol} to wrap.` };
     steps.push({
-      action: "Wrap HYPE",
+      action: `Wrap ${nativeSymbol}`,
       address: whypeAddress,
       abi: wethAbi,
       functionName: "deposit",

@@ -1,4 +1,4 @@
-import { elysiumTestnet } from "@seedix/shared";
+import { activeChain } from "@seedix/shared";
 import { leaf as roundLeaf } from "./round.ts";
 export { allocate, buildRound, buildTree, leaf as roundLeaf, verifyProof } from "./round.ts";
 
@@ -11,7 +11,7 @@ export { allocate, buildRound, buildTree, leaf as roundLeaf, verifyProof } from 
  * wallet, and contracts. Dust and shares below one holder's gas roll forward.
  */
 export const kickbackConfig = {
-  chainId: elysiumTestnet.id,
+  chainId: activeChain().id,
   reviewSeconds: 60 * 60,
   epochSeconds: 60 * 60,
   databaseUrl: process.env.DATABASE_URL ?? "",

@@ -10,7 +10,7 @@ const mono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variabl
 
 export const metadata: Metadata = {
   title: "Seedix",
-  description: "Launch a coin on Elysium testnet. Keep the fees, kick them back, or burn them.",
+  description: "Launch a coin. Keep the fees, kick them back, or burn them.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

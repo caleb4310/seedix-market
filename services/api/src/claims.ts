@@ -1,4 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
+import { activeChain } from "@seedix/shared";
 import path from "node:path";
 import type { Hex } from "viem";
 import { buildTree, kickbackLeaf } from "./merkle.ts";
@@ -30,7 +31,7 @@ export function parseManifest(text: string): Manifest | null {
     return {
       poolId: raw.poolId as Hex,
       epoch: BigInt(raw.epoch),
-      chainId: BigInt(raw.chainId ?? 99801),
+      chainId: BigInt(raw.chainId ?? activeChain().id),
       distributor: raw.distributor as Hex,
       coin: raw.coin as Hex,
       pair: raw.pair as Hex,

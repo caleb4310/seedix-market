@@ -1,8 +1,9 @@
 import { keccak256, type Hex } from "viem";
-import { elysiumTestnet, logoAttachTypes, logoDomainName, logoUploadTypes } from "@seedix/shared";
+import { logoAttachTypes, logoDomainName, logoUploadTypes } from "@seedix/shared";
+import { appChain } from "./chain";
 import { apiUrl } from "./api";
 
-const domain = { ...logoDomainName, chainId: elysiumTestnet.id };
+const domain = { ...logoDomainName, chainId: appChain.id };
 
 export async function fetchLogoNonce(address: string): Promise<bigint> {
   const response = await fetch(`${apiUrl}/logos/nonce?address=${address}`);

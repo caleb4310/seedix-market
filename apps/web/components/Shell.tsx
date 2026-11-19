@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { elysiumTestnet } from "@/lib/chain";
+import { chainPill, nativeSymbol, priceId } from "@/lib/chain";
+import { zroTaxEnabled } from "@/lib/flags";
 import { WalletButton } from "./WalletButton";
 import { Button } from "@/components/ui/Button";
 
@@ -36,6 +37,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <Link href="/" data-active={path === "/" ? "true" : "false"}>
             Coins
           </Link>
+          <Link href="/#how-it-works">
+            <span className="wide">How it works</span>
+            <span className="narrow">How</span>
+          </Link>
           <Link href="/launch" className="btn nav-launch" data-active={path.startsWith("/launch") ? "true" : "false"}>
             <span className="wide">Launch a coin</span>
             <span className="narrow">Launch</span>
@@ -46,7 +51,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </Link>
         </nav>
         <div className="nav-spacer" />
-        <div className="chain-pill">{elysiumTestnet.id === 99801 ? "ELYSIUM TESTNET · 99801" : `LOCAL · ${elysiumTestnet.id}`}</div>
+        <div className="chain-pill">{chainPill()}</div>
         <Button variant="ghost" type="button" className="theme-toggle" onClick={toggle} aria-pressed={theme === "dark"} aria-label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}>
           {theme === "light" ? (
             <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
@@ -63,8 +68,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </header>
       <main className="main">{children}</main>
       <footer className="footer">
-        <span>Testnet only. Gas is HYPE. USD marks use the CoinGecko hyperliquid price when it is available.</span>
-        <span>Fees: 1% platform, hook 80% to 1%, LP 0.1%. ZRO holder tax, when on, is the creator rate plus 1% Seedix (10% cap).</span>
+        <span>Testnet only. Gas is {nativeSymbol}. USD marks use the CoinGecko {priceId} price when it is available.</span>
+        <span>
+          Fees: 1% platform, hook 80% to 1%, LP 0.1%.
+          {zroTaxEnabled() ? " ZRO holder tax, when on, is the creator rate plus 1% Seedix (10% cap)." : ""}
+        </span>
       </footer>
     </div>
   );

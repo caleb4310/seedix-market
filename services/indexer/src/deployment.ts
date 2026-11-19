@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { deployment99801 as shared } from "@seedix/shared";
+import { activeChain, type ActiveChain } from "@seedix/shared";
 
 export type DeploymentFile = {
   startBlock: number;
@@ -11,18 +11,18 @@ export type DeploymentFile = {
   metadata: string;
 };
 
-/** Addresses and the start block come from deployments/99801.json. Shared constants are the fallback. */
-export function loadDeployment(file?: string): DeploymentFile {
+/** Addresses and the start block come from the deployment file for the active chain. */
+export function loadDeployment(file?: string, chain: ActiveChain = activeChain()): DeploymentFile {
   const fallback: DeploymentFile = {
-    startBlock: shared.startBlock,
-    poolManager: shared.poolManager,
-    buybackExecutor: shared.buybackExecutor,
-    kickbackDistributor: shared.kickbackDistributor,
-    hook: shared.hook,
-    launcher: shared.launcher,
+    startBlock: chain.startBlock,
+    poolManager: "",
+    buybackExecutor: "",
+    kickbackDistributor: "",
+    hook: "",
+    launcher: "",
     metadata: "",
   };
-  const path = file && file.length > 0 ? file : new URL("../../../deployments/99801.json", import.meta.url);
+  const path = file && file.length > 0 ? file : new URL(`../../../deployments/${chain.deploymentFile}`, import.meta.url);
   try {
     const json = JSON.parse(readFileSync(path, "utf8")) as {
       startBlock?: number;

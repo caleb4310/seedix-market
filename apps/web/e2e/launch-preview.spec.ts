@@ -10,7 +10,7 @@ test("launch preview follows the form and pre-IPO can be empty", async ({ page }
   await expect(preview.getByText("80% to 1% over 10s")).toBeVisible();
   await page.getByRole("tab", { name: "Pre-IPO" }).click();
   await expect(
-    page.getByText("No pre-IPO tokens on Elysium yet.").or(page.getByLabel("Backing token")),
+    page.getByText(/No pre-IPO tokens on .+ yet\./).or(page.getByLabel("Backing token")),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Any coin" }).click();
   await expect(page.getByText("Unverified token").first()).toBeVisible();

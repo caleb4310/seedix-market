@@ -5,7 +5,7 @@ import { RainbowKitProvider } from "@rainbow-me/rainbowkit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { WagmiProvider } from "wagmi";
-import { elysiumTestnet } from "@/lib/chain";
+import { appChain } from "@/lib/chain";
 import { seedixRainbowDark, seedixRainbowLight } from "@/lib/rainbowTheme";
 import { wagmiConfig } from "@/lib/wagmi";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -25,7 +25,7 @@ function useSeedixMode(): "light" | "dark" {
 function SeedixRainbow({ children }: { children: ReactNode }) {
   const mode = useSeedixMode();
   return (
-    <RainbowKitProvider initialChain={elysiumTestnet} theme={mode === "dark" ? seedixRainbowDark : seedixRainbowLight}>
+    <RainbowKitProvider initialChain={appChain} theme={mode === "dark" ? seedixRainbowDark : seedixRainbowLight}>
       {children}
     </RainbowKitProvider>
   );

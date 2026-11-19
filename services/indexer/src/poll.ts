@@ -1,17 +1,20 @@
 import { createPublicClient, defineChain, http, parseAbiItem, type AbiEvent, type PublicClient } from "viem";
-import { elysiumTestnet } from "@seedix/shared";
+import { activeChain } from "@seedix/shared";
 import type { Hex } from "./hex.ts";
 import { lower } from "./hex.ts";
 import { ingest, type RawLog, type Readers } from "./ingest.ts";
 import { confirmedTip, nextRange } from "./price.ts";
 import type { Store } from "./store.ts";
 
-const chain = defineChain({
-  id: elysiumTestnet.id,
-  name: elysiumTestnet.name,
-  nativeCurrency: { ...elysiumTestnet.nativeCurrency },
-  rpcUrls: { default: { http: [...elysiumTestnet.rpcUrls] } },
-});
+function viemChain() {
+  const selected = activeChain();
+  return defineChain({
+    id: selected.id,
+    name: selected.name,
+    nativeCurrency: { ...selected.nativeCurrency },
+    rpcUrls: { default: { http: [...selected.rpcUrls] } },
+  });
+}
 
 const eventAbi = {
   CoinLaunched: parseAbiItem(
@@ -236,5 +239,5 @@ export async function pollOnce(client: PublicClient, store: Store, cfg: IndexerC
 }
 
 export function publicClient(rpcUrl: string): PublicClient {
-  return createPublicClient({ chain, transport: http(rpcUrl) });
+  return createPublicClient({ chain: viemChain(), transport: http(rpcUrl) });
 }

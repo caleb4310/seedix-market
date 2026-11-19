@@ -12,7 +12,7 @@ import {
 } from "viem";
 import { priorityFloorWei, transactionFees, type TxFees } from "@seedix/shared";
 import { actionAbis } from "./abi";
-import { elysiumTestnet } from "./chain";
+import { appChain, nativeSymbol, wrappedSymbol } from "./chain";
 import { MAX_UINT256 } from "./protocol";
 
 export const DEFAULT_DEADLINE_MINUTES = 10;
@@ -49,7 +49,7 @@ const revertCopy: Record<string, string> = {
   UnsafePair: "That pair token cannot be used for a launch.",
   PairRefused: "That pair token is refused.",
   KickbackNeedsVetted: "Kickback is only available for a vetted pair. Choose Keep or Burn, or pick a vetted pair.",
-  RouteNotReady: "That pair does not have a WHYPE route yet.",
+  RouteNotReady: `That pair does not have a ${wrappedSymbol} route yet.`,
   FeeOnTransfer: "That token takes a fee on transfer, so it cannot be a pair.",
   NotCreator: "Only the launcher of this coin can pin its metadata.",
   BadCid: "The metadata id must be 10 to 128 letters and numbers.",
@@ -220,10 +220,10 @@ export function explainTxError(err: unknown): string {
   if (/rate limit|too many requests|\b429\b/i.test(blob)) return "The network is busy, try again.";
   const brief = briefText(err);
   if (/chain mismatch|wrong network|wrong chain|not configured for chain|does not match the target chain/i.test(brief)) {
-    return `The wallet is on the wrong network. Switch to Elysium testnet (${elysiumTestnet.id}).`;
+    return `The wallet is on the wrong network. Switch to ${appChain.name} (${appChain.id}).`;
   }
   if (/insufficient funds for gas \* price \+ value|exceeds the balance of the account/i.test(brief)) {
-    return "The wallet does not have enough HYPE to cover this transaction and its gas.";
+    return `The wallet does not have enough ${nativeSymbol} to cover this transaction and its gas.`;
   }
   if (/max fee per gas less than block base fee/i.test(`${brief}\n${blob}`)) {
     return "Network fee moved, please try again.";
@@ -321,19 +321,19 @@ export async function ensureElysiumChain(input: {
   switchChain: (chainId: number) => Promise<unknown>;
   wallet: ChainRequest | undefined;
 }): Promise<void> {
-  const target = input.target ?? elysiumTestnet;
+  const target = input.target ?? appChain;
   if (input.currentChainId === target.id) return;
   const add = async () => {
-    if (!input.wallet) throw new Error(`The wallet is on the wrong network. Switch to Elysium testnet (${target.id}).`);
+    if (!input.wallet) throw new Error(`The wallet is on the wrong network. Switch to ${target.name} (${target.id}).`);
     const rpc = target.rpcUrls.default.http[0];
-    if (!rpc) throw new Error("The Elysium RPC is not configured.");
+    if (!rpc) throw new Error("The RPC is not configured.");
     await input.wallet.request({
       method: "wallet_addEthereumChain",
       params: [
         {
           chainId: `0x${target.id.toString(16)}`,
           chainName: target.name,
-          nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
+          nativeCurrency: target.nativeCurrency,
           rpcUrls: [rpc],
           blockExplorerUrls: target.blockExplorers?.default.url ? [target.blockExplorers.default.url] : [],
         },

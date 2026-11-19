@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useAccount, useBalance, useChainId, useReadContract, useReadContracts, useSimulateContract } from "wagmi";
 import { hookPips, fees } from "@/lib/tokens";
 import type { Coin } from "@/lib/coin";
-import { elysiumTestnet } from "@/lib/chain";
+import { appChain, nativeSymbol } from "@/lib/chain";
+import { zroTaxEnabled } from "@/lib/flags";
 import { formatTokenAmount, NATIVE_GAS_RESERVE, parseTokenAmount } from "@/lib/amounts";
 import { isWhypeLabel } from "@/lib/backing";
 import { coinAge, modeLabel } from "@/lib/coin";
@@ -63,8 +64,8 @@ export function TradePanel({ coin, initialSide = "buy" }: { coin: Coin; initialS
   const gross = Number(amount) || 0;
   const slip = parseSlippage(slippage);
   const hypePair = isWhypeLabel(coin.pair);
-  const spendName = side === "buy" ? (hypePair ? "HYPE" : coin.pair) : coin.ticker;
-  const receiveUnit = side === "buy" ? coin.ticker : hypePair ? "HYPE" : coin.pair;
+  const spendName = side === "buy" ? (hypePair ? nativeSymbol : coin.pair) : coin.ticker;
+  const receiveUnit = side === "buy" ? coin.ticker : hypePair ? nativeSymbol : coin.pair;
   const hookUnit = side === "buy" ? spendName : coin.ticker;
   const hooks = coin.hooks ?? (hookAddress || undefined);
   const poolReady = Boolean(coin.tokenAddress && coin.pairAddress && hooks && coin.poolId);
@@ -123,7 +124,7 @@ export function TradePanel({ coin, initialSide = "buy" }: { coin: Coin; initialS
   const minOut = amountQuoted !== undefined && slip.ok ? swapLimit(kind, amountQuoted, slip.pct) : undefined;
   const quoteAge = quoted.dataUpdatedAt > 0 ? Math.max(0, now - Math.floor(quoted.dataUpdatedAt / 1000)) : null;
   const quoteStale = quoteAge !== null && quoteAge >= 12;
-  const onNetwork = isConnected && chainId === elysiumTestnet.id;
+  const onNetwork = isConnected && chainId === appChain.id;
   const needsConfirm = decaying;
   const quoteReady = Boolean(amountQuoted !== undefined && slip.ok && typedAmount && spendDecimals !== undefined);
   const ready = gross > 0 && quoteReady && (!needsConfirm || confirmed);
@@ -261,7 +262,7 @@ export function TradePanel({ coin, initialSide = "buy" }: { coin: Coin; initialS
           <dt>Platform 1%</dt>
           <dd>{side === "sell" ? "From the output" : `${formatAmount(gross * 0.01)} ${spendName}`}</dd>
         </div>
-        {coin.zroTaxBps ? (
+        {zroTaxEnabled() && coin.zroTaxBps ? (
           <div>
             <dt>{coin.zroTaxLabel ?? "ZRO tax"}</dt>
             <dd>{formatAmount(gross * (coin.zroTaxBps / 10_000))} {spendName}</dd>
@@ -319,7 +320,7 @@ export function TradePanel({ coin, initialSide = "buy" }: { coin: Coin; initialS
         </Button>
       )}
       <p className="note">
-        Slippage sets the minimum received. The order expires in {DEFAULT_DEADLINE_MINUTES} minutes. Approval is the exact amount, to the router. HYPE is wrapped only for the amount this trade spends.
+        Slippage sets the minimum received. The order expires in {DEFAULT_DEADLINE_MINUTES} minutes. Approval is the exact amount, to the router. {nativeSymbol} is wrapped only for the amount this trade spends.
       </p>
     </Card>
   );

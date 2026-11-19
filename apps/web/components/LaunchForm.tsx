@@ -8,7 +8,8 @@ import { isAddress } from "viem";
 import { cleanSocials, creatorBpsFromPercent, reportedZroTax, zroTaxLabel } from "@seedix/shared";
 import { erc20Abi, launcherAbi, metadataAbi } from "@/lib/abi";
 import { apiUrl } from "@/lib/api";
-import { elysiumTestnet } from "@/lib/chain";
+import { appChain, chainName, nativeSymbol } from "@/lib/chain";
+import { zroTaxEnabled } from "@/lib/flags";
 import type { Mode } from "@/lib/coin";
 import { coinMetadataAddress, executorAddress, explorerAddress, feeWallet, sameAddress } from "@/lib/deployment";
 import { buildLaunchParams } from "@/lib/launch";
@@ -106,7 +107,7 @@ export function LaunchForm() {
   const tx = useContractTx();
   const { address, chainId } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
-  const client = usePublicClient({ chainId: elysiumTestnet.id });
+  const client = usePublicClient({ chainId: appChain.id });
   const hypeUsd = useHypeUsd();
 
   useEffect(() => {
@@ -330,7 +331,7 @@ export function LaunchForm() {
         action: "Launch",
         address: launcherAddress,
         abi: launcherAbi,
-        functionName: tax.bps > 0 ? "launchWithZroTax" : "launch",
+        functionName: zroTaxEnabled() && tax.bps > 0 ? "launchWithZroTax" : "launch",
         args: tax.bps > 0 ? [params, tax.bps] : [params],
       },
     ]);
@@ -408,7 +409,7 @@ export function LaunchForm() {
     <div className="launch-layout">
       <form className="form" onSubmit={(e) => e.preventDefault()}>
         <div>
-          <p className="kicker">Launching on Elysium testnet</p>
+          <p className="kicker">Launching on {chainName}</p>
           <h1>Create your coin</h1>
           <p className="lede">Nothing touches the chain until you launch. Four things are permanent: the name, the ticker, the backing, and where the fees go.</p>
         </div>
@@ -431,7 +432,7 @@ export function LaunchForm() {
             <div>
               <span className="lbl">Paired with</span>
               {burn ? (
-                <p className="note">Burn has no backing token. The coin trades against HYPE, and fees buy the coin back and burn it.</p>
+                <p className="note">Burn has no backing token. The coin trades against {nativeSymbol}, and fees buy the coin back and burn it.</p>
               ) : (
                 <Tabs
                   label="Backing source"
@@ -463,7 +464,7 @@ export function LaunchForm() {
                 pairs={listed}
                 value={pairId}
                 onChange={setPairId}
-                empty={source === "preipo" ? "No pre-IPO tokens on Elysium yet." : "No stock pairs listed yet."}
+                empty={source === "preipo" ? `No pre-IPO tokens on ${chainName} yet.` : "No stock pairs listed yet."}
               />
               {selected ? (
                 <article className="pair-details">
@@ -535,15 +536,19 @@ export function LaunchForm() {
               );
             })}
           </div>
-          <Field label="ZRO holder tax" hint="0–9%. Traders also pay 1% Seedix. Total cap 10%.">
-            <input
-              inputMode="decimal"
-              value={holderTax}
-              onChange={(e) => setHolderTax(e.target.value)}
-              placeholder="0"
-            />
-          </Field>
-          <p className="note">{zroReadback}</p>
+          {zroTaxEnabled() ? (
+            <>
+              <Field label="ZRO holder tax" hint="0–9%. Traders also pay 1% Seedix. Total cap 10%.">
+                <input
+                  inputMode="decimal"
+                  value={holderTax}
+                  onChange={(e) => setHolderTax(e.target.value)}
+                  placeholder="0"
+                />
+              </Field>
+              <p className="note">{zroReadback}</p>
+            </>
+          ) : null}
         </div>
         </section>
         <section className="poster">
@@ -681,12 +686,12 @@ export function LaunchForm() {
           <span className="hold-label">{busy ? "Confirm in your wallet" : ready ? "Hold to launch" : blockReason}</span>
         </button>
         <p id="hold-help" className="note">Hold the button, or hold Enter or Space, until it fills. That sends the launch.</p>
-        {chainId !== undefined && address && chainId !== elysiumTestnet.id ? <WalletButton /> : null}
+        {chainId !== undefined && address && chainId !== appChain.id ? <WalletButton /> : null}
         {launchSuccess(poolId) ? (
           <div className="launch-success" role="dialog" aria-label="Coin launched">
             <p className="kicker">Launched</p>
             <h2>Your coin is live</h2>
-            <p className="lede">It trades against HYPE. Opening the coin page.</p>
+            <p className="lede">It trades against {nativeSymbol}. Opening the coin page.</p>
             <Link className="btn" href={launchSuccess(poolId)!.href}>
               Open the new coin
             </Link>

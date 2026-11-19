@@ -4,6 +4,7 @@ import { coinPrice, LAUNCH_SUPPLY, marketCapFromSpot } from "@seedix/shared";
 import { erc20Abi, hookConfigAbi, launcherAbi, metadataAbi } from "./abi";
 import type { Coin, Mode } from "./coin";
 import { coinMetadataAddress, hookAddress, indexerStartBlock, launcherAddress, stateViewAddress } from "./deployment";
+import { getLogsChunked } from "./logs";
 
 const poolIdPattern = /^0x[0-9a-fA-F]{64}$/;
 const zero = /^0x0{40}$/i;
@@ -152,17 +153,14 @@ export async function readLaunchedCoin(client: PublicClient, id: string): Promis
       .catch(() => LAUNCH_SUPPLY),
   ]);
   const launchedEvent = launcherAbi.find((item): item is AbiEvent => item.type === "event" && item.name === "CoinLaunched");
+  const head = await client.getBlockNumber();
   const start = launchedEvent
-    ? await client
-        .getLogs({
-          address: launcherAddress,
-          event: launchedEvent,
-          args: { poolId },
-          fromBlock: indexerStartBlock,
-          toBlock: "latest",
-        })
-        .then((logs) => logs[0])
-        .catch(() => undefined)
+    ? await getLogsChunked(
+        client,
+        { address: launcherAddress, event: launchedEvent, args: { poolId } },
+        BigInt(indexerStartBlock),
+        head,
+      ).then((logs) => logs[0])
     : undefined;
   const args = (start as { args?: { startMcap?: bigint; category?: number; backing?: Address } } | undefined)?.args;
   const category = categoryOf(Number(args?.category ?? 0));
@@ -190,5 +188,5 @@ export async function readLaunchedCoin(client: PublicClient, id: string): Promis
     category,
   });
   if (!built) return null;
-  return { ...built, backing, backingSymbol: backingSymbol && !/^whype$/i.test(backingSymbol) ? backingSymbol : null, category };
+  return { ...built, backing, backingSymbol: backingSymbol && !/^(whype|weth)$/i.test(backingSymbol) ? backingSymbol : null, category };
 }
