@@ -114,8 +114,9 @@ contract ZroTaxSwapper is IUnlockCallback {
         owner = next;
     }
 
+    /// @notice The keeper is the only address that may `poke` or `harvest`. The timelock sets it.
     function setKeeper(address next) external {
-        if (!_admin(msg.sender)) revert NotOwner();
+        if (msg.sender != timelock) revert NotTimelock();
         keeper = next;
         emit KeeperSet(next);
     }
@@ -158,11 +159,15 @@ contract ZroTaxSwapper is IUnlockCallback {
         emit PoolRegistered(key.toId());
     }
 
-    /// @notice Records the pre-swap tick. The harvest TWAP needs 30 minutes of these observations.
+    /// @notice Records the stored tick across the idle gap. Only the keeper may call it. The dense
+    ///         quote needs an observation within 30 seconds of the start of the TWAP window, so the
+    ///         keeper pokes at least that often. A 40 second gap makes `quote` and `harvest` revert
+    ///         until the next poke lands inside the cadence.
     function poke() external {
+        if (keeper == address(0) || msg.sender != keeper) revert NotKeeper();
         if (!poolSet) revert BadPool();
         (, int24 tick,,) = poolManager.getSlot0(poolKey.toId());
-        OracleLib.onSwap(_oracle, uint32(block.timestamp), tick);
+        OracleLib.accrueStored(_oracle, uint32(block.timestamp), tick);
     }
 
     /// @dev View of the TWAP quote and the floor the keeper's minOut is checked against.
@@ -289,14 +294,14 @@ contract ZroTaxSwapper is IUnlockCallback {
     function _guard(uint256 amountIn) internal returns (int24 twap, int24 spot, bool zeroForOne) {
         if (amountIn == 0) revert Nothing();
         (, spot,,) = poolManager.getSlot0(poolKey.toId());
-        OracleLib.onSwap(_oracle, uint32(block.timestamp), spot);
-        twap = OracleLib.consult(_oracle, uint32(block.timestamp), C.TWAP_WINDOW, spot);
+        OracleLib.accrueStored(_oracle, uint32(block.timestamp), spot);
+        twap = OracleLib.consultDense(_oracle, uint32(block.timestamp), C.TWAP_WINDOW, spot);
         zeroForOne = Currency.unwrap(poolKey.currency0) == weth;
     }
 
     function _twap() internal view returns (int24 twap, bool zeroForOne) {
         (, int24 spot,,) = poolManager.getSlot0(poolKey.toId());
-        twap = OracleLib.consult(_oracle, uint32(block.timestamp), C.TWAP_WINDOW, spot);
+        twap = OracleLib.consultDense(_oracle, uint32(block.timestamp), C.TWAP_WINDOW, spot);
         TwapGuard.assertBand(spot, twap);
         zeroForOne = Currency.unwrap(poolKey.currency0) == weth;
     }

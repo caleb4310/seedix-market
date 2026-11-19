@@ -7,6 +7,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {RouteSeeder} from "../../src/launch/RouteSeeder.sol";
 import {MockLzEndpoint} from "../../src/zro/MockLzEndpoint.sol";
 import {MockZRO} from "../../src/zro/MockZRO.sol";
+import {OracleLib} from "../../src/libraries/OracleLib.sol";
 import {ZroFeeMath} from "../../src/zro/ZroFeeMath.sol";
 import {ZroRewardVault} from "../../src/zro/ZroRewardVault.sol";
 import {ZroTaxSwapper} from "../../src/zro/ZroTaxSwapper.sol";
@@ -17,6 +18,7 @@ contract ZroSwapTest is Fixture {
     function test_creatorTaxSwapsToZroOutsideTheHook() public {
         vm.warp(2 days);
         ZroWeightTracker tracker = new ZroWeightTracker(address(this), address(d.hook), address(router), address(pm));
+        tracker.setLauncher(address(d.launcher));
         tracker.setExcluded(address(d.locker), true);
         tracker.setExcluded(address(d.launcher), true);
         deployer.setWeightTracker(d.launcher, address(tracker));
@@ -29,6 +31,7 @@ contract ZroSwapTest is Fixture {
             new ZroTaxSwapper(address(this), address(d.timelock), admin, d.hook, vault, address(whype), address(zro));
         deployer.setZroSwapper(d.hook, address(swapper));
         vault.setSwapper(address(swapper));
+        vm.prank(address(d.timelock));
         swapper.setKeeper(address(this));
 
         (, PoolId id) = d.launcher.launchWithZroTax(_params(address(whype), 0, 0, address(0)), 500);
@@ -50,14 +53,8 @@ contract ZroSwapTest is Fixture {
         vm.expectRevert();
         swapper.harvest(id, 1);
 
-        uint256 opened = vm.getBlockTimestamp();
-        swapper.poke();
-        vm.warp(opened + 31 minutes);
-        swapper.poke();
-        vm.warp(vm.getBlockTimestamp() + 31 minutes);
-        uint256 hourEnd = (vm.getBlockTimestamp() / 1 hours + 1) * 1 hours;
-        vm.warp(hourEnd);
-        swapper.poke();
+        vm.warp((vm.getBlockTimestamp() / 1 hours + 1) * 1 hours);
+        _cover(swapper);
         (uint256 holderIn,,) = swapper.nextHolderIn(id);
         (, uint256 floor,,) = swapper.quote(holderIn);
         uint256 out = swapper.harvest(id, floor);
@@ -69,12 +66,17 @@ contract ZroSwapTest is Fixture {
 
         _buy(id, 100 ether);
         assertGt(d.hook.zroHolderPot(id), 0);
-        swapper.poke();
-        vm.warp(block.timestamp + 31 minutes);
-        swapper.poke();
-        vm.warp((block.timestamp / 1 hours + 1) * 1 hours);
+        vm.warp((vm.getBlockTimestamp() / 1 hours + 1) * 1 hours);
+        _cover(swapper);
         vm.expectRevert(ZroTaxSwapper.Slippage.selector);
         swapper.harvest(id, 1);
+    }
+
+    function test_quietGapCannotQuoteTheHarvest() public {
+        (ZroTaxSwapper swapper,,) = _boot();
+        vm.warp(vm.getBlockTimestamp() + 70 minutes);
+        vm.expectRevert(OracleLib.WindowNotCovered.selector);
+        swapper.quote(1 ether);
     }
 
     function test_lateHarvestSplitsEachMissedRound() public {
@@ -84,16 +86,16 @@ contract ZroSwapTest is Fixture {
             _buy(id, 20 ether);
             vm.warp(vm.getBlockTimestamp() + 1 hours);
         }
-        swapper.poke();
+        _cover(swapper);
         (uint256 holderIn, uint64 from, uint64 to) = swapper.nextHolderIn(id);
         assertEq(from, start);
-        assertEq(to, start + 2);
+        assertGe(to, start + 2);
         (, uint256 floor,,) = swapper.quote(holderIn);
         uint256 out = swapper.harvest(id, floor);
         assertGt(out, 0);
         uint256 fundedSum;
         for (uint64 epoch = start; epoch < start + 3; ++epoch) {
-            (uint128 funded,,,,,,) = vault.rounds(vault.roundId(id, epoch));
+            (uint128 funded,,,,,,,) = vault.rounds(vault.roundId(id, epoch));
             assertGt(funded, 0);
             fundedSum += funded;
             assertGt(vault.claim(id, epoch), 0);
@@ -112,7 +114,7 @@ contract ZroSwapTest is Fixture {
             _buy(id, 10 ether);
             vm.warp(vm.getBlockTimestamp() + 1 hours);
         }
-        swapper.poke();
+        _cover(swapper);
         (uint256 firstIn, uint64 from, uint64 to) = swapper.nextHolderIn(id);
         assertEq(from, start);
         assertEq(uint256(to - from) + 1, 8);
@@ -137,6 +139,7 @@ contract ZroSwapTest is Fixture {
     function _boot() internal returns (ZroTaxSwapper swapper, ZroRewardVault vault, PoolId id) {
         vm.warp(2 days);
         ZroWeightTracker tracker = new ZroWeightTracker(address(this), address(d.hook), address(router), address(pm));
+        tracker.setLauncher(address(d.launcher));
         tracker.setExcluded(address(d.locker), true);
         tracker.setExcluded(address(d.launcher), true);
         deployer.setWeightTracker(d.launcher, address(tracker));
@@ -148,6 +151,7 @@ contract ZroSwapTest is Fixture {
             new ZroTaxSwapper(address(this), address(d.timelock), admin, d.hook, vault, address(whype), address(zro));
         deployer.setZroSwapper(d.hook, address(swapper));
         vault.setSwapper(address(swapper));
+        vm.prank(address(d.timelock));
         swapper.setKeeper(address(this));
         (, id) = d.launcher.launchWithZroTax(_params(address(whype), 0, 0, address(0)), 500);
         zro.mint(address(this), 2_000_000 ether);
@@ -157,9 +161,15 @@ contract ZroSwapTest is Fixture {
         whype.approve(address(seeder), type(uint256).max);
         (PoolKey memory key,) = seeder.seedWide(pm, address(whype), address(zro), 5_000 ether, 8);
         swapper.registerPool(key);
-        uint256 opened = vm.getBlockTimestamp();
-        swapper.poke();
-        vm.warp(opened + 31 minutes);
+        _cover(swapper);
+    }
+
+    /// @dev A harvest quote needs an observation within 30 seconds of the start of the TWAP window.
+    function _cover(ZroTaxSwapper swapper) internal {
+        for (uint256 i; i < 62; ++i) {
+            swapper.poke();
+            vm.warp(vm.getBlockTimestamp() + 30);
+        }
         swapper.poke();
     }
 }

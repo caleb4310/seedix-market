@@ -23,6 +23,7 @@ contract ZroVaultTest is Fixture {
         vm.warp(2 days);
         tracker = new ZroWeightTracker(address(this), address(d.hook), address(router), address(pm));
         (coin, id) = _launch(0);
+        tracker.registerCoin(coin);
         epoch = uint64(block.timestamp / 1 hours);
         vm.prank(coin);
         tracker.onTransfer(address(0), alice, 2 ether);
@@ -86,6 +87,6 @@ contract ZroVaultTest is Fixture {
         vault.fund(id, epoch, 10 ether);
         vm.prank(alice);
         vm.expectRevert(ZroRewardVault.NoModule.selector);
-        vault.claimRemote(id, epoch, 40245, "");
+        vault.claimRemote(id, epoch, 40245, bytes32(uint256(uint160(alice))), "");
     }
 }

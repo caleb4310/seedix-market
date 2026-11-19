@@ -210,7 +210,7 @@ contract DeploySeedix is Script {
         RouteSeeder seeder = new RouteSeeder();
         // These pools are WHYPE↔backing routes, not launch pairs. Launch pools are coin/WHYPE.
         // A shortfall is pulled from the deployer, capped at one depth. Cleared after the loop.
-        IERC20(whype).approve(address(seeder), TESTNET_MIN_ROUTE_DEPTH);
+        IERC20(whype).approve(address(seeder), TESTNET_MIN_ROUTE_DEPTH * seeded.length);
         PoolKey[] memory stockRoutes = new PoolKey[](5);
         PoolKey[2] memory preipoRoutes;
         uint256 whypeSpent;
@@ -218,8 +218,6 @@ contract DeploySeedix is Script {
             // The backing token funds both sides of the range, so it keeps a 4x buffer. WHYPE is one
             // side: send exactly one depth. Anything the position does not take returns here.
             MockXStock(seeded[i]).approve(address(seeder), TESTNET_MIN_ROUTE_DEPTH * 4);
-            MockXStock(seeded[i]).transfer(address(seeder), TESTNET_MIN_ROUTE_DEPTH * 4);
-            IERC20(whype).transfer(address(seeder), TESTNET_MIN_ROUTE_DEPTH);
             (PoolKey memory key, uint256 spent) = seeder.seed(manager, whype, seeded[i], TESTNET_MIN_ROUTE_DEPTH);
             whypeSpent += spent;
             console2.log("backing route", seeded[i], spent);

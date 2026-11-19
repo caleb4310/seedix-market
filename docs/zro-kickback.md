@@ -117,7 +117,7 @@ SEED_WIDTH_STEPS=1 \
 forge script script/DeployBaseSepoliaZro.s.sol --rpc-url "$BASE_SEPOLIA_RPC_URL"
 ```
 
-`HOOK_ADDRESS` is optional for this script. Without it, MockZRO and the pool are deployed and the vault waits until a new hook exists. The broadcaster needs enough ETH to wrap `SEED_WETH_AMOUNT`. The script transfers that WETH and the ZRO into `RouteSeeder` before `seedWide`, because the seeder only counts WETH that leaves its own balance. `SEED_WIDTH_STEPS` defaults to 1. The script logs `owner`, `timelock`, and `zro`. It does not log the key. `safe 1` means a Safe was created. `safe 0` means `TestOwner`. `SafeRegisterZroPool.s.sol` then registers the pool from the 1-of-1 Safe. `SmokeLaunch`, `SmokeSwap`, and `SmokeHarvest` are the testnet checks.
+`HOOK_ADDRESS` is optional for this script. Without it, MockZRO and the pool are deployed and the vault waits until a new hook exists. The broadcaster needs enough ETH to wrap `SEED_WETH_AMOUNT`. `seedWide` is owner-only and pulls WETH and ZRO in that same call. Spend is the liquidity delta, not a balance drop. `SEED_WIDTH_STEPS` defaults to 1. The script logs `owner`, `timelock`, and `zro`. It does not log the key. `safe 1` means a Safe was created. `safe 0` means `TestOwner`. `SafeRegisterZroPool.s.sol` then registers the pool from the 1-of-1 Safe. `SmokeLaunch`, `SmokeSwap`, and `SmokeHarvest` are the testnet checks.
 
 The separate scripts are the same steps with addresses you already have:
 
@@ -176,17 +176,42 @@ Environment variables for that deploy:
 | `LZ_EID` | no | Overrides 40245 |
 | `ZRO_TOKEN` | seed script | MockZRO from step 3 |
 | `SEED_ZRO_AMOUNT` | seed script | ZRO wei to approve |
-| `SEED_WETH_AMOUNT` | seed script | WETH wei transferred to the seeder before `seedWide` |
+| `SEED_WETH_AMOUNT` | seed script | WETH wei `seedWide` pulls from the owner in the same call |
 | `SEED_WIDTH_STEPS` | no | Tick spacings each side of zero. Defaults to 1 |
 | `BASE_SEPOLIA_RPC_URL` | script invocation | Public Base Sepolia RPC. No key |
 
 ## Phase 2
 
-Claim on any chain. The holder calls `claimRemote(poolId, epoch, dstEid, options)` and pays the LayerZero fee in `msg.value`. The owner sets `payoutModule` to a contract that calls `OFT.send` on MockZRO (or real ZRO later). The vault already approves the module for the claimed amount and clears the allowance after. No vault redeploy. Peers, DVNs, and gas options are configured on the OFT by the delegate, not on the vault.
+A holder calls `quoteRemote(to, amount, dstEid, options)` and then `claimRemote(poolId, epoch, dstEid, to, options)` with at least that native fee in `msg.value`. `to` is a `bytes32`. Zero and any value with the top 96 bits set are rejected. `ZroPayout` pulls the claimed ZRO, calls `OFT.send`, and refunds `msg.value` above the quote to the holder. The OFT names the same holder as the endpoint refund address. The vault marks the claim before the send. A revert, including a short fee, rolls that mark back, so the claim cannot be taken twice and a failed send does not burn it. The vault is non-reentrant, and the module refuses a reentrant `payout`.
+
+`LaunchToken` stays a clone. A clone cannot run an OFT constructor, so the home chain gets one `ZroCoinAdapter` lockbox and every other chain gets a mint/burn `ZroRemoteOFT`. Locked coins on the home adapter equal the remote OFT's supply. The adapter constructor reads the launcher from the graduation contract that is creating it. A caller cannot pass a graduation address of their own. Peers, enforced options, `setDelegate`, and `sweep` are timelock calls on both the adapter and the remote OFT. The OApp owner is the timelock, which is what makes `setDelegate` timelock-only. `SetOFTPeers` writes one Safe batch for one chain. Run it on the home chain, then again on the remote chain with the addresses swapped. `VerifyOFTPeer` reads `peers` on that chain.
+
+The keeper is the only address that may `poke`. The deploy scripts schedule `setKeeper` through the timelock. They cannot execute it in the same broadcast, because the delay has not elapsed. After `TIMELOCK_DELAY`, the proposer runs `ExecuteZroKeeper` with `ZRO_TIMELOCK`, `SWAPPER`, and `KEEPER`. Until that execute lands, `poke` and `harvest` revert. The dense quote needs an observation within 30 seconds of the start of the 30-minute window, so the keeper pokes at least that often. A 40 second gap makes `quote` and `harvest` revert until the next poke. A same-block sandwich around the keeper's own poke can still move the stored tick. A stranger's poke cannot. Base has no public mempool for that sandwich.
+
+`SetUlnConfig` reads `config/uln.json` plus `LZ_ENDPOINT`, `LZ_SEND_LIB`, `LZ_RECEIVE_LIB`, `OAPP`, and `REMOTE_EID`. It refuses a list of fewer than two required DVNs, a list that is only the LayerZero Labs DVN, and a file whose `chainId` is not this chain. It writes a Safe batch and does not broadcast. `VERIFY=1` reads `getConfig` back after the Safe has executed. The committed file is the Ethereum mainnet example. Copy it per chain.
+
+## What already-deployed Base Sepolia contracts can do
+
+These addresses stay in place. Nothing here sends a transaction.
+
+- Launcher `0xb0F9D152e76D5232A13672EA531aD7BB223e81FB` has no `isLaunchedCoin`. A new `ZroGraduation` is constructed with that launcher. The Safe calls `allowCoin(coin, true)` and then `graduate`. The launcher is not redeployed for that.
+- Tracker `0x18CAd4686D7864C379cC9A49B926F0c112D3dE1F` has no `excluder()` and no per-token `setExcluded`. Graduation is constructed with `tracker = address(0)`. `SafeGraduateLive` writes one Safe batch: `allowCoin`, `graduate`, and the live tracker's `setExcluded(adapter, true)`. The adapter is the graduation factory's next CREATE address, so the third call names it before `graduate` runs. If another `graduate` lands first, the third call excludes the wrong address. `VerifyGraduateLive` checks the registry afterwards. `VerifyGraduateLive` checks the registry and `excluded` afterwards. The script does not broadcast.
+- The live timelock still has the deployer as proposer, executor, and canceller, with a 60 second delay. This branch does not change it. `SafeSetExcluder` writes the batch for a tracker deployed from this code. On the live timelock the schedule has to be submitted by the current proposer.
+
+## What has to be deployed from this code
+
+These behaviors are in new bytecode. A contract that is already on Base Sepolia does not pick them up.
+
+- The weight-tracker registry, per-token exclusion, and the rule that the team wallet is not subtracted from supply a second time. `onTransfer` accepts only a registered coin. The launcher registers the coin before the mint. The live tracker does not have that registry. Using this tracker means deploying it and a launcher that calls `registerCoin`. The live graduation path above does not use this tracker.
+- The claim window stored on each round at `fund`. Shortening `claimWindow` later does not expire a round that was already funded. A mainnet window is at least 30 days. `ZroMainnetGuard.assertClaimWindow` checks that. The Base Sepolia deploy does not construct the guard.
+- `ZroRemoteOFT`, including `sweep`, and the recipient check on `send`.
+- Keeper-only `poke` on a swapper deployed from this branch.
+
+`ZroMainnetGuard.assertReady` reads the deployed timelock: `getMinDelay`, and whether the Safe holds `PROPOSER_ROLE` and the deployer holds proposer, executor, canceller, or admin. It covers chain ids 1, 8453, 42161, and 99901. There is no mainnet deploy script yet. The guard is not deployed on Base Sepolia.
 
 ## Phase 3
 
-A graduated token becomes an OFT. The tax stays only on Seedix's own v4 pools (the hook never runs on other pools). The send path uses at least two DVNs, including one that is not run by LayerZero Labs. Owner and delegate are the same multisig. That wiring is on the OFT and the endpoint, using the delegate already stored on `MockZRO` and on the vault.
+The send path requires at least two DVNs, including one that is not run by LayerZero Labs. That configuration is on the endpoint. `SetUlnConfig` writes the Safe batch for the delegate and checks the DVN list before it writes. The adapter and the payout module do not need a redeploy for it.
 
 ## Open questions
 

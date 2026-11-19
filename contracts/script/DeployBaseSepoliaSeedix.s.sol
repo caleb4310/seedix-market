@@ -40,6 +40,8 @@ contract DeployBaseSepoliaSeedix is ZroChain {
         address feeWallet = vm.envOr("FEE_WALLET", deployer);
         uint256 delay = vm.envOr("TIMELOCK_DELAY", uint256(60));
         if (delay == 0) delay = 60;
+        address proposer = vm.envOr("TIMELOCK_PROPOSER", deployer);
+        address executorRole = vm.envOr("TIMELOCK_EXECUTOR", deployer);
 
         vm.startBroadcast(pk);
 
@@ -58,9 +60,9 @@ contract DeployBaseSepoliaSeedix is ZroChain {
         );
 
         address[] memory proposers = new address[](1);
-        proposers[0] = deployer;
+        proposers[0] = proposer;
         address[] memory executors = new address[](1);
-        executors[0] = deployer;
+        executors[0] = executorRole;
         TimelockController tl = new TimelockController(delay, proposers, executors, deployer);
         SeedixRoles roles = new SeedixRoles(tl, admin);
         LaunchToken impl = new LaunchToken();

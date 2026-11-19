@@ -23,16 +23,29 @@ contract RouteSeeder is IUnlockCallback {
 
     error NotPoolManager();
     error SeedFailed();
+    error NotOwner();
 
     int24 internal constant SPACING = 60;
     uint24 internal constant FEE = 3000;
 
     IPoolManager public poolManager;
     address public payer;
+    address public immutable owner;
     uint256 private _entered;
+    uint256 private _whypeSpent;
+
+    constructor() {
+        owner = msg.sender;
+    }
+
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert NotOwner();
+        _;
+    }
 
     function seed(IPoolManager pm, address whype, address token, uint256 whypeTarget)
         external
+        onlyOwner
         returns (PoolKey memory key, uint256 whypeSpent)
     {
         return seedWide(pm, whype, token, whypeTarget, 1);
@@ -42,6 +55,7 @@ contract RouteSeeder is IUnlockCallback {
     ///        cost near `whypeTarget`. A wider pool is for tests that need the price to move.
     function seedWide(IPoolManager pm, address whype, address token, uint256 whypeTarget, int24 widthSteps)
         public
+        onlyOwner
         returns (PoolKey memory key, uint256 whypeSpent)
     {
         if (_entered == 1 || whypeTarget == 0 || token == address(0) || token == whype) revert SeedFailed();
@@ -54,11 +68,9 @@ contract RouteSeeder is IUnlockCallback {
         key = PoolKey({currency0: c0, currency1: c1, fee: FEE, tickSpacing: SPACING, hooks: IHooks(address(0))});
         if (widthSteps < 1) revert SeedFailed();
         pm.initialize(key, TickMath.getSqrtPriceAtTick(0));
-        uint256 beforeWhype = IERC20(whype).balanceOf(address(this));
+        _whypeSpent = 0;
         pm.unlock(abi.encode(key, whype, whypeTarget, widthSteps));
-        uint256 afterWhype = IERC20(whype).balanceOf(address(this));
-        if (afterWhype > beforeWhype) revert SeedFailed();
-        whypeSpent = beforeWhype - afterWhype;
+        whypeSpent = _whypeSpent;
         _sweep(whype);
         _sweep(token);
         _entered = 0;
@@ -88,6 +100,8 @@ contract RouteSeeder is IUnlockCallback {
         );
         _pay(key.currency0, delta.amount0());
         _pay(key.currency1, delta.amount1());
+        int128 wamt = whype0 ? delta.amount0() : delta.amount1();
+        if (wamt < 0) _whypeSpent = uint256(uint128(-wamt));
         return "";
     }
 

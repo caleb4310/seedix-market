@@ -17,7 +17,6 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - uninitialized-local LaunchHook.afterSwap | `unspecifiedDelta` is written on the fee path and stays at Solidity's zero when the swap is fee-exempt. Both paths return it.
 - uninitialized-local LaunchHook.beforeSwap | `specifiedDelta` is written before the return on every fee-taking branch, and the exempt branch returns a zero delta directly.
 - uninitialized-local LiquidityLocker._collect | `b` is a `BalanceDelta`. It is assigned from the far position when that position exists, and a zero delta is the correct total when it does not.
-- uninitialized-local OracleLib.consult | `beforeOrAt` and `atOrAfter` are filled inside the observation loop. The reads happen only after `foundBefore` is true.
 - unused-return BuybackExecutor._burnPair | `pots` is a tuple. This function needs `burnPair` only. The other four pots are a different budget.
 - unused-return BuybackExecutor._guard | `config` is a tuple. The guard needs `launchTime` to enforce the TWAP window. The coin, pair, and recipient are not part of that check.
 - unused-return BuybackExecutor._inputIsCurrency0 | The route check uses the coin, the pair, and `coinIsToken0`. Mode, platform flag, and recipient do not decide currency order.
@@ -35,7 +34,6 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - unused-return KickbackDistributor._pairToken | Only the pair currency is the kickback token. The coin and the mode are not the asset being pushed.
 - unused-return KickbackDistributor.cancel | The refund is paid in the pair token. The coin address and the mode are not the asset being returned.
 - unused-return KickbackDistributor.teamWallet | `config` is read for the coin. That coin's `teamWallet` is the address Kickback always skips. The pair and the fee fields are not the exclusion.
-- unused-return KickbackDistributor.claim | The claim pays the coin or the pair, whichever the leaf names. The other `config` fields are not a payment amount.
 - unused-return KickbackDistributor.fund | One read checks `launchTime` so the epoch has started. The other reads the pair currency that `debitKickback` pulls. They are different tuples.
 - unused-return LaunchHook._payout | `unlock` returns the callback bytes. The payout amount was fixed before the call, and the callback settles that amount.
 - unused-return LaunchHook._pull | Same as `_payout`: the pull amount is an argument, and `unlock` only runs the callback that collects it.
@@ -53,7 +51,6 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - unused-return SeedixRouter._settle | `settle` returns the amount the router just transferred. The swap's delta already fixed that amount.
 - unused-return BuybackExecutor._settle | `settle` returns the amount this contract just transferred into the pool. The swap delta already fixed that amount, and the coin received is checked before this call.
 - unused-return BuybackExecutor._swapAndBurn | `config` is read for the coin address that gets burned. Pair, mode, and recipient are not the burned balance.
-- reentrancy-balance RouteSeeder.seedWide | The entered flag is set before `initialize` and `unlock`. A token callback cannot start a second seed. The flag stays set while the position is paid and while leftover WHYPE and the pair token are swept back to the caller. It is cleared only after that sweep, and a revert rolls the flag back with the transaction.
 - reentrancy-no-eth RouteSeeder.seedWide | Same entered flag. The token transfer inside the unlock callback, and the leftover sweep after it, cannot reenter `seedWide`. The pool is paid and the leftovers are returned before the flag is cleared.
 - incorrect-equality LaunchHook.recoverToken | `balance == 0` means the hook is not holding this ERC-20, so there is nothing to sweep. A non-zero balance afterwards means the token did not actually leave.
 - incorrect-equality Launcher._probe | The recipient balance must rise by the exact amount sent. Anything else is fee-on-transfer and the launch reverts. This equality is the check.
@@ -71,13 +68,8 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - unused-return BuybackExecutor._storeRoute | `getSlot0` contributes the tick that starts the external oracle. The sqrt price and the fee fields are not stored.
 - incorrect-equality LaunchHook.setCreatorTax | `launchTime == 0` means this pool id was never configured, so there is no creator tax to set.
 - incorrect-equality LaunchHook._setCreatorTax | The same unset-pool sentinel. A tax write is refused until the pool has been launched.
-- incorrect-equality ZroTaxSwapper._band | A zero TWAP quote means the price math produced no output, so there is no floor to compare with the keeper's minOut.
-- reentrancy-no-eth LaunchHook.beforeSwap | The PoolManager is the caller. Pot updates are written before the single ERC-6909 mint back into that PoolManager. A user token cannot start a second swap while the hook lock is held.
-- reentrancy-no-eth LaunchHook._takeUnspecified | Same hook callback. The ZRO tax is accounted before the one mint of the unspecified delta. The PoolManager cannot be replaced by an outside caller.
 - reentrancy-no-eth LaunchToken._notify | The notify lock is set before the tracker call and cleared after it. A tracker callback that reenters transfer, mint, or burn reverts. The only write after the call clears that lock.
 - reentrancy-no-eth LaunchToken.initialize | Both mints notify the tracker under the same lock. A callback cannot move balances until initialize has finished, and a revert rolls the partial mint back with the transaction.
-- uninitialized-local ZroWeightTracker._at | `lo` starts at zero, which is the low end of the binary search. Slither drops the explicit zero in the IR.
-- uninitialized-local ZroWeightTracker._push | `integral` starts at zero for the first checkpoint. Later checkpoints add the previous integral before the new point is stored.
 - unused-return ZroTaxSwapper.registerPool | `getSlot0` is read for a non-zero sqrt price and the tick that starts the oracle. The two fee fields are not the existence check.
 - unused-return ZroTaxSwapper._settle | `settle` returns the amount this contract just transferred. The swap delta already fixed that amount.
 - unused-return ZroTaxSwapper.poke | `getSlot0` contributes the live tick. `onSwap` reports whether it wrote a ring slot. The cumulative is updated either way.
@@ -92,3 +84,12 @@ Accepted high and medium findings. `contracts/script/check-slither.py` fails the
 - incorrect-equality ZroTaxSwapper._guard | `amountIn == 0` refuses a TWAP quote of an empty holder batch. It is not a balance comparison.
 - incorrect-equality ZroTaxSwapper._rawOut | The same empty input returns no output. The equality skips the quote math.
 - unused-return ZroTaxSwapper._harvestSpan | `config` is read for `launchTime`, which is the first hour a harvest may settle. The coin, the pair, and the fee fields are not the cursor.
+- reentrancy-eth ZroPayout.payout | `_locked` is set before the OFT send and the refund. A reentrant `payout` hits that lock. The only write after the calls clears it. The vault has already marked the claim and is non-reentrant, so a second claim in the refund cannot pay twice.
+- reentrancy-no-eth ZroGraduation.graduate | `_locked` is set before the adapter is created. A callback from the endpoint constructor cannot start a second graduation. `adapterOf` is written with the adapter that was just created, before that adapter is excluded.
+- unused-return ZroPayout.payout | `send` returns the LayerZero messaging receipt and the OFT receipt. The payout uses the OFT receipt to return dust. The messaging guid is not an input to the vault's claim accounting.
+- uninitialized-local OracleLib._consult | `beforeOrAt` and `atOrAfter` are filled inside the observation loop. The reads happen only after `foundBefore` is true. Slither drops the zero start of the search flags.
+- incorrect-equality ZroCoinAdapter.sweep | `bal == 0` means the adapter is not holding ETH, so there is nothing to sweep. It is not a token-balance comparison.
+- incorrect-equality ZroRemoteOFT.sweep | The same empty-balance check on the remote mint/burn OFT. There is nothing to sweep.
+- uninitialized-local UlnPolicy.assertDvns | `outsider` starts false and is set when a required DVN is not the LayerZero Labs DVN. The function reverts if it is still false after the list.
+- uninitialized-local ZroCoinAdapter._fromGraduation | `launcher` is set from the graduation contract that is constructing the adapter. A failed read returns before the address is used.
+- unused-return ZroRewardVault.claimable | `config` is read for the coin whose time-weight is claimable. The pair and the fee fields are not a payout amount.

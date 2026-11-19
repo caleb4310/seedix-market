@@ -1,0 +1,17 @@
+{
+  "chainId": 8453,
+  "lzLabsDvns": [
+    "0x9e059a54699a285714207b43b055483e78faac25",
+    "0xb1473ac9f58fb27597a21710da9d1071841e8163"
+  ],
+  "confirmations": 15,
+  "requiredDvns": [
+    "0x9e059a54699a285714207b43b055483e78faac25",
+    "0xcd37ca043f8479064e10635020c65ffc005d36f6"
+  ],
+  "sources": {
+    "metadata": "https://metadata.layerzero-api.com/v1/metadata",
+    "labs": "LayerZero Labs and LayerZero Labs lzRead",
+    "outsider": "Twinstake, id nethermind"
+  }
+}

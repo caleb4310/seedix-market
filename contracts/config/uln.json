@@ -1,0 +1,16 @@
+{
+  "chainId": 1,
+  "lzLabsDvns": [
+    "0x589dEDbD617e0CBcB916A9223F4d1300c294236b",
+    "0xDb979D0A36aF0525AFa60Fc265B1525505c55D79"
+  ],
+  "confirmations": 15,
+  "requiredDvns": [
+    "0x589dEDbD617e0CBcB916A9223F4d1300c294236b",
+    "0xa59BA433ac34D2927232918Ef5B2eaAfcF130BA5"
+  ],
+  "sources": {
+    "metadata": "https://metadata.layerzero-api.com/v1/metadata",
+    "note": "Same as config/uln/1.json. SetUlnConfig reads config/uln/<chainId>.json."
+  }
+}

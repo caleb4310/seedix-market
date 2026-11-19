@@ -36,6 +36,7 @@ contract ZroRewardVault {
     error NoModule();
     error Overflow();
     error TransferFailed();
+    error BadRecipient();
 
     uint256 public constant ROUND_SECONDS = 1 hours;
 
@@ -46,6 +47,9 @@ contract ZroRewardVault {
         uint256 totalWeight;
         uint64 start;
         uint64 end;
+        /// @notice `claimWindow` at the moment this round was funded. A later `setClaimWindow`
+        ///         does not shorten a round that is already open.
+        uint64 claimWindowAtFund;
         bool opened;
     }
 
@@ -122,17 +126,32 @@ contract ZroRewardVault {
         owner = next;
     }
 
+    /// @notice The delegate is named by the timelock. It is not an instant owner call.
     function setDelegate(address next) external {
-        if (!_admin(msg.sender) || next == address(0)) revert NotOwner();
+        if (msg.sender != timelock || next == address(0)) revert NotTimelock();
         emit DelegateSet(delegate, next);
         delegate = next;
     }
 
-    /// @notice Phase 2 plugs an OFT sender here. The zero address keeps claims as local transfers.
+    /// @notice Phase 2 plugs an OFT sender here. Only the timelock can set it. The zero address
+    ///         keeps claims as local transfers.
     function setPayoutModule(address next) external {
-        if (!_admin(msg.sender)) revert NotOwner();
+        if (msg.sender != timelock) revert NotTimelock();
         emit PayoutModuleSet(payoutModule, next);
         payoutModule = next;
+    }
+
+    uint256 public constant DEFAULT_CLAIM_WINDOW = 90 days;
+    uint256 public claimWindow = 90 days;
+
+    /// @notice How long a holder has to claim after the hour closes, for rounds funded after this
+    ///         call. A round already funded keeps the window it snapshotted. The timelock can
+    ///         shorten the next window for a testnet, down to one hour. A mainnet config is
+    ///         checked separately and must be at least 30 days.
+    function setClaimWindow(uint256 next) external {
+        if (msg.sender != timelock) revert NotTimelock();
+        if (next < 1 hours || next > type(uint64).max) revert Early();
+        claimWindow = next;
     }
 
     function pause() external {
@@ -171,6 +190,7 @@ contract ZroRewardVault {
             round.opened = true;
             round.start = start;
             round.end = end;
+            round.claimWindowAtFund = uint64(claimWindow);
             emit Funded(poolId, epoch, amount, 0, dustIn);
             return;
         }
@@ -180,6 +200,7 @@ contract ZroRewardVault {
         round.totalWeight = weight;
         round.start = start;
         round.end = end;
+        round.claimWindowAtFund = uint64(claimWindow);
         liabilities += pot;
         emit Funded(poolId, epoch, amount, weight, dustIn);
     }
@@ -191,24 +212,62 @@ contract ZroRewardVault {
         emit Claimed(poolId, epoch, msg.sender, amount);
     }
 
-    /// @notice Phase 2. Same accounting as `claim`. The module sends ZRO through the OFT.
-    ///         `msg.value` is the LayerZero fee and is paid by the holder.
-    function claimRemote(PoolId poolId, uint64 epoch, uint32 dstEid, bytes calldata options)
+    /// @notice What `account` would receive for this round if they claimed now.
+    function claimable(PoolId poolId, uint64 epoch, address account) external view returns (uint256) {
+        bytes32 id = _id(poolId, epoch);
+        Round storage round = rounds[id];
+        if (!round.opened || round.totalWeight == 0 || claimed[id][account]) return 0;
+        (address coin,,,,,,) = hook.config(poolId);
+        uint256 w = tracker.weight(coin, account, round.start, round.end);
+        if (w == 0) return 0;
+        return w * uint256(round.funded) / round.totalWeight;
+    }
+
+    /// @notice LayerZero native fee for sending `amount` of ZRO to `to` on `dstEid`.
+    function quoteRemote(bytes32 to, uint256 amount, uint32 dstEid, bytes calldata options)
+        external
+        view
+        returns (uint256 nativeFee)
+    {
+        if (payoutModule == address(0)) revert NoModule();
+        _recipient(to);
+        nativeFee = IZroPayout(payoutModule).quote(address(zro), to, amount, dstEid, options);
+    }
+
+    /// @notice Phase 2. Same accounting as `claim`. `to` is the remote recipient. The caller pays
+    ///         the LayerZero fee and receives any excess and any local dust.
+    function claimRemote(PoolId poolId, uint64 epoch, uint32 dstEid, bytes32 to, bytes calldata options)
         external
         payable
         nonReentrant
         returns (uint256 amount)
     {
         if (payoutModule == address(0)) revert NoModule();
+        _recipient(to);
         amount = _account(poolId, epoch, msg.sender);
         if (amount == 0) {
             if (msg.value > 0) revert Nothing();
             return 0;
         }
         zro.forceApprove(payoutModule, amount);
-        IZroPayout(payoutModule).payout{value: msg.value}(address(zro), msg.sender, amount, dstEid, options);
+        IZroPayout(payoutModule).payout{value: msg.value}(address(zro), to, msg.sender, amount, dstEid, options);
         if (zro.allowance(address(this), payoutModule) != 0) zro.forceApprove(payoutModule, 0);
         emit Claimed(poolId, epoch, msg.sender, amount);
+    }
+
+    /// @notice After the claim window, move whatever was not claimed into `pendingDust`.
+    function expireRound(PoolId poolId, uint64 epoch) external {
+        bytes32 id = _id(poolId, epoch);
+        Round storage round = rounds[id];
+        if (!round.opened || round.totalWeight == 0) revert Nothing();
+        if (block.timestamp < uint256(round.end) + round.claimWindowAtFund) revert Early();
+        uint256 leftover = uint256(round.funded) - round.claimed;
+        if (leftover == 0) return;
+        round.claimed = round.funded;
+        round.claimedWeight = round.totalWeight;
+        liabilities -= leftover;
+        pendingDust += leftover;
+        emit DustRecycled(id, leftover);
     }
 
     function roundId(PoolId poolId, uint64 epoch) external pure returns (bytes32) {
@@ -250,6 +309,11 @@ contract ZroRewardVault {
         uint256 beforeBal = zro.balanceOf(address(this));
         zro.safeTransfer(to, amount);
         if (zro.balanceOf(address(this)) != beforeBal - amount) revert TransferFailed();
+    }
+
+    function _recipient(bytes32 to) internal pure {
+        if (to == bytes32(0)) revert ZeroAddress();
+        if (uint256(to) >> 160 != 0) revert BadRecipient();
     }
 
     function _admin(address account) internal view returns (bool) {

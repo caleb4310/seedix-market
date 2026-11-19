@@ -51,14 +51,17 @@ contract DeployBaseSepoliaZro is ZroChain {
             revert Amount();
         }
         address broadcaster = vm.addr(pk);
+        address proposer = vm.envOr("TIMELOCK_PROPOSER", broadcaster);
+        address executor = vm.envOr("TIMELOCK_EXECUTOR", broadcaster);
+        if (block.chainid == 1 || block.chainid == 8453 || block.chainid == 42161) revert Amount();
 
         vm.startBroadcast(pk);
 
         (address owner, bool safe) = _owner(chain, broadcaster);
         address[] memory proposers = new address[](1);
-        proposers[0] = broadcaster;
+        proposers[0] = proposer;
         address[] memory executors = new address[](1);
-        executors[0] = broadcaster;
+        executors[0] = executor;
         TimelockController timelock = new TimelockController(delay, proposers, executors, owner);
 
         address endpoint = chain.lzEndpoint;
@@ -69,7 +72,10 @@ contract DeployBaseSepoliaZro is ZroChain {
 
         ZroWeightTracker tracker = new ZroWeightTracker(broadcaster, hookAddr, chain.router, chain.poolManager);
         if (lockerAddr != address(0)) tracker.setExcluded(lockerAddr, true);
-        if (launcherAddr != address(0)) tracker.setExcluded(launcherAddr, true);
+        if (launcherAddr != address(0)) {
+            tracker.setExcluded(launcherAddr, true);
+            tracker.setLauncher(launcherAddr);
+        }
         tracker.setOwner(owner);
 
         if (hookAddr != address(0)) {
@@ -79,7 +85,18 @@ contract DeployBaseSepoliaZro is ZroChain {
             ZroTaxSwapper swapper =
                 new ZroTaxSwapper(broadcaster, address(timelock), owner, hook, vault, chain.weth, address(zro));
             vault.setSwapper(address(swapper));
-            if (keeper != address(0)) swapper.setKeeper(keeper);
+            if (keeper != address(0)) {
+                // The delay has not elapsed in this broadcast. ExecuteZroKeeper.s.sol runs the
+                // same salt after TIMELOCK_DELAY, from the proposer.
+                timelock.schedule(
+                    address(swapper),
+                    0,
+                    abi.encodeCall(ZroTaxSwapper.setKeeper, (keeper)),
+                    bytes32(0),
+                    keccak256("zro-keeper"),
+                    delay
+                );
+            }
             swapper.setOwner(owner);
             hook.setZroAdmin(owner, address(timelock));
             hook.setZroSwapper(address(swapper));
@@ -93,10 +110,6 @@ contract DeployBaseSepoliaZro is ZroChain {
         RouteSeeder seeder = new RouteSeeder();
         IERC20(address(zro)).approve(address(seeder), zroAmount);
         IERC20(chain.weth).approve(address(seeder), wethAmount);
-        // Pre-fund the seeder so `seedWide` can measure WETH spent (it only counts
-        // the drop in its own balance, not transferFrom from the payer).
-        IERC20(address(zro)).transfer(address(seeder), zroAmount);
-        IERC20(chain.weth).transfer(address(seeder), wethAmount);
         int24 widthSteps = int24(int256(vm.envOr("SEED_WIDTH_STEPS", uint256(1))));
         if (widthSteps < 1) widthSteps = 1;
         (PoolKey memory key, uint256 spent) =

@@ -30,10 +30,6 @@ contract SeedZroWethPool is ZroChain {
         RouteSeeder seeder = new RouteSeeder();
         IERC20(zro).approve(address(seeder), zroAmount);
         IERC20(chain.weth).approve(address(seeder), wethAmount);
-        // seedWide counts WETH spent from the seeder's own balance. An approval alone pays
-        // the pool from the caller and reports zero spent.
-        IERC20(zro).transfer(address(seeder), zroAmount);
-        IERC20(chain.weth).transfer(address(seeder), wethAmount);
         int24 widthSteps = int24(int256(vm.envOr("SEED_WIDTH_STEPS", uint256(1))));
         if (widthSteps < 1) widthSteps = 1;
         (PoolKey memory key, uint256 spent) =
