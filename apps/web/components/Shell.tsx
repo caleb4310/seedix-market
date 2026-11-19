@@ -37,7 +37,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <Link href="/" data-active={path === "/" ? "true" : "false"}>
             Coins
           </Link>
-          <Link href="/#how-it-works">
+          <Link href="/#how-it-works" className="nav-how">
             <span className="wide">How it works</span>
             <span className="narrow">How</span>
           </Link>

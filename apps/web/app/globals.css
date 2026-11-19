@@ -638,6 +638,10 @@ details.advanced summary { cursor: pointer; color: var(--ink-soft); min-height: 
   .coin-main > .kicker, .coin-main > h1 { display: none; }
 }
 
+@media (max-width: 899px) {
+  .nav-links a.nav-how { display: none; }
+}
+
 @media (max-width: 767px) {
   .stats-strip { grid-template-columns: 1fr 1fr; }
   .filter-row { align-items: stretch; }
@@ -1006,8 +1010,8 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea { 
   .coin-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ticker-hero { font-size: var(--fs-display); line-height: var(--lh-display); }
   .filter-bar { flex-wrap: wrap; }
-  .filter-scroll { flex: none; width: 100%; overflow-x: auto; flex-wrap: nowrap; }
-  .filter-scroll .seg { flex-wrap: nowrap; }
+  .filter-scroll { flex: none; width: 100%; max-width: 100%; min-width: 0; flex-wrap: wrap; }
+  .filter-scroll .seg { flex-wrap: wrap; max-width: 100%; }
   .search-count { flex: none; width: 100%; min-width: 0; }
   .nav { padding: var(--space-2) var(--space-1); gap: var(--space-1); }
   .nav-links { gap: var(--space-1); }
