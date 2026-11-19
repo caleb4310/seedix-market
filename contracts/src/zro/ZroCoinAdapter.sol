@@ -14,13 +14,19 @@ interface ILaunchedCoins {
 interface IGraduationView {
     function launcher() external view returns (address);
     function allowedCoin(address coin) external view returns (bool);
+    function adapterFactory() external view returns (address);
 }
 
-/// @notice Home-chain lockbox for one Seedix coin. `msg.sender` must be the graduation contract,
-///         and the coin must be known to the launcher that graduation stores, or to graduation's
-///         allowlist. The caller does not pass a graduation address. The OApp owner is the
-///         timelock, so `setDelegate` is timelock-only. Peers and enforced options are too.
-///         The delay itself is the timelock's `getMinDelay`.
+interface IAdapterFactory {
+    function graduation() external view returns (address);
+}
+
+/// @notice Home-chain lockbox for one Seedix coin. `ZroGraduation` deploys it through
+///         `ZroAdapterFactory`. The constructor requires `msg.sender` to be that factory: the
+///         factory names a graduation, and that graduation names the same factory. A contract that
+///         only answers `launcher()` cannot construct one. The coin must still be known to that
+///         graduation's launcher, or to its allowlist. The OApp owner is the timelock, so
+///         `setDelegate` is timelock-only. Peers and enforced options are too.
 contract ZroCoinAdapter is OFTAdapter {
     error NotTimelock();
     error NotGraduation();
@@ -73,23 +79,25 @@ contract ZroCoinAdapter is OFTAdapter {
         if (!ok) revert ZeroAddress();
     }
 
-    /// @dev The launcher address is read from the graduation contract that is constructing this
-    ///      adapter. A deployer-supplied graduation address is not an argument.
+    /// @dev `msg.sender` is the factory. It must be the factory named by the graduation it returns.
     function _fromGraduation(address token) internal view returns (bool) {
-        address launcher;
-        try IGraduationView(msg.sender).launcher() returns (address l) {
-            launcher = l;
+        address grad;
+        try IAdapterFactory(msg.sender).graduation() returns (address g) {
+            grad = g;
         } catch {
             return false;
         }
+        if (grad == address(0) || grad == msg.sender) return false;
+        try IGraduationView(grad).adapterFactory() returns (address factory) {
+            if (factory != msg.sender) return false;
+        } catch {
+            return false;
+        }
+        address launcher = IGraduationView(grad).launcher();
         if (launcher == address(0)) return false;
         try ILaunchedCoins(launcher).isLaunchedCoin(token) returns (bool launched) {
             if (launched) return true;
         } catch {}
-        try IGraduationView(msg.sender).allowedCoin(token) returns (bool allowed) {
-            return allowed;
-        } catch {
-            return false;
-        }
+        return IGraduationView(grad).allowedCoin(token);
     }
 }

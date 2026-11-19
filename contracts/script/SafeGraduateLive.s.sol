@@ -17,7 +17,8 @@ contract SafeGraduateLive is SafeBatch {
         address tracker = vm.envAddress("TRACKER");
         address coin = vm.envAddress("COIN");
         uint256 chainId = vm.envOr("CHAIN_ID", block.chainid);
-        address adapter = vm.computeCreateAddress(address(grad), vm.getNonce(address(grad)));
+        address factory = address(grad.adapterFactory());
+        address adapter = vm.computeCreateAddress(factory, vm.getNonce(factory));
         address[] memory to = new address[](3);
         bytes[] memory data = new bytes[](3);
         to[0] = address(grad);

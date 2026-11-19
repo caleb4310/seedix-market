@@ -32,6 +32,8 @@ contract ZroWeightTracker {
     error Short();
     error Overflow();
     error PerToken();
+    error GlobalClosed();
+    error LauncherLocked();
 
     struct Point {
         uint64 t;
@@ -50,6 +52,8 @@ contract ZroWeightTracker {
     /// @notice Per-token exclusion. Graduation uses this for the adapter. There is no token list.
     mapping(address token => mapping(address account => bool)) public excludedFrom;
     mapping(address coin => bool) public isCoin;
+    /// @notice How many coins have been registered. Global exclusion closes once this is non-zero.
+    uint256 public registeredCoins;
     mapping(address token => mapping(address account => Point[])) internal _points;
     mapping(address token => Point[]) internal _supplyPoints;
     mapping(address token => uint256) public eligibleSupply;
@@ -89,10 +93,11 @@ contract ZroWeightTracker {
         excluder = next;
     }
 
-    /// @notice The owner or the timelock names the launcher that may register coins.
+    /// @notice One shot. The owner or the timelock names the launcher before the first launch.
+    ///         A later call cannot point this at another launcher and halt new coins.
     function setLauncher(address next) external {
         if (msg.sender != owner && msg.sender != timelock) revert NotOwner();
-        if (next == address(0)) revert ZeroAddress();
+        if (next == address(0) || launcher != address(0)) revert LauncherLocked();
         emit LauncherSet(launcher, next);
         launcher = next;
     }
@@ -106,16 +111,18 @@ contract ZroWeightTracker {
         if (coin == address(0)) revert ZeroAddress();
         if (isCoin[coin]) return;
         isCoin[coin] = true;
+        registeredCoins += 1;
         emit CoinRegistered(coin);
     }
 
-    /// @notice Global exclusion for an address that does not yet hold a registered coin: the hook,
-    ///         the router, the pool, the locker, and the launcher. Turning it off is per token, so
-    ///         an excluded interval cannot be credited later. A balance that already exists is
-    ///         moved with `setExcluded(account, token, bool)`.
+    /// @notice Global exclusion for the hook, the router, the pool, the locker, and the launcher.
+    ///         It is only available before any coin is registered, so it cannot leave an existing
+    ///         balance inside `eligibleSupply`. After that, use `setExcluded(account, token, bool)`.
+    ///         Turning a global exclusion off is per token, so an excluded interval is not credited later.
     function setExcluded(address account, bool isExcluded) external {
         if (msg.sender != owner && msg.sender != excluder) revert NotOwner();
         if (!isExcluded) revert PerToken();
+        if (registeredCoins != 0) revert GlobalClosed();
         if (account == address(0)) revert ZeroAddress();
         if (excluded[account]) return;
         _setExcluded(account, true);

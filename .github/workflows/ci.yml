@@ -29,6 +29,20 @@ jobs:
       - name: Test
         run: forge test
 
+  safe-batch:
+    name: safe-batch
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Simulate Safe batches on local anvil
+        run: bash script/sim-safe-batches.sh
+
   block-number-ban:
     name: block-number-ban
     runs-on: ubuntu-latest

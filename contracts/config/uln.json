@@ -1,14 +1,16 @@
 {
   "chainId": 1,
-  "lzLabsDvn": "0x589dEDbD617e0CBcB916A9223F4d1300c294236b",
+  "lzLabsDvns": [
+    "0x589dEDbD617e0CBcB916A9223F4d1300c294236b",
+    "0xDb979D0A36aF0525AFa60Fc265B1525505c55D79"
+  ],
   "confirmations": 15,
   "requiredDvns": [
     "0x589dEDbD617e0CBcB916A9223F4d1300c294236b",
     "0xa59BA433ac34D2927232918Ef5B2eaAfcF130BA5"
   ],
   "sources": {
-    "lzLabsDvn": "https://docs.layerzero.network/v2/deployments/dvn-addresses",
-    "nethermindDvn": "https://docs.layerzero.network/v2/deployments/dvn-addresses",
-    "note": "Ethereum mainnet DVNs. Copy this file per chain and replace every address. The script refuses to run when chainId does not match. Send and receive libraries come from LZ_SEND_LIB and LZ_RECEIVE_LIB, not from this file."
+    "metadata": "https://metadata.layerzero-api.com/v1/metadata",
+    "note": "Same as config/uln/1.json. SetUlnConfig reads config/uln/<chainId>.json."
   }
 }

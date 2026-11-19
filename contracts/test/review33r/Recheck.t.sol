@@ -26,8 +26,24 @@ import {ZroRemoteOFT} from "../../src/zro/ZroRemoteOFT.sol";
 import {TestLzEndpoint} from "../zro/TestLzEndpoint.sol";
 
 contract PolicyProbe {
-    function check(address[] memory required, address labs) external pure {
+    function check(address[] memory required, address[] memory labs) external pure {
         UlnPolicy.assertDvns(required, labs);
+    }
+}
+
+contract FakeGraduation {
+    address public launcher;
+
+    constructor(address realLauncher) {
+        launcher = realLauncher;
+    }
+
+    function allowedCoin(address) external pure returns (bool) {
+        return false;
+    }
+
+    function make(address coin, address endpoint) external returns (address) {
+        return address(new ZroCoinAdapter(coin, endpoint, address(this), address(this)));
     }
 }
 
@@ -97,16 +113,20 @@ contract RecheckVault is Fixture {
         ZroGraduation g = _grad();
         vm.prank(address(d.timelock));
         tracker.setExcluder(address(g));
-        address predicted = vm.computeCreateAddress(address(g), vm.getNonce(address(g)));
-        for (uint256 i; i < 8; ++i) {
-            FakeToken fake = new FakeToken();
-            vm.expectRevert(ZroWeightTracker.NotCoin.selector);
-            fake.hit(tracker, predicted);
+        address factory = address(g.adapterFactory());
+        address predicted = vm.computeCreateAddress(factory, vm.getNonce(factory));
+        uint256 rejected;
+        for (uint256 i; i < 600; ++i) {
+            try new FakeToken().hit(tracker, predicted) {}
+            catch {
+                rejected += 1;
+            }
         }
+        assertEq(rejected, 600);
         uint256 g0 = gasleft();
         address adapter = g.graduate(coin);
         uint256 used = g0 - gasleft();
-        assertLt(used, 4_000_000);
+        assertLt(used, 6_000_000);
         assertEq(adapter, predicted);
         assertTrue(tracker.excludedFrom(coin, adapter));
     }
@@ -131,6 +151,19 @@ contract RecheckVault is Fixture {
         vm.prank(coin);
         tracker.onTransfer(adapter, bob, 4 ether);
         assertEq(tracker.eligibleSupply(coin), 5 ether);
+    }
+
+    function test_R2_L01_globalExcludeOfHolderDoesNotInflate() public {
+        vm.startPrank(coin);
+        tracker.onTransfer(address(0), alice, 5 ether);
+        tracker.onTransfer(address(0), bob, 5 ether);
+        vm.stopPrank();
+        assertEq(tracker.eligibleSupply(coin), 10 ether);
+        vm.expectRevert(ZroWeightTracker.GlobalClosed.selector);
+        tracker.setExcluded(alice, true);
+        vm.prank(coin);
+        tracker.onTransfer(alice, address(0xCA201), 5 ether);
+        assertEq(tracker.eligibleSupply(coin), 10 ether);
     }
 
     function test_R_NEW_L01_unexcludeBackdatesWeight() public {
@@ -219,19 +252,20 @@ contract RecheckVault is Fixture {
     }
 
     function test_R_NEW_L02_excludingTeamDoubleSubtracts() public {
-        LaunchToken impl = new LaunchToken();
-        LaunchToken c2 = LaunchToken(Clones.clone(address(impl)));
-        tTracker = tracker;
-        tracker.setExcluded(address(this), true);
+        ZroWeightTracker fresh = new ZroWeightTracker(address(this), address(0), address(0), address(0));
+        tTracker = fresh;
+        fresh.setExcluded(address(this), true);
+        LaunchToken c2 = LaunchToken(Clones.clone(address(new LaunchToken())));
         address team = address(0x7EA);
         uint256 teamAmt = C.SUPPLY * C.MAX_TEAM_BPS / 10_000;
-        tracker.registerCoin(address(c2));
+        fresh.registerCoin(address(c2));
         c2.initialize("C", "C", address(this), C.SUPPLY - teamAmt, team, teamAmt);
         c2.transfer(alice, teamAmt * 2);
-        assertEq(tracker.eligibleSupply(address(c2)), teamAmt * 2);
-        tracker.setExcluded(team, true);
-        tracker.setExcluded(team, address(c2), true);
-        assertEq(tracker.eligibleSupply(address(c2)), teamAmt * 2);
+        assertEq(fresh.eligibleSupply(address(c2)), teamAmt * 2);
+        vm.expectRevert(ZroWeightTracker.GlobalClosed.selector);
+        fresh.setExcluded(team, true);
+        fresh.setExcluded(team, address(c2), true);
+        assertEq(fresh.eligibleSupply(address(c2)), teamAmt * 2);
     }
 
     ZroWeightTracker internal tTracker;
@@ -250,6 +284,9 @@ contract RecheckVault is Fixture {
     function test_R_NEW_L03_adapterConstructorCheckBypass() public {
         vm.expectRevert();
         new ZroCoinAdapter(coin, address(endpoint), address(this), address(this));
+        FakeGraduation fake = new FakeGraduation(address(d.launcher));
+        vm.expectRevert();
+        fake.make(coin, address(endpoint));
     }
 
     function test_L05_setDelegateIsTimelockOnly() public {
@@ -265,28 +302,32 @@ contract RecheckVault is Fixture {
     }
 
     function test_I01_ulnPolicyAndOnePeerSchedule() public {
-        address labs = address(0x1111);
-        address other = address(0x2222);
-        address[] memory onlyLabs = new address[](2);
-        onlyLabs[0] = labs;
-        onlyLabs[1] = address(uint160(uint160(labs) + 1));
-        // sorted: labs then labs+1, and labs+1 is the outsider, so this one is valid.
-        UlnPolicy.assertDvns(onlyLabs, labs);
-        address[] memory labsTwice = new address[](2);
-        labsTwice[0] = address(0x1000);
-        labsTwice[1] = labs;
-        // 0x1000 < labs. Both must not be only the labs address. 0x1000 is an outsider. Valid.
-        UlnPolicy.assertDvns(labsTwice, labs);
+        address[] memory labs = new address[](2);
+        labs[0] = address(0x1111);
+        labs[1] = address(0x3333);
+        address outsider = address(0x2222);
+        address[] memory compliant = new address[](2);
+        compliant[0] = labs[0];
+        compliant[1] = outsider;
+        UlnPolicy.assertDvns(compliant, labs);
         PolicyProbe probe = new PolicyProbe();
         address[] memory one = new address[](1);
-        one[0] = other;
+        one[0] = outsider;
         vm.expectRevert(UlnPolicy.UlnPolicyFailed.selector);
         probe.check(one, labs);
-        address[] memory same = new address[](2);
-        same[0] = labs;
-        same[1] = labs;
+        address[] memory bothLabs = new address[](2);
+        bothLabs[0] = labs[0];
+        bothLabs[1] = labs[1];
         vm.expectRevert(UlnPolicy.UlnPolicyFailed.selector);
-        probe.check(same, labs);
+        probe.check(bothLabs, labs);
+        address[] memory ethLabs = new address[](2);
+        ethLabs[0] = 0x589dEDbD617e0CBcB916A9223F4d1300c294236b;
+        ethLabs[1] = 0xDb979D0A36aF0525AFa60Fc265B1525505c55D79;
+        address[] memory ethOnly = new address[](2);
+        ethOnly[0] = ethLabs[0];
+        ethOnly[1] = ethLabs[1];
+        vm.expectRevert(UlnPolicy.UlnPolicyFailed.selector);
+        probe.check(ethOnly, ethLabs);
 
         bytes memory scheduled = SafeOps.peerSchedule(address(0xA), 2, address(0xB), bytes32(uint256(3)), 48 hours);
         (address target,, bytes memory inner,,,) =
@@ -294,6 +335,18 @@ contract RecheckVault is Fixture {
         assertEq(target, address(0xA));
         (, bytes32 peer) = abi.decode(_tail(inner), (uint32, bytes32));
         assertEq(peer, bytes32(uint256(uint160(address(0xB)))));
+    }
+
+    function test_R2_L04_setLauncherIsOneShot() public {
+        vm.prank(d.launcher.initializer());
+        d.launcher.setZroWeightTracker(address(tracker));
+        vm.expectRevert(ZroWeightTracker.NotRegistrar.selector);
+        _launch(0);
+        tracker.setLauncher(address(d.launcher));
+        _launch(0);
+        vm.expectRevert(ZroWeightTracker.LauncherLocked.selector);
+        tracker.setLauncher(address(0xdead));
+        _launch(0);
     }
 }
 

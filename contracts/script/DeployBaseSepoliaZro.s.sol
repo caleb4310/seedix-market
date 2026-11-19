@@ -86,6 +86,8 @@ contract DeployBaseSepoliaZro is ZroChain {
                 new ZroTaxSwapper(broadcaster, address(timelock), owner, hook, vault, chain.weth, address(zro));
             vault.setSwapper(address(swapper));
             if (keeper != address(0)) {
+                // The delay has not elapsed in this broadcast. ExecuteZroKeeper.s.sol runs the
+                // same salt after TIMELOCK_DELAY, from the proposer.
                 timelock.schedule(
                     address(swapper),
                     0,

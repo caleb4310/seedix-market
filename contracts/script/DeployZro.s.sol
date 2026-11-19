@@ -64,6 +64,7 @@ contract DeployZro is ZroChain {
                 new ZroTaxSwapper(broadcaster, timelock, owner, hook, vault, chain.weth, address(zro));
             vault.setSwapper(address(swapper));
             if (keeper != address(0)) {
+                // ExecuteZroKeeper.s.sol performs this operation after the timelock delay.
                 TimelockController(payable(timelock))
                     .schedule(
                         address(swapper),

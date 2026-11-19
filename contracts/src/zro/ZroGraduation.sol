@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {ZroCoinAdapter} from "./ZroCoinAdapter.sol";
+import {ZroAdapterFactory} from "./ZroAdapterFactory.sol";
 import {ZroWeightTracker} from "./ZroWeightTracker.sol";
 
 interface ILaunchedCoins {
@@ -34,6 +34,7 @@ contract ZroGraduation {
     address public immutable timelock;
     address public immutable launcher;
     ZroWeightTracker public immutable tracker;
+    ZroAdapterFactory public immutable adapterFactory;
     /// @notice The only adapter for this coin. A second `ZroCoinAdapter` cannot be created here.
     mapping(address coin => address adapter) public adapterOf;
     /// @notice Coins the Safe or the timelock has accepted. Used when the launcher predates
@@ -53,6 +54,9 @@ contract ZroGraduation {
         timelock = timelock_;
         tracker = ZroWeightTracker(tracker_);
         launcher = launcher_;
+        ZroAdapterFactory created = new ZroAdapterFactory();
+        created.bind(address(this));
+        adapterFactory = created;
     }
 
     /// @notice Safe or timelock. The live launcher cannot answer `isLaunchedCoin`, so this is how
@@ -71,7 +75,7 @@ contract ZroGraduation {
         if (_locked == 1) revert Reentered();
         _locked = 1;
         _requireExclude();
-        adapter = address(new ZroCoinAdapter(coin, endpoint, owner, timelock));
+        adapter = adapterFactory.deploy(coin, endpoint, owner, timelock);
         adapterOf[coin] = adapter;
         if (address(tracker) != address(0)) {
             tracker.registerCoin(coin);

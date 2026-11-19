@@ -11,19 +11,20 @@ import {SafeBatch} from "./SafeBatch.sol";
 ///         policy before writing it. Set VERIFY=1 after the Safe has executed to read `getConfig`
 ///         back and assert the same DVNs. This script does not broadcast.
 ///
-///         ULN_CONFIG defaults to config/uln.json. LZ_ENDPOINT, LZ_SEND_LIB, LZ_RECEIVE_LIB, OAPP
-///         and REMOTE_EID come from the environment. The file's chainId must match this chain.
+///         ULN_CONFIG defaults to `config/uln/<chainId>.json`. That file lists every LayerZero Labs
+///         DVN on the chain. LZ_ENDPOINT, LZ_SEND_LIB, LZ_RECEIVE_LIB, OAPP and REMOTE_EID come
+///         from the environment. The file's chainId must match this chain.
 contract SetUlnConfig is SafeBatch {
     error ChainMismatch(uint256 file, uint256 live);
     error ZeroLib();
 
     function run() external {
-        string memory path = vm.envOr("ULN_CONFIG", string("config/uln.json"));
+        uint256 chainId = vm.envOr("CHAIN_ID", block.chainid);
+        string memory path = vm.envOr("ULN_CONFIG", string.concat("config/uln/", vm.toString(chainId), ".json"));
         string memory json = vm.readFile(path);
         uint256 fileChain = vm.parseJsonUint(json, ".chainId");
-        uint256 chainId = vm.envOr("CHAIN_ID", block.chainid);
         if (fileChain != chainId) revert ChainMismatch(fileChain, chainId);
-        address labs = vm.parseJsonAddress(json, ".lzLabsDvn");
+        address[] memory labs = vm.parseJsonAddressArray(json, ".lzLabsDvns");
         address[] memory dvns = vm.parseJsonAddressArray(json, ".requiredDvns");
         uint64 confirmations = uint64(vm.parseJsonUint(json, ".confirmations"));
         UlnPolicy.assertDvns(dvns, labs);

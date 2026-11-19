@@ -92,6 +92,31 @@ contract RecheckOracle is Fixture {
         assertGt(swapper.harvest(id, floor), 0);
     }
 
+    /// A stranger cannot poke. If the keeper's own poke is ordered between two swaps in one block,
+    /// the stored tick is still the moved one and harvest reverts. That ordering is the remaining
+    /// case: Base has no public mempool, and the keeper cannot see a later swap in the same poke.
+    function test_R2_keeperPokeOrderedSandwich() public {
+        vm.warp((vm.getBlockTimestamp() / 1 hours + 1) * 1 hours + 40 minutes);
+        int24 honest = _spot();
+        vm.prank(address(0xA77AC));
+        vm.expectRevert(ZroTaxSwapper.NotKeeper.selector);
+        swapper.poke();
+        for (uint256 i; i < 64; ++i) {
+            vm.warp(vm.getBlockTimestamp() + 30);
+            swapper.poke();
+            bool z = _wethIs0();
+            int24 h = _spot();
+            int24 shifted = z ? int24(-400) : int24(400);
+            router.swap(key, z, -int256(1_000_000 ether), 0, block.timestamp, TickMath.getSqrtPriceAtTick(shifted));
+            swapper.poke();
+            router.swap(key, !z, -int256(1_000_000 ether), 0, block.timestamp, TickMath.getSqrtPriceAtTick(h));
+        }
+        int24 dd = _spot() - honest;
+        assertLe(dd < 0 ? -dd : dd, 1);
+        vm.expectRevert();
+        swapper.harvest(id, 1);
+    }
+
     function _densePokes(uint256 n, uint256 step, bool attack, int24 shift) internal {
         for (uint256 i; i < n; ++i) {
             vm.warp(vm.getBlockTimestamp() + step);
